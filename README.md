@@ -102,11 +102,14 @@ uvicorn app.main:app --reload   # http://localhost:8000, docs at /docs
 ```
 
 ```bash
-ruff check .    # lint
-pytest -v       # needs DATABASE_URL pointed at a Postgres with the schema
-                # applied (supabase start + db reset, or see
-                # tests/ci_bootstrap.sql for how CI does this against a
-                # plain Postgres container without the full Supabase stack)
+ruff check .          # lint
+python -m pytest -v   # needs DATABASE_URL pointed at a Postgres with the schema
+                       # applied (supabase start + db reset, or see
+                       # tests/ci_bootstrap.sql for how CI does this against a
+                       # plain Postgres container without the full Supabase stack).
+                       # Must be `python -m pytest`, not plain `pytest` -- the
+                       # latter doesn't add the cwd to sys.path, so `app` fails
+                       # to import.
 ```
 
 Staff invitations (`POST /staff/invite`) call the Supabase Auth admin API

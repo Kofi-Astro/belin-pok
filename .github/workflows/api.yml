@@ -71,4 +71,4 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
           SUPABASE_URL: https://rkjcrvgtbrbdzjakgtpz.supabase.co
-        run: pytest -v
+        run: python -m pytest -v
