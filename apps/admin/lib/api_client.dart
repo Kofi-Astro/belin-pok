@@ -1,81 +1,35 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:http/http.dart' as http;
+import 'package:belpok_core/belpok_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
 import 'models.dart';
 
-class ApiException implements Exception {
-  final int statusCode;
-  final String message;
-  ApiException(this.statusCode, this.message);
-
-  @override
-  String toString() => message;
-}
+export 'package:belpok_core/belpok_core.dart' show ApiException;
 
 /// Thin wrapper around the FastAPI backend. Every call attaches the current
 /// Supabase session's access token as a Bearer token -- the backend
 /// verifies it and resolves it to a `staff` row (see services/api/app/deps.py).
 class ApiClient {
-  final _baseUrl = AppConfig.apiBaseUrl;
+  final ApiHttp _http = ApiHttp(
+    baseUrl: AppConfig.apiBaseUrl,
+    headers: () {
+      final token = Supabase.instance.client.auth.currentSession?.accessToken;
+      return {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      };
+    },
+  );
 
-  Map<String, String> get _headers {
-    final token = Supabase.instance.client.auth.currentSession?.accessToken;
-    return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
-  }
-
-  Future<dynamic> _get(String path, [Map<String, String>? query]) async {
-    final uri = Uri.parse('$_baseUrl$path').replace(queryParameters: query);
-    final response = await http.get(uri, headers: _headers);
-    return _decode(response);
-  }
-
-  Future<dynamic> _post(String path, Map<String, dynamic> body) async {
-    final response = await http.post(
-      Uri.parse('$_baseUrl$path'),
-      headers: _headers,
-      body: jsonEncode(body),
-    );
-    return _decode(response);
-  }
-
-  Future<dynamic> _patch(String path, Map<String, dynamic> body) async {
-    final response = await http.patch(
-      Uri.parse('$_baseUrl$path'),
-      headers: _headers,
-      body: jsonEncode(body),
-    );
-    return _decode(response);
-  }
-
-  Future<dynamic> _delete(String path) async {
-    final response = await http.delete(
-      Uri.parse('$_baseUrl$path'),
-      headers: _headers,
-    );
-    return _decode(response);
-  }
-
-  dynamic _decode(http.Response response) {
-    if (response.statusCode >= 400) {
-      String detail = response.body;
-      try {
-        detail =
-            (jsonDecode(response.body) as Map<String, dynamic>)['detail']
-                ?.toString() ??
-            response.body;
-      } catch (_) {}
-      throw ApiException(response.statusCode, detail);
-    }
-    if (response.body.isEmpty) return null;
-    return jsonDecode(response.body);
-  }
+  Future<dynamic> _get(String path, [Map<String, String>? query]) =>
+      _http.get(path, query);
+  Future<dynamic> _post(String path, Map<String, dynamic> body) =>
+      _http.post(path, body);
+  Future<dynamic> _patch(String path, Map<String, dynamic> body) =>
+      _http.patch(path, body);
+  Future<dynamic> _delete(String path) => _http.delete(path);
 
   // ---------- staff ----------
 

@@ -40,6 +40,8 @@ dependencies:
   http: ^1.6.0
   image_picker: ^1.2.3
   google_fonts: ^8.2.1
+  belpok_core:
+    path: ../../packages/belpok_core
 
 dev_dependencies:
   flutter_test:

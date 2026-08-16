@@ -1,0 +1,14 @@
+# Flutter/Dart/Pub related
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+
+# Packages don't check in pubspec.lock (unlike apps) -- it's always
+# resolved as part of whichever app (apps/admin, apps/storefront) depends
+# on this via a path dependency; their own pubspec.lock is what matters.
+pubspec.lock
+
+# Miscellaneous
+.DS_Store

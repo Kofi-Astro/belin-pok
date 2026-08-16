@@ -1,0 +1,23 @@
+name: belpok_core
+description: >
+  Shared models, API client base, and brand theme for Belin-Pok Enterprise's
+  Flutter apps (apps/admin, apps/storefront). Not published -- a local path
+  dependency between the two.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.6.0
+  google_fonts: ^8.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:

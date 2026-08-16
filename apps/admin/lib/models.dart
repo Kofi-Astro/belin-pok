@@ -1,3 +1,21 @@
+// Category/ProductVariant/ProductImage/Product/OrderItem/Order/
+// kOrderStatuses now live in belpok_core (shared with apps/storefront --
+// both apps parse the same API response shapes). Re-exported here so this
+// app's existing `import 'models.dart'` / relative imports keep resolving
+// them; imported (not just exported) below because LowStockVariant, an
+// admin-only model, is itself built out of ProductVariant.
+import 'package:belpok_core/belpok_core.dart';
+
+export 'package:belpok_core/belpok_core.dart'
+    show
+        Category,
+        Order,
+        OrderItem,
+        Product,
+        ProductImage,
+        ProductVariant,
+        kOrderStatuses;
+
 class StaffProfile {
   final String id;
   final String email;
@@ -26,58 +44,6 @@ class StaffProfile {
   bool get canManageOrders => role == 'owner' || role == 'order_fulfillment';
 }
 
-class Category {
-  final String id;
-  final String name;
-  final String slug;
-
-  Category({required this.id, required this.name, required this.slug});
-
-  factory Category.fromJson(Map<String, dynamic> json) => Category(
-    id: json['id'] as String,
-    name: json['name'] as String,
-    slug: json['slug'] as String,
-  );
-}
-
-class ProductVariant {
-  final String id;
-  final String productId;
-  final String sku;
-  final String size;
-  final String? color;
-  final double? priceOverride;
-  final int stockQuantity;
-  final int lowStockThreshold;
-  final bool isActive;
-
-  ProductVariant({
-    required this.id,
-    required this.productId,
-    required this.sku,
-    required this.size,
-    required this.color,
-    required this.priceOverride,
-    required this.stockQuantity,
-    required this.lowStockThreshold,
-    required this.isActive,
-  });
-
-  bool get isLowStock => stockQuantity <= lowStockThreshold;
-
-  factory ProductVariant.fromJson(Map<String, dynamic> json) => ProductVariant(
-    id: json['id'] as String,
-    productId: json['product_id'] as String,
-    sku: json['sku'] as String,
-    size: json['size'] as String,
-    color: json['color'] as String?,
-    priceOverride: (json['price_override'] as num?)?.toDouble(),
-    stockQuantity: json['stock_quantity'] as int,
-    lowStockThreshold: json['low_stock_threshold'] as int,
-    isActive: json['is_active'] as bool,
-  );
-}
-
 /// GET /variants/low-stock joins back to the product -- non-technical
 /// staff recognize items by name/photo, not a SKU code.
 class LowStockVariant {
@@ -101,81 +67,6 @@ class LowStockVariant {
   String? publicImageUrl(String supabaseUrl) => imageStoragePath == null
       ? null
       : '$supabaseUrl/storage/v1/object/public/product-images/$imageStoragePath';
-}
-
-class ProductImage {
-  final String id;
-  final String productId;
-  final String storagePath;
-  final bool isPrimary;
-
-  ProductImage({
-    required this.id,
-    required this.productId,
-    required this.storagePath,
-    required this.isPrimary,
-  });
-
-  factory ProductImage.fromJson(Map<String, dynamic> json) => ProductImage(
-    id: json['id'] as String,
-    productId: json['product_id'] as String,
-    storagePath: json['storage_path'] as String,
-    isPrimary: json['is_primary'] as bool,
-  );
-
-  /// The product-images bucket is public, so the URL is deterministic from
-  /// the storage path -- no signed URL/extra round trip needed.
-  String publicUrl(String supabaseUrl) =>
-      '$supabaseUrl/storage/v1/object/public/product-images/$storagePath';
-}
-
-class Product {
-  final String id;
-  final String name;
-  final String slug;
-  final String categoryId;
-  final String? brand;
-  final double basePrice;
-  final String status;
-  final List<ProductVariant> variants;
-  final List<ProductImage> images;
-
-  Product({
-    required this.id,
-    required this.name,
-    required this.slug,
-    required this.categoryId,
-    required this.brand,
-    required this.basePrice,
-    required this.status,
-    this.variants = const [],
-    this.images = const [],
-  });
-
-  ProductImage? get primaryImage {
-    if (images.isEmpty) return null;
-    return images.firstWhere((i) => i.isPrimary, orElse: () => images.first);
-  }
-
-  factory Product.fromJson(Map<String, dynamic> json) => Product(
-    id: json['id'] as String,
-    name: json['name'] as String,
-    slug: json['slug'] as String,
-    categoryId: json['category_id'] as String,
-    brand: json['brand'] as String?,
-    basePrice: (json['base_price'] as num).toDouble(),
-    status: json['status'] as String,
-    variants:
-        (json['variants'] as List<dynamic>?)
-            ?.map((v) => ProductVariant.fromJson(v as Map<String, dynamic>))
-            .toList() ??
-        const [],
-    images:
-        (json['images'] as List<dynamic>?)
-            ?.map((i) => ProductImage.fromJson(i as Map<String, dynamic>))
-            .toList() ??
-        const [],
-  );
 }
 
 class StockMovement {
@@ -229,76 +120,6 @@ class Customer {
   );
 }
 
-class OrderItem {
-  final String id;
-  final String variantId;
-  final int quantity;
-  final double unitPrice;
-  final double lineTotal;
-
-  OrderItem({
-    required this.id,
-    required this.variantId,
-    required this.quantity,
-    required this.unitPrice,
-    required this.lineTotal,
-  });
-
-  factory OrderItem.fromJson(Map<String, dynamic> json) => OrderItem(
-    id: json['id'] as String,
-    variantId: json['variant_id'] as String,
-    quantity: json['quantity'] as int,
-    unitPrice: (json['unit_price'] as num).toDouble(),
-    lineTotal: (json['line_total'] as num).toDouble(),
-  );
-}
-
-class Order {
-  final String id;
-  final String orderNumber;
-  final String customerId;
-  final String orderType;
-  final String status;
-  final double total;
-  final DateTime createdAt;
-  final List<OrderItem> items;
-
-  Order({
-    required this.id,
-    required this.orderNumber,
-    required this.customerId,
-    required this.orderType,
-    required this.status,
-    required this.total,
-    required this.createdAt,
-    this.items = const [],
-  });
-
-  factory Order.fromJson(Map<String, dynamic> json) => Order(
-    id: json['id'] as String,
-    orderNumber: json['order_number'] as String,
-    customerId: json['customer_id'] as String,
-    orderType: json['order_type'] as String,
-    status: json['status'] as String,
-    total: (json['total'] as num).toDouble(),
-    createdAt: DateTime.parse(json['created_at'] as String),
-    items:
-        (json['items'] as List<dynamic>?)
-            ?.map((i) => OrderItem.fromJson(i as Map<String, dynamic>))
-            .toList() ??
-        const [],
-  );
-}
-
-const kOrderStatuses = [
-  'pending',
-  'paid',
-  'packed',
-  'shipped',
-  'delivered',
-  'cancelled',
-  'refunded',
-];
 const kStaffRoles = [
   'owner',
   'inventory_manager',
