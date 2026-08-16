@@ -1,0 +1,29 @@
+name: Admin
+
+# Cloudflare Pages deploys apps/admin itself via its native GitHub
+# integration (already linked) -- see the README for the exact dashboard
+# build settings, since Flutter isn't one of Pages' auto-detected
+# frameworks. This workflow only lints/analyzes on PRs so bad code doesn't
+# land on main; it doesn't deploy anything, to avoid a second, conflicting
+# deploy path.
+
+on:
+  pull_request:
+    paths:
+      - "apps/admin/**"
+      - ".github/workflows/admin.yml"
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed .
+      - run: flutter analyze

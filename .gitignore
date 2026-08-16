@@ -1,0 +1,40 @@
+# --- Secrets / env ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python (services/api) ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# --- Flutter / Dart (apps/admin) ---
+apps/admin/.dart_tool/
+apps/admin/.flutter-plugins
+apps/admin/.flutter-plugins-dependencies
+apps/admin/.packages
+apps/admin/build/
+apps/admin/web/flutter_service_worker.js
+**/*.g.dart.bak
+
+# --- Supabase CLI local state ---
+supabase/.branches
+supabase/.temp
+
+# --- Editors / OS ---
+.DS_Store
+*.swp
+.idea/
+*.iml
+
+# --- Node (if tooling ends up needing it) ---
+node_modules/
