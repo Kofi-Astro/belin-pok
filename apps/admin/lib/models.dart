@@ -78,6 +78,57 @@ class ProductVariant {
   );
 }
 
+/// GET /variants/low-stock joins back to the product -- non-technical
+/// staff recognize items by name/photo, not a SKU code.
+class LowStockVariant {
+  final ProductVariant variant;
+  final String productName;
+  final String? imageStoragePath;
+
+  LowStockVariant({
+    required this.variant,
+    required this.productName,
+    required this.imageStoragePath,
+  });
+
+  factory LowStockVariant.fromJson(Map<String, dynamic> json) =>
+      LowStockVariant(
+        variant: ProductVariant.fromJson(json),
+        productName: json['product_name'] as String,
+        imageStoragePath: json['image_storage_path'] as String?,
+      );
+
+  String? publicImageUrl(String supabaseUrl) => imageStoragePath == null
+      ? null
+      : '$supabaseUrl/storage/v1/object/public/product-images/$imageStoragePath';
+}
+
+class ProductImage {
+  final String id;
+  final String productId;
+  final String storagePath;
+  final bool isPrimary;
+
+  ProductImage({
+    required this.id,
+    required this.productId,
+    required this.storagePath,
+    required this.isPrimary,
+  });
+
+  factory ProductImage.fromJson(Map<String, dynamic> json) => ProductImage(
+    id: json['id'] as String,
+    productId: json['product_id'] as String,
+    storagePath: json['storage_path'] as String,
+    isPrimary: json['is_primary'] as bool,
+  );
+
+  /// The product-images bucket is public, so the URL is deterministic from
+  /// the storage path -- no signed URL/extra round trip needed.
+  String publicUrl(String supabaseUrl) =>
+      '$supabaseUrl/storage/v1/object/public/product-images/$storagePath';
+}
+
 class Product {
   final String id;
   final String name;
@@ -87,6 +138,7 @@ class Product {
   final double basePrice;
   final String status;
   final List<ProductVariant> variants;
+  final List<ProductImage> images;
 
   Product({
     required this.id,
@@ -97,7 +149,13 @@ class Product {
     required this.basePrice,
     required this.status,
     this.variants = const [],
+    this.images = const [],
   });
+
+  ProductImage? get primaryImage {
+    if (images.isEmpty) return null;
+    return images.firstWhere((i) => i.isPrimary, orElse: () => images.first);
+  }
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
     id: json['id'] as String,
@@ -110,6 +168,11 @@ class Product {
     variants:
         (json['variants'] as List<dynamic>?)
             ?.map((v) => ProductVariant.fromJson(v as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    images:
+        (json['images'] as List<dynamic>?)
+            ?.map((i) => ProductImage.fromJson(i as Map<String, dynamic>))
             .toList() ??
         const [],
   );

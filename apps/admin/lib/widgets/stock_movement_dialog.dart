@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../models.dart';
+import '../theme.dart';
 
 const _movementTypes = ['restock', 'adjustment', 'return', 'sale', 'initial'];
 
@@ -69,7 +70,10 @@ class _StockMovementDialogState extends State<StockMovementDialog> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: AppColors.danger),
+              ),
             ),
           DropdownButtonFormField<String>(
             initialValue: _movementType,

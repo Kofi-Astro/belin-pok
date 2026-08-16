@@ -7,6 +7,7 @@ import 'api_client.dart';
 import 'auth_controller.dart';
 import 'config.dart';
 import 'router.dart';
+import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,10 +35,7 @@ class _AdminAppState extends State<AdminApp> {
       value: _auth,
       child: MaterialApp.router(
         title: 'Belin-Pok Admin',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-          useMaterial3: true,
-        ),
+        theme: buildAppTheme(),
         routerConfig: _router,
       ),
     );

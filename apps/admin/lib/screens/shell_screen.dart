@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../auth_controller.dart';
+import '../theme.dart';
 
 class _NavItem {
   final String location;
@@ -36,40 +37,124 @@ class AppShell extends StatelessWidget {
     final selectedIndex = items
         .indexWhere((i) => location.startsWith(i.location))
         .clamp(0, items.length - 1);
+    final extended = MediaQuery.of(context).size.width > 900;
 
     return Scaffold(
       body: Row(
         children: [
-          NavigationRail(
-            extended: MediaQuery.of(context).size.width > 900,
-            selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
-            onDestinationSelected: (i) => context.go(items[i].location),
-            leading: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Icon(Icons.storefront),
-            ),
-            trailing: Expanded(
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: IconButton(
-                    tooltip: 'Sign out (${auth.profile?.fullName ?? ''})',
-                    icon: const Icon(Icons.logout),
-                    onPressed: auth.signOut,
+          Container(
+            width: extended ? 220 : 84,
+            color: AppColors.navy,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 20),
+                  child: Row(
+                    mainAxisAlignment: extended
+                        ? MainAxisAlignment.start
+                        : MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppColors.amber,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.storefront,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
+                      if (extended) ...[
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'Belin-Pok',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-              ),
-            ),
-            destinations: [
-              for (final item in items)
-                NavigationRailDestination(
-                  icon: Icon(item.icon),
-                  label: Text(item.label),
+                Expanded(
+                  child: NavigationRail(
+                    backgroundColor: AppColors.navy,
+                    extended: extended,
+                    minExtendedWidth: 220,
+                    selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
+                    onDestinationSelected: (i) => context.go(items[i].location),
+                    destinations: [
+                      for (final item in items)
+                        NavigationRailDestination(
+                          icon: Icon(item.icon),
+                          label: Text(item.label),
+                        ),
+                    ],
+                  ),
                 ),
-            ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 20,
+                    horizontal: 12,
+                  ),
+                  child: extended
+                      ? Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundColor: AppColors.amber,
+                              child: Text(
+                                (auth.profile?.fullName.isNotEmpty ?? false)
+                                    ? auth.profile!.fullName[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                auth.profile?.fullName ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Sign out',
+                              icon: const Icon(
+                                Icons.logout,
+                                color: Colors.white70,
+                                size: 20,
+                              ),
+                              onPressed: auth.signOut,
+                            ),
+                          ],
+                        )
+                      : IconButton(
+                          tooltip: 'Sign out',
+                          icon: const Icon(Icons.logout, color: Colors.white70),
+                          onPressed: auth.signOut,
+                        ),
+                ),
+              ],
+            ),
           ),
-          const VerticalDivider(width: 1),
           Expanded(child: child),
         ],
       ),

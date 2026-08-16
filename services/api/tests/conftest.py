@@ -43,6 +43,11 @@ async def fake_staff() -> AsyncGenerator[Staff, None]:
     yield staff
 
     async with async_session_factory() as session:
+        # stock_movements.performed_by is ON DELETE RESTRICT (an audit
+        # trail shouldn't silently lose who did what) -- tests that log a
+        # movement as this staff member would otherwise leave the FK
+        # blocking staff/auth.users cleanup below.
+        await session.execute(text("delete from stock_movements where performed_by = :id"), {"id": staff_id})
         await session.execute(text("delete from staff where id = :id"), {"id": staff_id})
         await session.execute(text("delete from auth.users where id = :id"), {"id": staff_id})
         await session.commit()

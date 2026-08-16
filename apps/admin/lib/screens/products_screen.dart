@@ -1,9 +1,18 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../api_client.dart';
 import '../auth_controller.dart';
+import '../config.dart';
 import '../models.dart';
+import '../theme.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/image_upload_zone.dart';
+import '../widgets/product_image_thumb.dart';
+import '../widgets/status_pill.dart';
 import '../widgets/stock_movement_dialog.dart';
 
 class ProductsScreen extends StatefulWidget {
@@ -15,6 +24,7 @@ class ProductsScreen extends StatefulWidget {
 
 class _ProductsScreenState extends State<ProductsScreen> {
   final _api = ApiClient();
+  final _searchController = TextEditingController();
   List<Product> _products = [];
   List<Category> _categories = [];
   String? _statusFilter;
@@ -34,7 +44,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
     });
     try {
       final results = await Future.wait([
-        _api.listProducts(status: _statusFilter),
+        _api.listProducts(
+          status: _statusFilter,
+          search: _searchController.text.trim(),
+        ),
         _api.listCategories(),
       ]);
       setState(() {
@@ -80,23 +93,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
       appBar: AppBar(
         title: const Text('Products'),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: DropdownButton<String?>(
-              value: _statusFilter,
-              hint: const Text('All statuses'),
-              items: const [
-                DropdownMenuItem(value: null, child: Text('All statuses')),
-                DropdownMenuItem(value: 'draft', child: Text('Draft')),
-                DropdownMenuItem(value: 'active', child: Text('Active')),
-                DropdownMenuItem(value: 'archived', child: Text('Archived')),
-              ],
-              onChanged: (v) {
-                setState(() => _statusFilter = v);
-                _load();
-              },
-            ),
-          ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
           const SizedBox(width: 8),
         ],
@@ -105,30 +101,177 @@ class _ProductsScreenState extends State<ProductsScreen> {
           ? FloatingActionButton.extended(
               onPressed: _openCreateDialog,
               icon: const Icon(Icons.add),
-              label: const Text('Add product'),
+              label: const Text('Add Product'),
             )
           : null,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(child: Text('Error: $_error'))
-          : _products.isEmpty
-          ? const Center(child: Text('No products yet.'))
-          : ListView.separated(
-              itemCount: _products.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final product = _products[index];
-                return ListTile(
-                  title: Text(product.name),
-                  subtitle: Text(
-                    '${_categoryName(product.categoryId)} · \$${product.basePrice.toStringAsFixed(2)}',
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: const InputDecoration(
+                      hintText: 'Search products by name…',
+                      prefixIcon: Icon(Icons.search),
+                      isDense: true,
+                    ),
+                    onSubmitted: (_) => _load(),
                   ),
-                  trailing: Chip(label: Text(product.status)),
-                  onTap: () => _openDetail(product),
-                );
-              },
+                ),
+                const SizedBox(width: 12),
+                DropdownButton<String?>(
+                  value: _statusFilter,
+                  underline: const SizedBox(),
+                  hint: const Text('All statuses'),
+                  items: const [
+                    DropdownMenuItem(value: null, child: Text('All statuses')),
+                    DropdownMenuItem(value: 'draft', child: Text('Draft')),
+                    DropdownMenuItem(value: 'active', child: Text('Active')),
+                    DropdownMenuItem(
+                      value: 'archived',
+                      child: Text('Archived'),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    setState(() => _statusFilter = v);
+                    _load();
+                  },
+                ),
+              ],
             ),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                ? Center(child: Text('Something went wrong: $_error'))
+                : _products.isEmpty
+                ? const EmptyState(
+                    icon: Icons.checkroom_outlined,
+                    title: 'No products yet',
+                    message:
+                        'Tap "Add Product" below to add your first item, with photos.',
+                  )
+                : GridView.builder(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 240,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                          // A fixed pixel height (rather than childAspectRatio)
+                          // keeps the card's text block from being squeezed
+                          // into an overflow at narrower column widths -- with
+                          // a ratio, shrinking the width also shrinks the
+                          // height budget the text has to fit in.
+                          mainAxisExtent: 268,
+                        ),
+                    itemCount: _products.length,
+                    itemBuilder: (context, index) {
+                      final product = _products[index];
+                      return _ProductCard(
+                        product: product,
+                        categoryName: _categoryName(product.categoryId),
+                        onTap: () => _openDetail(product),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProductCard extends StatelessWidget {
+  final Product product;
+  final String categoryName;
+  final VoidCallback onTap;
+
+  const _ProductCard({
+    required this.product,
+    required this.categoryName,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final image = product.primaryImage;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 150,
+              width: double.infinity,
+              child: Container(
+                color: const Color(0xFFEFEBE3),
+                child: image == null
+                    ? const Center(
+                        child: Icon(
+                          Icons.checkroom_outlined,
+                          size: 40,
+                          color: AppColors.inkMuted,
+                        ),
+                      )
+                    : Image.network(
+                        image.publicUrl(AppConfig.supabaseUrl),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stack) => const Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    categoryName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.inkMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '₵${product.basePrice.toStringAsFixed(2)}',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      StatusPill(status: product.status),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -144,18 +287,35 @@ class _ProductFormDialog extends StatefulWidget {
 
 class _ProductFormDialogState extends State<_ProductFormDialog> {
   final _nameController = TextEditingController();
-  final _slugController = TextEditingController();
   final _brandController = TextEditingController();
   final _priceController = TextEditingController();
   String? _categoryId;
   bool _submitting = false;
   String? _error;
 
+  Uint8List? _imageBytes;
+  String? _imageExtension;
+
   String _slugify(String input) => input
       .toLowerCase()
       .trim()
       .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
       .replaceAll(RegExp(r'^-+|-+$'), '');
+
+  Future<void> _pickImage() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+    );
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    setState(() {
+      _imageBytes = bytes;
+      _imageExtension = picked.name.contains('.')
+          ? picked.name.split('.').last.toLowerCase()
+          : 'jpg';
+    });
+  }
 
   Future<void> _submit() async {
     if (_categoryId == null ||
@@ -174,15 +334,30 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
       _error = null;
     });
     try {
-      await widget.api.createProduct(
+      final product = await widget.api.createProduct(
         name: _nameController.text.trim(),
-        slug: _slugController.text.trim().isEmpty
-            ? _slugify(_nameController.text)
-            : _slugController.text.trim(),
+        slug: _slugify(_nameController.text),
         categoryId: _categoryId!,
         basePrice: price,
         brand: _brandController.text.trim(),
       );
+      if (_imageBytes != null) {
+        // The product photo is a nice-to-have on top of the product
+        // itself -- if the upload alone fails (e.g. a network hiccup),
+        // the product it belongs to was still created successfully, so
+        // don't block on it. A photo can always be added afterward from
+        // the product's detail view.
+        try {
+          await widget.api.uploadProductImage(
+            productId: product.id,
+            bytes: _imageBytes!,
+            fileExtension: _imageExtension!,
+            isPrimary: true,
+          );
+        } on ApiException {
+          // Swallowed deliberately -- see comment above.
+        }
+      }
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       setState(() => _error = e.message);
@@ -194,56 +369,144 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Add product'),
+      title: const Text('Add Product'),
       content: SizedBox(
         width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: AppColors.danger),
+                  ),
+                ),
+              const Text(
+                'Photo',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.inkMuted,
+                ),
               ),
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _slugController,
-              decoration: const InputDecoration(
-                labelText: 'Slug (optional, auto-generated)',
+              const SizedBox(height: 6),
+              InkWell(
+                onTap: _pickImage,
+                borderRadius: BorderRadius.circular(14),
+                child: DottedBorderBox(
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 120,
+                    child: _imageBytes == null
+                        ? const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.add_photo_alternate_outlined,
+                                  color: AppColors.inkMuted,
+                                  size: 28,
+                                ),
+                                SizedBox(height: 6),
+                                Text(
+                                  'Tap to add a photo',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.inkMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(13),
+                                child: Image.memory(
+                                  _imageBytes!,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                top: 6,
+                                right: 6,
+                                child: InkWell(
+                                  onTap: () => setState(() {
+                                    _imageBytes = null;
+                                    _imageExtension = null;
+                                  }),
+                                  customBorder: const CircleBorder(),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.55,
+                                      ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 15,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: _categoryId,
-              decoration: const InputDecoration(labelText: 'Category'),
-              items: widget.categories
-                  .map(
-                    (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
-                  )
-                  .toList(),
-              onChanged: (v) => setState(() => _categoryId = v),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _brandController,
-              decoration: const InputDecoration(labelText: 'Brand (optional)'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _priceController,
-              decoration: const InputDecoration(
-                labelText: 'Base price',
-                prefixText: '\$',
+              const SizedBox(height: 16),
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Product name',
+                  hintText: 'e.g. Classic Snapback Cap',
+                ),
+                autofocus: true,
               ),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _categoryId,
+                decoration: const InputDecoration(labelText: 'Category'),
+                items: widget.categories
+                    .map(
+                      (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
+                    )
+                    .toList(),
+                onChanged: (v) => setState(() => _categoryId = v),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: _brandController,
+                decoration: const InputDecoration(
+                  labelText: 'Brand (optional)',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _priceController,
+                decoration: const InputDecoration(
+                  labelText: 'Price',
+                  prefixText: '₵ ',
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'You can add more photos and sizes/colors after creating it.',
+                style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
@@ -284,6 +547,11 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
     if (mounted) setState(() => _full = full);
   }
 
+  void _onGalleryChanged() {
+    _changed = true;
+    _reload();
+  }
+
   Future<void> _addVariant() async {
     final added = await showDialog<bool>(
       context: context,
@@ -319,77 +587,160 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
         context.watch<AuthController>().profile?.canManageInventory ?? false;
     final product = _full;
 
-    return AlertDialog(
-      title: Text(widget.product.name),
-      content: SizedBox(
-        width: 480,
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 640),
         child: product == null
             ? const SizedBox(
-                height: 100,
+                height: 200,
                 child: Center(child: CircularProgressIndicator()),
               )
             : Column(
-                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Status: ${product.status}'),
-                  Text('Base price: \$${product.basePrice.toStringAsFixed(2)}'),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Variants',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      if (canWrite)
-                        TextButton.icon(
-                          onPressed: _addVariant,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add'),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            product.name,
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
                         ),
-                    ],
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.of(context).pop(_changed),
+                        ),
+                      ],
+                    ),
                   ),
-                  if (product.variants.isEmpty) const Text('No variants yet.'),
-                  for (final v in product.variants)
-                    ListTile(
-                      dense: true,
-                      title: Text(
-                        '${v.size}${v.color != null ? ' · ${v.color}' : ''}  (${v.sku})',
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
+                    child: Row(
+                      children: [
+                        StatusPill(status: product.status),
+                        const SizedBox(width: 10),
+                        Text(
+                          '₵${product.basePrice.toStringAsFixed(2)}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Stock: ${v.stockQuantity}',
-                            style: TextStyle(
-                              color: v.isLowStock ? Colors.red : null,
-                              fontWeight: v.isLowStock ? FontWeight.bold : null,
-                            ),
+                            'Photos',
+                            style: Theme.of(context).textTheme.titleSmall,
                           ),
-                          if (canWrite)
-                            IconButton(
-                              icon: const Icon(Icons.tune, size: 18),
-                              tooltip: 'Adjust stock',
-                              onPressed: () => _adjustStock(v),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              for (final image in product.images)
+                                ProductImageThumb(
+                                  image: image,
+                                  api: widget.api,
+                                  onChanged: _onGalleryChanged,
+                                ),
+                              if (canWrite)
+                                ImageUploadZone(
+                                  productId: product.id,
+                                  api: widget.api,
+                                  isFirstImage: product.images.isEmpty,
+                                  onUploaded: _onGalleryChanged,
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Sizes & Colors',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              if (canWrite)
+                                TextButton.icon(
+                                  onPressed: _addVariant,
+                                  icon: const Icon(Icons.add, size: 18),
+                                  label: const Text('Add'),
+                                ),
+                            ],
+                          ),
+                          if (product.variants.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 8),
+                              child: Text(
+                                'No sizes/colors added yet.',
+                                style: TextStyle(color: AppColors.inkMuted),
+                              ),
+                            ),
+                          for (final v in product.variants)
+                            Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                dense: true,
+                                title: Text(
+                                  '${v.size}${v.color != null ? ' · ${v.color}' : ''}  (${v.sku})',
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Stock: ${v.stockQuantity}',
+                                      style: TextStyle(
+                                        color: v.isLowStock
+                                            ? AppColors.danger
+                                            : null,
+                                        fontWeight: v.isLowStock
+                                            ? FontWeight.bold
+                                            : null,
+                                      ),
+                                    ),
+                                    if (canWrite)
+                                      IconButton(
+                                        icon: const Icon(Icons.tune, size: 18),
+                                        tooltip: 'Adjust stock',
+                                        onPressed: () => _adjustStock(v),
+                                      ),
+                                  ],
+                                ),
+                              ),
                             ),
                         ],
+                      ),
+                    ),
+                  ),
+                  if (canWrite && product.status != 'archived')
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _archive,
+                          icon: const Icon(
+                            Icons.archive_outlined,
+                            color: AppColors.danger,
+                          ),
+                          label: const Text(
+                            'Archive Product',
+                            style: TextStyle(color: AppColors.danger),
+                          ),
+                        ),
                       ),
                     ),
                 ],
               ),
       ),
-      actions: [
-        if (canWrite && product?.status != 'archived')
-          TextButton(
-            onPressed: _archive,
-            child: const Text('Archive', style: TextStyle(color: Colors.red)),
-          ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(_changed),
-          child: const Text('Close'),
-        ),
-      ],
     );
   }
 }
@@ -438,23 +789,31 @@ class _VariantFormDialogState extends State<_VariantFormDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Add variant'),
+      title: const Text('Add size/color'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: AppColors.danger),
+              ),
             ),
           TextField(
             controller: _skuController,
-            decoration: const InputDecoration(labelText: 'SKU'),
+            decoration: const InputDecoration(
+              labelText: 'SKU (a unique code for this item)',
+            ),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _sizeController,
-            decoration: const InputDecoration(labelText: 'Size'),
+            decoration: const InputDecoration(
+              labelText: 'Size',
+              hintText: 'e.g. M, L, XL, One Size',
+            ),
           ),
           const SizedBox(height: 8),
           TextField(

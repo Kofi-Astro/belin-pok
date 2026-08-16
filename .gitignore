@@ -30,6 +30,9 @@ apps/admin/web/flutter_service_worker.js
 supabase/.branches
 supabase/.temp
 
+# --- Local reference photos (uploaded to Supabase Storage, not git) ---
+/Pics/
+
 # --- Editors / OS ---
 .DS_Store
 *.swp

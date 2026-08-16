@@ -78,6 +78,33 @@ class ProductVariantRead(ProductVariantBase):
     updated_at: datetime
 
 
+class LowStockVariantRead(ProductVariantRead):
+    product_name: str
+    image_storage_path: str | None
+
+
+# ---------- product images ----------
+
+
+class ProductImageCreate(BaseModel):
+    storage_path: str = Field(min_length=1, max_length=500)
+    variant_id: uuid.UUID | None = None
+    alt_text: str | None = None
+    is_primary: bool = False
+
+
+class ProductImageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    product_id: uuid.UUID
+    variant_id: uuid.UUID | None
+    storage_path: str
+    alt_text: str | None
+    display_order: int
+    is_primary: bool
+
+
 # ---------- products ----------
 
 
@@ -114,6 +141,7 @@ class ProductRead(ProductBase):
     created_by: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
+    images: list[ProductImageRead] = []
 
 
 class ProductWithVariants(ProductRead):

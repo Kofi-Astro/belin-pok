@@ -4,6 +4,9 @@ import 'package:provider/provider.dart';
 import '../api_client.dart';
 import '../auth_controller.dart';
 import '../models.dart';
+import '../theme.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/status_pill.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -102,21 +105,34 @@ class _OrdersScreenState extends State<OrdersScreen> {
           : _error != null
           ? Center(child: Text('Error: $_error'))
           : _orders.isEmpty
-          ? const Center(child: Text('No orders yet.'))
-          : ListView.separated(
+          ? const EmptyState(
+              icon: Icons.receipt_long_outlined,
+              title: 'No orders yet',
+              message: 'Orders placed by customers will show up here.',
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(20),
               itemCount: _orders.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 final order = _orders[index];
-                return ListTile(
-                  title: Text(
-                    '${order.orderNumber} · ${_customerName(order.customerId)}',
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    title: Text(
+                      '${order.orderNumber} · ${_customerName(order.customerId)}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      '${order.orderType} · ₵${order.total.toStringAsFixed(2)} · ${order.items.length} item(s)',
+                      style: const TextStyle(color: AppColors.inkMuted),
+                    ),
+                    trailing: StatusPill(status: order.status),
+                    onTap: () => _openStatusDialog(order),
                   ),
-                  subtitle: Text(
-                    '${order.orderType} · \$${order.total.toStringAsFixed(2)} · ${order.items.length} item(s)',
-                  ),
-                  trailing: Chip(label: Text(order.status)),
-                  onTap: () => _openStatusDialog(order),
                 );
               },
             ),
@@ -170,13 +186,16 @@ class _OrderStatusDialogState extends State<_OrderStatusDialog> {
         children: [
           for (final item in widget.order.items)
             Text(
-              '${item.quantity} × variant ${item.variantId.substring(0, 8)}  —  \$${item.lineTotal.toStringAsFixed(2)}',
+              '${item.quantity} × variant ${item.variantId.substring(0, 8)}  —  ₵${item.lineTotal.toStringAsFixed(2)}',
             ),
           const SizedBox(height: 16),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: AppColors.danger),
+              ),
             ),
           DropdownButtonFormField<String>(
             initialValue: _status,

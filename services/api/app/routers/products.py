@@ -29,7 +29,13 @@ async def list_products(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Product]:
-    stmt = select(Product).order_by(Product.created_at.desc()).limit(limit).offset(offset)
+    stmt = (
+        select(Product)
+        .options(selectinload(Product.images))
+        .order_by(Product.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     if category_id is not None:
         stmt = stmt.where(Product.category_id == category_id)
     if status_filter is not None:
@@ -47,7 +53,11 @@ async def get_product(
     db: AsyncSession = Depends(get_db),
     _staff: Staff = Depends(get_current_staff),
 ) -> Product:
-    stmt = select(Product).where(Product.id == product_id).options(selectinload(Product.variants))
+    stmt = (
+        select(Product)
+        .where(Product.id == product_id)
+        .options(selectinload(Product.variants), selectinload(Product.images))
+    )
     product = await db.scalar(stmt)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
@@ -70,8 +80,12 @@ async def create_product(
             status_code=status.HTTP_409_CONFLICT,
             detail="Product slug already exists, or category_id/primary_supplier_id does not exist",
         ) from exc
-    await db.refresh(product)
-    return product
+    # A plain refresh() (or assigning product.images directly) expires/needs
+    # to inspect the `images` relationship, which triggers a lazy DB load
+    # outside of an active async greenlet context and raises MissingGreenlet.
+    # Re-fetching with explicit eager loading sidesteps that entirely.
+    stmt = select(Product).where(Product.id == product.id).options(selectinload(Product.images))
+    return await db.scalar(stmt)
 
 
 @router.patch("/{product_id}", response_model=ProductRead)
@@ -81,7 +95,8 @@ async def update_product(
     db: AsyncSession = Depends(get_db),
     _staff: Staff = Depends(_write_roles),
 ) -> Product:
-    product = await db.get(Product, product_id)
+    stmt = select(Product).where(Product.id == product_id).options(selectinload(Product.images))
+    product = await db.scalar(stmt)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
@@ -93,5 +108,9 @@ async def update_product(
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Product slug already exists") from exc
-    await db.refresh(product)
-    return product
+    # Re-fetching (rather than refresh()) sidesteps refresh() expiring the
+    # already-eager-loaded `images` relationship -- accessing an expired
+    # relationship triggers a lazy DB load outside of an active async
+    # greenlet context and raises MissingGreenlet.
+    stmt = select(Product).where(Product.id == product_id).options(selectinload(Product.images))
+    return await db.scalar(stmt)

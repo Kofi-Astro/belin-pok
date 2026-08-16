@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../models.dart';
+import '../theme.dart';
+import '../widgets/empty_state.dart';
 
 class StaffScreen extends StatefulWidget {
   const StaffScreen({super.key});
@@ -67,46 +69,74 @@ class _StaffScreenState extends State<StaffScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openInviteDialog,
         icon: const Icon(Icons.person_add),
-        label: const Text('Invite staff'),
+        label: const Text('Invite Staff'),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
           ? Center(child: Text('Error: $_error'))
-          : ListView.separated(
+          : _staff.isEmpty
+          ? const EmptyState(
+              icon: Icons.people_outline,
+              title: 'No staff yet',
+              message:
+                  'Tap "Invite Staff" below to bring someone else onto the team.',
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(20),
               itemCount: _staff.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 final staff = _staff[index];
-                return ListTile(
-                  title: Text(staff.fullName),
-                  subtitle: Text(staff.email),
-                  leading: CircleAvatar(
-                    child: Text(
-                      staff.fullName.isNotEmpty
-                          ? staff.fullName[0].toUpperCase()
-                          : '?',
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
                     ),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      DropdownButton<String>(
-                        value: staff.role,
-                        items: kStaffRoles
-                            .map(
-                              (r) => DropdownMenuItem(value: r, child: Text(r)),
-                            )
-                            .toList(),
-                        onChanged: (v) =>
-                            v == null ? null : _changeRole(staff, v),
+                    title: Text(
+                      staff.fullName,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      staff.email,
+                      style: const TextStyle(color: AppColors.inkMuted),
+                    ),
+                    leading: CircleAvatar(
+                      backgroundColor: AppColors.navy,
+                      child: Text(
+                        staff.fullName.isNotEmpty
+                            ? staff.fullName[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                      const SizedBox(width: 8),
-                      Switch(
-                        value: staff.isActive,
-                        onChanged: (_) => _toggleActive(staff),
-                      ),
-                    ],
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        DropdownButton<String>(
+                          value: staff.role,
+                          underline: const SizedBox(),
+                          items: kStaffRoles
+                              .map(
+                                (r) =>
+                                    DropdownMenuItem(value: r, child: Text(r)),
+                              )
+                              .toList(),
+                          onChanged: (v) =>
+                              v == null ? null : _changeRole(staff, v),
+                        ),
+                        const SizedBox(width: 8),
+                        Switch(
+                          value: staff.isActive,
+                          activeTrackColor: AppColors.amber,
+                          onChanged: (_) => _toggleActive(staff),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -164,7 +194,10 @@ class _InviteStaffDialogState extends State<_InviteStaffDialog> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: AppColors.danger),
+              ),
             ),
           TextField(
             controller: _nameController,

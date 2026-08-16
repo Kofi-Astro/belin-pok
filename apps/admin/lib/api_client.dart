@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -49,6 +50,14 @@ class ApiClient {
       Uri.parse('$_baseUrl$path'),
       headers: _headers,
       body: jsonEncode(body),
+    );
+    return _decode(response);
+  }
+
+  Future<dynamic> _delete(String path) async {
+    final response = await http.delete(
+      Uri.parse('$_baseUrl$path'),
+      headers: _headers,
     );
     return _decode(response);
   }
@@ -147,6 +156,44 @@ class ApiClient {
   Future<void> archiveProduct(String id) =>
       updateProduct(id, {'status': 'archived'});
 
+  // ---------- product images ----------
+  //
+  // The file bytes go straight to Supabase Storage using the signed-in
+  // staff member's own session (respects the storage.objects RLS policies
+  // in supabase/migrations); only the resulting path is registered with
+  // the API, which is what every other admin/tablet actually reads back.
+
+  Future<ProductImage> uploadProductImage({
+    required String productId,
+    required Uint8List bytes,
+    required String fileExtension,
+    bool isPrimary = false,
+  }) async {
+    final path =
+        'products/$productId/${DateTime.now().microsecondsSinceEpoch}.$fileExtension';
+    await Supabase.instance.client.storage
+        .from('product-images')
+        .uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(upsert: false),
+        );
+
+    return ProductImage.fromJson(
+      await _post('/products/$productId/images', {
+            'storage_path': path,
+            'is_primary': isPrimary,
+          })
+          as Map<String, dynamic>,
+    );
+  }
+
+  Future<void> setPrimaryImage(String imageId) =>
+      _patch('/images/$imageId', {});
+
+  Future<void> deleteProductImage(String imageId) =>
+      _delete('/images/$imageId');
+
   // ---------- variants ----------
 
   Future<ProductVariant> createVariant(
@@ -165,9 +212,9 @@ class ApiClient {
         as Map<String, dynamic>,
   );
 
-  Future<List<ProductVariant>> lowStockVariants() async =>
+  Future<List<LowStockVariant>> lowStockVariants() async =>
       (await _get('/variants/low-stock') as List)
-          .map((e) => ProductVariant.fromJson(e as Map<String, dynamic>))
+          .map((e) => LowStockVariant.fromJson(e as Map<String, dynamic>))
           .toList();
 
   // ---------- stock movements ----------

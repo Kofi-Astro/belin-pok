@@ -113,13 +113,20 @@ Staff invitations (`POST /staff/invite`) call the Supabase Auth admin API
 using `SUPABASE_SECRET_KEY` — that's the only place the backend uses it;
 everything else goes through `DATABASE_URL`.
 
-## Admin app: Flutter Web (`apps/admin/`)
+## Admin app: Flutter (`apps/admin/`)
+
+One codebase, every platform Flutter supports -- Web (the deployed target
+for now), plus Android, iOS, macOS, Windows, and Linux for local use on a
+phone/tablet at the shop counter or testing on a dev machine. `flutter
+devices` lists what's available to run on.
 
 ```bash
 cd apps/admin
 flutter pub get
 
-flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000
+flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000   # web
+flutter run -d macos --dart-define=API_BASE_URL=http://localhost:8000    # macOS
+flutter run -d <device-id> --dart-define=API_BASE_URL=http://localhost:8000  # a connected phone/simulator
 ```
 
 `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` are baked into
@@ -127,6 +134,12 @@ flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000
 "publishable" means, access is still governed by RLS). Override any of the
 three with `--dart-define=KEY=value` if you need to point at a different
 Supabase project or API host.
+
+Only the Web build is wired up for deployment (Cloudflare, see below) --
+Android/iOS need signing + app store setup and Windows/Linux desktop can
+only be built on their own OS (Flutter doesn't cross-compile desktop
+targets), so those stay local-only builds until/unless that's worth setting
+up.
 
 To sign in, a Supabase Auth user needs a matching row in the `staff` table
 (role `owner` to see everything, including the Staff screen). Create the

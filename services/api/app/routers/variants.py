@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db import get_db
 from app.deps import get_current_staff, require_role
 from app.models import Product, ProductVariant, StaffRole
-from app.schemas import ProductVariantCreate, ProductVariantRead, ProductVariantUpdate
+from app.schemas import LowStockVariantRead, ProductVariantCreate, ProductVariantRead, ProductVariantUpdate
 
 router = APIRouter(tags=["variants"])
 
@@ -88,15 +89,29 @@ async def update_variant(
 
 @router.get(
     "/variants/low-stock",
-    response_model=list[ProductVariantRead],
+    response_model=list[LowStockVariantRead],
     dependencies=[Depends(get_current_staff)],
 )
-async def low_stock_variants(db: AsyncSession = Depends(get_db)) -> list[ProductVariant]:
+async def low_stock_variants(db: AsyncSession = Depends(get_db)) -> list[LowStockVariantRead]:
+    # Non-technical staff recognize a product by name/photo, not SKU --
+    # this joins back to the product (and its images) so the inventory
+    # screen can show both instead of a bare SKU.
     stmt = (
         select(ProductVariant)
         .where(ProductVariant.is_active.is_(True))
         .where(ProductVariant.stock_quantity <= ProductVariant.low_stock_threshold)
+        .options(selectinload(ProductVariant.product).selectinload(Product.images))
         .order_by(ProductVariant.stock_quantity)
     )
     result = await db.scalars(stmt)
-    return list(result)
+    return [
+        LowStockVariantRead(
+            **ProductVariantRead.model_validate(variant).model_dump(),
+            product_name=variant.product.name,
+            image_storage_path=next(
+                (img.storage_path for img in variant.product.images if img.is_primary),
+                variant.product.images[0].storage_path if variant.product.images else None,
+            ),
+        )
+        for variant in result
+    ]
