@@ -6,32 +6,41 @@ boxers, socks, and similar items.
 
 This repo is being built in phases:
 
-- **Phase 1 (current)** — foundations, inventory, and the admin/management
-  dashboard. No public storefront, no mobile app, no payments yet.
-- Phase 2+ — public storefront, wholesale ordering, payments, mobile app.
-  The schema and API are deliberately left open enough to add these without
-  a rewrite (e.g. `customers`, `orders`, and `order_items` already support
+- **Phase 1** — foundations, inventory, and the admin/management dashboard.
+  No public storefront, no mobile app, no payments yet.
+- **Phase 2 (current)** — the public storefront (`apps/storefront/`): guest
+  checkout (no account needed), retail customer accounts, product
+  browsing/search, cart, and order placement. Still no payment step —
+  orders land as `status='pending'` ("pending payment"); Paystack
+  integration is a later phase. No wholesale ordering flow yet either —
+  wholesale accounts are still approved/managed by staff in the admin app.
+- Phase 3+ — wholesale self-serve ordering, payments, mobile app. The
+  schema and API are deliberately left open enough to add these without a
+  rewrite (e.g. `customers`, `orders`, and `order_items` already support
   both retail and wholesale, `customers.status` already models a
   pending/approved/rejected wholesale approval workflow, etc.).
 
 ## Tech stack
 
-| Layer                      | Choice                                                          |
-| -------------------------- | ---------------------------------------------------------------- |
-| Backend API                | Python + FastAPI                                                 |
-| Database / Auth / Storage  | Supabase (Postgres + Row Level Security + Auth + file storage)  |
-| Admin frontend              | Flutter, compiled to Flutter Web for this phase                  |
-| API hosting                | Railway                                                           |
-| Web hosting                | Cloudflare Pages (`belpok.xyz`)                                  |
-| Source control / CI        | GitHub + GitHub Actions                                          |
+| Layer                     | Choice                                                                                                                |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Backend API               | Python + FastAPI                                                                                                        |
+| Database / Auth / Storage | Supabase (Postgres + Row Level Security + Auth + file storage)                                                          |
+| Admin frontend             | Flutter, compiled to Flutter Web for this phase                                                                         |
+| Storefront frontend        | Flutter, compiled to Flutter Web for this phase                                                                         |
+| API hosting                | Railway                                                                                                                  |
+| Web hosting                | Cloudflare Pages — two separate projects, one per app (`belpok.xyz` for the storefront, `admin.belpok.xyz` for admin) |
+| Source control / CI       | GitHub + GitHub Actions                                                                                                  |
 
 ## Repo layout
 
 ```text
-apps/admin/        Flutter Web admin dashboard
-services/api/       FastAPI backend
-supabase/           SQL migrations, RLS policies, seed data
-.github/workflows/  CI/CD
+apps/admin/          Flutter Web admin dashboard
+apps/storefront/      Flutter Web public storefront
+packages/belpok_core/ Shared Dart package: models, API client base, theme
+services/api/         FastAPI backend
+supabase/             SQL migrations, RLS policies, seed data
+.github/workflows/    CI/CD
 ```
 
 ## Prerequisites
@@ -154,6 +163,40 @@ insert into public.staff (id, email, full_name, role)
 values ('<their auth.users id>', 'owner@example.com', 'Their Name', 'owner');
 ```
 
+## Storefront app: Flutter (`apps/storefront/`)
+
+The public storefront -- browsing, cart, guest/signed-in checkout, order
+history. Same multi-platform Flutter setup as the admin app (Web is the
+deployed target); unlike admin, most of it works with no sign-in at all --
+only the account/order-history screen requires one.
+
+```bash
+cd apps/storefront
+flutter pub get
+
+flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000   # web
+```
+
+Same `--dart-define` overrides as the admin app (`SUPABASE_URL`,
+`SUPABASE_PUBLISHABLE_KEY`, `API_BASE_URL`) -- same Supabase project, just a
+`customers` row instead of a `staff` one once someone signs up.
+
+## Shared Dart package: `packages/belpok_core/`
+
+Both Flutter apps depend on this via a local path dependency
+(`path: ../../packages/belpok_core` in each `pubspec.yaml`) for the pieces
+they genuinely share: the `Category`/`Product`/`ProductVariant`/
+`ProductImage`/`Order`/`OrderItem`/`Address` models (they mirror
+`services/api/app/schemas.py` response shapes 1:1), the API client's HTTP/
+error-decoding plumbing (`ApiHttp`, `ApiException`), and the brand theme
+(`AppColors`, `buildAppTheme()`) -- same brand, same products, just a
+dashboard vs. a storefront layout around it. Not published anywhere; it
+only ever needs to resolve inside this repo.
+
+Nothing here issues its own top-level `flutter run`/`build` -- change it,
+then `flutter pub get` in whichever app(s) you're testing to pick up the
+change (a path dependency, so no version bump/publish step needed).
+
 ## Environment variables
 
 Secrets are never committed. Each service has its own `.env.example`
@@ -164,11 +207,20 @@ Deployment below), not files in the repo.
 
 ## Deployment
 
-Both apps deploy via their platforms' native GitHub integration (already
-linked), not GitHub Actions — `.github/workflows/api.yml` and `admin.yml`
-only lint/test on PRs, so bad code doesn't land on `main`, but neither one
-deploys anything. That avoids a second, conflicting deploy path fighting
-the native integration.
+All three deploy via their platforms' native GitHub integration, not
+GitHub Actions — `.github/workflows/api.yml`, `admin.yml`, and
+`storefront.yml` only lint/test on PRs, so bad code doesn't land on
+`main`, but none of them deploy anything. That avoids a second,
+conflicting deploy path fighting each native integration.
+
+Domain layout: the storefront is the bare/`www` domain, admin is a
+subdomain, API is a subdomain:
+
+| Domain | Serves |
+| --- | --- |
+| `belpok.xyz`, `www.belpok.xyz` | `apps/storefront/` (Cloudflare Pages) |
+| `admin.belpok.xyz` | `apps/admin/` (Cloudflare Pages, a **separate** project from the storefront's) |
+| `api.belpok.xyz` | `services/api/` (Railway) |
 
 - `services/api/` deploys via **Railway's native GitHub integration**. In
   the Railway service's settings, set:
@@ -179,9 +231,11 @@ the native integration.
 
   Railway auto-detects the Python app from there (`requirements.txt`,
   `Procfile`/`railway.json` for the start command and health check path).
-  Set `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_SECRET_KEY` as
-  environment variables in that service's settings (same values as your
-  local `.env` — see `services/api/.env.example`).
+  Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and
+  `CORS_ORIGINS` (`https://belpok.xyz,https://www.belpok.xyz,https://admin.belpok.xyz`)
+  as environment variables in that service's settings (same values as your
+  local `.env` — see `services/api/.env.example`). Point `api.belpok.xyz`
+  at this service as a custom domain from the Railway dashboard.
 
 - `apps/admin/` deploys via **Cloudflare's native GitHub integration**
   (Workers Builds — the project's Deploy command is `npx wrangler deploy`,
@@ -189,9 +243,9 @@ the native integration.
   `build/web`). Flutter isn't auto-detected, so without a **Build command**
   set, nothing ever compiles the app — `wrangler deploy` just ships
   whatever static files it finds, which without a prior build means the
-  raw, unbuilt `web/` template (this is exactly what caused the "blank
-  scaffold": no `main.dart.js` was ever generated). In the project's
-  settings, set:
+  raw, unbuilt `web/` template (this is exactly what caused the earlier
+  "blank scaffold": no `main.dart.js` was ever generated). In the
+  project's settings, set:
 
   | Setting | Value |
   | --- | --- |
@@ -200,13 +254,29 @@ the native integration.
   | Deploy command | `npx wrangler deploy` (default — leave as-is) |
 
   Also add an `API_BASE_URL` environment variable in that project's
-  settings, set to the deployed Railway API URL (e.g.
-  `https://belin-pok-api.up.railway.app`) — the build command above reads
-  it. Then point `belpok.xyz` at this Worker as a custom domain from the
-  Cloudflare dashboard — right now `belpok.xyz` (the bare domain) actually
-  resolves to the Railway API instead, so `www.belpok.xyz` or a subdomain
-  needs to be the one pointed here, with the API on something like
-  `api.belpok.xyz`.
+  settings, set to `https://api.belpok.xyz` (or the raw Railway URL if
+  `api.belpok.xyz` isn't wired up yet) — the build command above reads it.
+  **Manual step, since this moves an already-live domain:** in the
+  Cloudflare dashboard, change this project's custom domain from wherever
+  `belpok.xyz` currently points it to `admin.belpok.xyz` instead — the
+  bare domain now belongs to the storefront project below.
+
+- `apps/storefront/` deploys the same way, as its **own, separate**
+  Cloudflare Pages project (do not reuse the admin app's project — see
+  `apps/storefront/wrangler.jsonc` for why the Worker name must differ).
+  In that project's settings, set:
+
+  | Setting | Value |
+  | --- | --- |
+  | Root directory | `apps/storefront` |
+  | Build command | `git clone https://github.com/flutter/flutter.git --depth 1 -b stable _flutter && export PATH="$PATH:$(pwd)/_flutter/bin" && flutter config --enable-web && flutter pub get && flutter build web --release --dart-define=API_BASE_URL=$API_BASE_URL` |
+  | Deploy command | `npx wrangler deploy` (default — leave as-is) |
+
+  Same `API_BASE_URL` environment variable as admin's, set to
+  `https://api.belpok.xyz`. Point both `belpok.xyz` (bare/apex) and
+  `www.belpok.xyz` at this Worker as custom domains from the Cloudflare
+  dashboard.
+
 - Schema changes are **not** auto-deployed — run `supabase db push`
   yourself after a migration lands on `main`. Nothing here runs migrations
   against the real database unattended.

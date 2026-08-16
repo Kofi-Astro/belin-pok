@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - "apps/admin/**"
+      - "packages/belpok_core/**"
       - ".github/workflows/admin.yml"
 
 jobs:
