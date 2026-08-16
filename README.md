@@ -167,21 +167,30 @@ the native integration.
   environment variables in that service's settings (same values as your
   local `.env` — see `services/api/.env.example`).
 
-- `apps/admin/` deploys via **Cloudflare Pages' native GitHub
-  integration**. Flutter isn't one of Pages' auto-detected frameworks, so
-  in the Cloudflare Pages project's build settings, set:
+- `apps/admin/` deploys via **Cloudflare's native GitHub integration**
+  (Workers Builds — the project's Deploy command is `npx wrangler deploy`,
+  driven by `apps/admin/wrangler.jsonc`, which pins the assets directory to
+  `build/web`). Flutter isn't auto-detected, so without a **Build command**
+  set, nothing ever compiles the app — `wrangler deploy` just ships
+  whatever static files it finds, which without a prior build means the
+  raw, unbuilt `web/` template (this is exactly what caused the "blank
+  scaffold": no `main.dart.js` was ever generated). In the project's
+  settings, set:
 
   | Setting | Value |
   | --- | --- |
-  | Root directory (Advanced) | `apps/admin` |
+  | Root directory | `apps/admin` |
   | Build command | `git clone https://github.com/flutter/flutter.git --depth 1 -b stable _flutter && export PATH="$PATH:$(pwd)/_flutter/bin" && flutter config --enable-web && flutter pub get && flutter build web --release --dart-define=API_BASE_URL=$API_BASE_URL` |
-  | Build output directory | `build/web` |
+  | Deploy command | `npx wrangler deploy` (default — leave as-is) |
 
   Also add an `API_BASE_URL` environment variable in that project's
-  Settings → Environment variables, set to the deployed Railway API URL
-  (e.g. `https://belin-pok-api.up.railway.app`) — the build command above
-  reads it. Then point `belpok.xyz` at the Pages project as a custom
-  domain, also from the Cloudflare dashboard.
+  settings, set to the deployed Railway API URL (e.g.
+  `https://belin-pok-api.up.railway.app`) — the build command above reads
+  it. Then point `belpok.xyz` at this Worker as a custom domain from the
+  Cloudflare dashboard — right now `belpok.xyz` (the bare domain) actually
+  resolves to the Railway API instead, so `www.belpok.xyz` or a subdomain
+  needs to be the one pointed here, with the API on something like
+  `api.belpok.xyz`.
 - Schema changes are **not** auto-deployed — run `supabase db push`
   yourself after a migration lands on `main`. Nothing here runs migrations
   against the real database unattended.

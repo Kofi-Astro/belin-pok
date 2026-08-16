@@ -1,0 +1,15 @@
+{
+  // Without this file, `wrangler deploy` (the dashboard's default Deploy
+  // command) auto-detects an assets directory by guessing from folder
+  // names -- it picked "web" (the unbuilt Flutter source template) since
+  // that's what it found, not "build/web" (the actual compiled output),
+  // because nothing had told it the difference. This pins it explicitly.
+  // Keep this name matching whatever Worker is already deployed/wired to
+  // your custom domain -- renaming it here would deploy a *second*,
+  // differently-named Worker instead of updating the existing one.
+  "name": "belin-pok",
+  "compatibility_date": "2026-08-16",
+  "assets": {
+    "directory": "build/web"
+  }
+}
