@@ -9,6 +9,7 @@ from app.routers import (
     orders,
     product_images,
     products,
+    public,
     staff,
     stock_movements,
     variants,
@@ -31,6 +32,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(public.router)
 app.include_router(categories.router)
 app.include_router(products.router)
 app.include_router(product_images.router)

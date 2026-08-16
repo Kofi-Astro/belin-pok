@@ -46,3 +46,15 @@ async def get_current_auth_user(
         )
     payload = decode_supabase_jwt(credentials.credentials)
     return payload
+
+
+async def get_optional_auth_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> dict[str, Any] | None:
+    """Same as get_current_auth_user, but returns None instead of 401 when
+    no bearer token is present. Used by routes reachable both by guests
+    and signed-in customers (e.g. checkout), where "no token" is a valid
+    request, not an auth failure."""
+    if credentials is None:
+        return None
+    return decode_supabase_jwt(credentials.credentials)

@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     CheckConstraint,
+    FetchedValue,
     ForeignKey,
     Numeric,
     UniqueConstraint,
@@ -187,7 +188,10 @@ class StockMovement(Base):
     reason: Mapped[str | None]
     reference_type: Mapped[str | None]
     reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    performed_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
+    # Nullable: a storefront checkout's 'sale' movements have no staff
+    # member behind them (see supabase/migrations). reference_type/
+    # reference_id carry the traceability in that case instead.
+    performed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -235,7 +239,13 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    order_number: Mapped[str] = mapped_column(unique=True)
+    # order_number's actual default (ORD-YYYYMMDD-NNNNN from a sequence) is
+    # a DB-side DEFAULT expression, not something this model replicates in
+    # Python -- server_default=FetchedValue() tells SQLAlchemy a server
+    # default exists without saying what it is, so it omits the column
+    # from INSERTs (letting Postgres apply it) instead of sending an
+    # explicit NULL, which no order-creating route hit until checkout.
+    order_number: Mapped[str] = mapped_column(unique=True, server_default=FetchedValue())
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id", ondelete="RESTRICT"))
     order_type: Mapped[OrderType] = mapped_column(_pg_enum(OrderType, "order_type"), default=OrderType.retail)
     status: Mapped[OrderStatus] = mapped_column(_pg_enum(OrderStatus, "order_status"), default=OrderStatus.pending)
@@ -262,7 +272,12 @@ class OrderItem(Base):
     variant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("product_variants.id", ondelete="RESTRICT"))
     quantity: Mapped[int]
     unit_price: Mapped[float] = mapped_column(Numeric(10, 2))
-    line_total: Mapped[float] = mapped_column(Numeric(10, 2))
+    # `generated always as (quantity * unit_price) stored` in the
+    # migration -- Postgres computes this and rejects any explicit value
+    # (NULL included), so this needs the same FetchedValue() treatment as
+    # Order.order_number above, for the same reason: no route constructed
+    # an OrderItem via the ORM until checkout, so this never got exercised.
+    line_total: Mapped[float] = mapped_column(Numeric(10, 2), server_default=FetchedValue())
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     order: Mapped["Order"] = relationship(back_populates="items")

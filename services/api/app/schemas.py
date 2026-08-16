@@ -177,7 +177,7 @@ class StockMovementRead(BaseModel):
     reason: str | None
     reference_type: str | None
     reference_id: uuid.UUID | None
-    performed_by: uuid.UUID
+    performed_by: uuid.UUID | None
     created_at: datetime
 
 
@@ -247,6 +247,48 @@ class CustomerRead(CustomerBase):
     updated_at: datetime
 
 
+class CustomerRegister(BaseModel):
+    """Storefront self-registration. Distinct from CustomerCreate (which
+    POST /customers, a staff-only endpoint, uses): email comes from the
+    caller's own verified Supabase Auth token rather than a body field (so
+    a customer can't register using someone else's email), and there's no
+    way to pick customer_type or status -- self-registration is always
+    customer_type='retail', status='approved'. Wholesale signup isn't part
+    of this phase; wholesale accounts are still staff-created via
+    POST /customers.
+    """
+
+    full_name: str = Field(min_length=1, max_length=200)
+    phone: str | None = None
+
+
+# ---------- addresses ----------
+
+
+class AddressBase(BaseModel):
+    label: str = Field(default="Shipping", min_length=1, max_length=100)
+    line1: str = Field(min_length=1, max_length=300)
+    line2: str | None = None
+    city: str = Field(min_length=1, max_length=200)
+    state: str | None = None
+    postal_code: str | None = None
+    country: str = Field(min_length=1, max_length=100)
+    is_default: bool = False
+
+
+class AddressCreate(AddressBase):
+    pass
+
+
+class AddressRead(AddressBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    customer_id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+
 # ---------- orders ----------
 
 
@@ -285,3 +327,26 @@ class OrderWithItems(OrderRead):
 class OrderStatusUpdate(BaseModel):
     status: OrderStatus
     note: str | None = None
+
+
+class CheckoutItem(BaseModel):
+    variant_id: uuid.UUID
+    quantity: int = Field(gt=0)
+
+
+class CheckoutCreate(BaseModel):
+    items: list[CheckoutItem] = Field(min_length=1)
+
+    # Guest-only: ignored for a signed-in customer, who already has a
+    # full_name/email on their `customers` row. Required if the request
+    # carries no bearer token.
+    guest_full_name: str | None = Field(default=None, min_length=1, max_length=200)
+    guest_email: str | None = Field(default=None, min_length=3, max_length=320)
+    guest_phone: str | None = None
+
+    # Shipping address: either an existing saved address (signed-in
+    # customers only -- must belong to them) or a new one to create.
+    address_id: uuid.UUID | None = None
+    address: AddressCreate | None = None
+
+    notes: str | None = None
