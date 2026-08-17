@@ -20,4 +20,12 @@ class AppConfig {
     'API_BASE_URL',
     defaultValue: 'http://localhost:8000',
   );
+
+  /// Where this app is actually hosted. Passed back to Supabase as the
+  /// `redirectTo` for password-reset emails, so the link lands here
+  /// instead of Supabase's default (localhost) Site URL.
+  static const appUrl = String.fromEnvironment(
+    'APP_URL',
+    defaultValue: 'https://admin.belpok.xyz',
+  );
 }

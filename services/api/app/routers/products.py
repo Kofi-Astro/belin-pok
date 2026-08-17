@@ -114,3 +114,37 @@ async def update_product(
     # greenlet context and raises MissingGreenlet.
     stmt = select(Product).where(Product.id == product_id).options(selectinload(Product.images))
     return await db.scalar(stmt)
+
+
+@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_product(
+    product_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _staff: Staff = Depends(_write_roles),
+) -> None:
+    """A real delete, not just archiving -- but only actually possible for
+    a product nothing has ever referenced. Every variant's stock_movements
+    and order_items rows are ON DELETE RESTRICT (see supabase/migrations),
+    so the moment a product has any sales/stock history this fails with an
+    IntegrityError instead of silently destroying that history; archiving
+    (PATCH status='archived') is what discontinuing an actually-sold
+    product should use instead.
+    """
+    stmt = (
+        select(Product)
+        .where(Product.id == product_id)
+        .options(selectinload(Product.variants), selectinload(Product.images))
+    )
+    product = await db.scalar(stmt)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    await db.delete(product)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This product has order or stock history and can't be deleted -- archive it instead.",
+        ) from exc

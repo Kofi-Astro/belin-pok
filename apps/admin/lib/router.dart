@@ -5,6 +5,7 @@ import 'screens/inventory_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/orders_screen.dart';
 import 'screens/products_screen.dart';
+import 'screens/set_password_screen.dart';
 import 'screens/shell_screen.dart';
 import 'screens/staff_screen.dart';
 
@@ -14,14 +15,22 @@ GoRouter buildRouter(AuthController auth) {
     refreshListenable: auth,
     redirect: (context, state) {
       final loggingIn = state.matchedLocation == '/login';
+      final settingPassword = state.matchedLocation == '/set-password';
       if (auth.status != AuthStatus.signedIn) {
         return loggingIn ? null : '/login';
       }
-      if (loggingIn) return '/products';
+      if (auth.passwordRecovery) {
+        return settingPassword ? null : '/set-password';
+      }
+      if (loggingIn || settingPassword) return '/products';
       return null;
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      GoRoute(
+        path: '/set-password',
+        builder: (context, state) => const SetPasswordScreen(),
+      ),
       ShellRoute(
         builder: (context, state, child) =>
             AppShell(location: state.matchedLocation, child: child),

@@ -11,6 +11,7 @@ from app.routers import (
     product_images,
     products,
     public,
+    reports,
     staff,
     stock_movements,
     variants,
@@ -43,3 +44,4 @@ app.include_router(staff.router)
 app.include_router(customers.router)
 app.include_router(orders.router)
 app.include_router(device_tokens.router)
+app.include_router(reports.router)

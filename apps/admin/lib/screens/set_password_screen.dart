@@ -3,34 +3,45 @@ import 'package:provider/provider.dart';
 
 import '../auth_controller.dart';
 import '../theme.dart';
-import '../widgets/forgot_password_dialog.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+/// Shown instead of the dashboard right after a password-reset link is
+/// redeemed -- the router forces this route whenever
+/// `AuthController.passwordRecovery` is true, so nobody lands in the
+/// product list still needing to pick a real password.
+class SetPasswordScreen extends StatefulWidget {
+  const SetPasswordScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<SetPasswordScreen> createState() => _SetPasswordScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+class _SetPasswordScreenState extends State<SetPasswordScreen> {
+  final _newController = TextEditingController();
+  final _confirmController = TextEditingController();
   bool _submitting = false;
+  String? _error;
 
   Future<void> _submit(AuthController auth) async {
-    setState(() => _submitting = true);
-    await auth.signIn(_emailController.text.trim(), _passwordController.text);
-    if (mounted) setState(() => _submitting = false);
-  }
+    final newPassword = _newController.text;
+    if (newPassword.length < 6) {
+      setState(() => _error = 'Password must be at least 6 characters');
+      return;
+    }
+    if (newPassword != _confirmController.text) {
+      setState(() => _error = "Passwords don't match");
+      return;
+    }
 
-  void _forgotPassword(AuthController auth) {
-    showDialog(
-      context: context,
-      builder: (_) => ForgotPasswordDialog(
-        auth: auth,
-        initialEmail: _emailController.text.trim(),
-      ),
-    );
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    final error = await auth.changePassword(newPassword);
+    if (!mounted) return;
+    setState(() {
+      _submitting = false;
+      _error = error;
+    });
   }
 
   @override
@@ -57,66 +68,52 @@ class _LoginScreenState extends State<LoginScreen> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: const Icon(
-                      Icons.storefront,
+                      Icons.key_outlined,
                       color: Colors.white,
                       size: 30,
                     ),
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'Belin-Pok Enterprise',
+                    'Set a new password',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Sign in to the admin dashboard',
+                    "You're almost in -- just pick a password.",
                     style: TextStyle(color: AppColors.inkMuted),
                   ),
                   const SizedBox(height: 28),
-                  if (auth.status == AuthStatus.notStaff)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 16),
-                      child: Text(
-                        "This account isn't set up as staff yet. Ask an owner to invite you.",
-                        style: TextStyle(color: AppColors.danger),
-                      ),
-                    ),
-                  if (auth.error != null)
+                  if (_error != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
                       child: Text(
-                        auth.error!,
+                        _error!,
                         style: const TextStyle(color: AppColors.danger),
                       ),
                     ),
                   TextField(
-                    controller: _emailController,
+                    controller: _newController,
+                    autofocus: true,
                     decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.mail_outline),
+                      labelText: 'New password',
+                      prefixIcon: Icon(Icons.lock_outline),
                     ),
-                    keyboardType: TextInputType.emailAddress,
+                    obscureText: true,
                   ),
                   const SizedBox(height: 14),
                   TextField(
-                    controller: _passwordController,
+                    controller: _confirmController,
                     decoration: const InputDecoration(
-                      labelText: 'Password',
+                      labelText: 'Confirm new password',
                       prefixIcon: Icon(Icons.lock_outline),
                     ),
                     obscureText: true,
                     onSubmitted: (_) => _submitting ? null : _submit(auth),
                   ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () => _forgotPassword(auth),
-                      child: const Text('Forgot password?'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 24),
                   FilledButton(
                     onPressed: _submitting ? null : () => _submit(auth),
                     child: _submitting
@@ -128,7 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               color: Colors.white,
                             ),
                           )
-                        : const Text('Sign In'),
+                        : const Text('Save password'),
                   ),
                 ],
               ),
@@ -137,5 +134,12 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _newController.dispose();
+    _confirmController.dispose();
+    super.dispose();
   }
 }

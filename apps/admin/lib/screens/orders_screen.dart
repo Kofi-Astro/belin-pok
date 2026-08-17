@@ -19,6 +19,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   final _api = ApiClient();
   List<Order> _orders = [];
   List<Customer> _customers = [];
+  List<Order> _needsAttention = [];
   String? _statusFilter;
   bool _loading = true;
   String? _error;
@@ -38,10 +39,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
       final results = await Future.wait([
         _api.listOrders(status: _statusFilter),
         _api.listCustomers(),
+        _api.ordersNeedingAttention(),
       ]);
       setState(() {
         _orders = results[0] as List<Order>;
         _customers = results[1] as List<Customer>;
+        _needsAttention = results[2] as List<Order>;
       });
     } on ApiException catch (e) {
       setState(() => _error = e.message);
@@ -104,38 +107,69 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
           ? Center(child: Text('Error: $_error'))
-          : _orders.isEmpty
+          : _orders.isEmpty && _needsAttention.isEmpty
           ? const EmptyState(
               icon: Icons.receipt_long_outlined,
               title: 'No orders yet',
               message: 'Orders placed by customers will show up here.',
             )
-          : ListView.builder(
+          : ListView(
               padding: const EdgeInsets.all(20),
-              itemCount: _orders.length,
-              itemBuilder: (context, index) {
-                final order = _orders[index];
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 6,
-                    ),
-                    title: Text(
-                      '${order.orderNumber} · ${_customerName(order.customerId)}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      '${order.orderType} · ₵${order.total.toStringAsFixed(2)} · ${order.items.length} item(s)',
-                      style: const TextStyle(color: AppColors.inkMuted),
-                    ),
-                    trailing: StatusPill(status: order.status),
-                    onTap: () => _openStatusDialog(order),
+              children: [
+                if (_needsAttention.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: AppColors.danger,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Needs Attention (${_needsAttention.length})',
+                        style: Theme.of(context).textTheme.titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ],
                   ),
-                );
-              },
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4, bottom: 12),
+                    child: Text(
+                      "Ordered online but there's no longer enough in "
+                      'stock to cover it -- probably a walk-in sale that '
+                      "wasn't logged. Check the shelf before promising it.",
+                      style: TextStyle(color: AppColors.inkMuted, fontSize: 12),
+                    ),
+                  ),
+                  for (final order in _needsAttention)
+                    _orderCard(order, highlighted: true),
+                  const SizedBox(height: 24),
+                ],
+                for (final order in _orders) _orderCard(order),
+              ],
             ),
+    );
+  }
+
+  Widget _orderCard(Order order, {bool highlighted = false}) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      color: highlighted ? AppColors.danger.withValues(alpha: 0.08) : null,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 6,
+        ),
+        title: Text(
+          '${order.orderNumber} · ${_customerName(order.customerId)}',
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: Text(
+          '${order.orderType} · ₵${order.total.toStringAsFixed(2)} · ${order.items.length} item(s)',
+          style: const TextStyle(color: AppColors.inkMuted),
+        ),
+        trailing: StatusPill(status: order.status),
+        onTap: () => _openStatusDialog(order),
+      ),
     );
   }
 }

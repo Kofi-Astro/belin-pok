@@ -113,6 +113,8 @@ class ApiClient {
   Future<void> activateProduct(String id) =>
       updateProduct(id, {'status': 'active'});
 
+  Future<void> deleteProduct(String id) => _delete('/products/$id');
+
   // ---------- product images ----------
   //
   // The file bytes go straight to Supabase Storage using the signed-in
@@ -153,15 +155,15 @@ class ApiClient {
 
   // ---------- variants ----------
 
+  // SKU is deliberately not a parameter here -- the backend generates one
+  // from the product + size + color so nobody has to invent a unique code.
   Future<ProductVariant> createVariant(
     String productId, {
-    required String sku,
     required String size,
     String? color,
     double? priceOverride,
   }) async => ProductVariant.fromJson(
     await _post('/products/$productId/variants', {
-          'sku': sku,
           'size': size,
           if (color != null && color.isNotEmpty) 'color': color,
           if (priceOverride != null) 'price_override': priceOverride,
@@ -198,10 +200,22 @@ class ApiClient {
           .map((e) => StockMovement.fromJson(e as Map<String, dynamic>))
           .toList();
 
+  // ---------- reports ----------
+
+  Future<List<DailySales>> dailySales({int days = 30}) async =>
+      (await _get('/reports/daily-sales', {'days': '$days'}) as List)
+          .map((e) => DailySales.fromJson(e as Map<String, dynamic>))
+          .toList();
+
   // ---------- orders ----------
 
   Future<List<Order>> listOrders({String? status}) async =>
       (await _get('/orders', {if (status != null) 'status': status}) as List)
+          .map((e) => Order.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+  Future<List<Order>> ordersNeedingAttention() async =>
+      (await _get('/orders/needs-attention') as List)
           .map((e) => Order.fromJson(e as Map<String, dynamic>))
           .toList();
 

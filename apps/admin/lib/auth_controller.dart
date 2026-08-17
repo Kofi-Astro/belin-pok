@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'api_client.dart';
+import 'config.dart';
 import 'models.dart';
 
 enum AuthStatus { unknown, signedOut, signedIn, notStaff }
@@ -17,10 +18,18 @@ class AuthController extends ChangeNotifier {
   StaffProfile? profile;
   String? error;
 
+  /// True once a password-recovery link has been redeemed and until the
+  /// user picks a new password -- the router uses this to force them to
+  /// the set-password screen instead of straight into the dashboard.
+  bool passwordRecovery = false;
+
   AuthController(this.api) {
-    Supabase.instance.client.auth.onAuthStateChange.listen(
-      (data) => _onAuthChange(data.session),
-    );
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        passwordRecovery = true;
+      }
+      _onAuthChange(data.session);
+    });
     _onAuthChange(Supabase.instance.client.auth.currentSession);
   }
 
@@ -64,6 +73,23 @@ class AuthController extends ChangeNotifier {
     try {
       await Supabase.instance.client.auth.updateUser(
         UserAttributes(password: newPassword),
+      );
+      passwordRecovery = false;
+      return null;
+    } on AuthException catch (e) {
+      return e.message;
+    }
+  }
+
+  /// Emails the given address a "reset your password" link. Returns null
+  /// on success (regardless of whether the address is a real staff
+  /// account -- Supabase doesn't reveal that either way), or a message to
+  /// show the user on failure.
+  Future<String?> sendPasswordReset(String email) async {
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(
+        email,
+        redirectTo: AppConfig.appUrl,
       );
       return null;
     } on AuthException catch (e) {

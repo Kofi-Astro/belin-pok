@@ -16,6 +16,11 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5000"
 
+    # Where Supabase should send staff after they click an invite email
+    # link. Without this, Supabase falls back to the project's Site URL,
+    # which defaults to localhost and is useless to a real invitee.
+    admin_app_url: str = "https://admin.belpok.xyz"
+
     # Raw JSON of a Firebase service account key (Firebase Console ->
     # Project Settings -> Service Accounts -> Generate new private key).
     # Optional: push notifications are a best-effort feature (see

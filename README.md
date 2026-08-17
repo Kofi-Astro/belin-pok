@@ -310,11 +310,17 @@ subdomain, API is a subdomain:
 
   Railway auto-detects the Python app from there (`requirements.txt`,
   `Procfile`/`railway.json` for the start command and health check path).
-  Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and
-  `CORS_ORIGINS` (`https://belpok.xyz,https://www.belpok.xyz,https://admin.belpok.xyz`)
-  as environment variables in that service's settings (same values as your
-  local `.env` — see `services/api/.env.example`). Point `api.belpok.xyz`
-  at this service as a custom domain from the Railway dashboard.
+  Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`,
+  `CORS_ORIGINS` (`https://belpok.xyz,https://www.belpok.xyz,https://admin.belpok.xyz`),
+  and `ADMIN_APP_URL` (`https://admin.belpok.xyz`) as environment variables
+  in that service's settings (same values as your local `.env` — see
+  `services/api/.env.example`). Point `api.belpok.xyz` at this service as a
+  custom domain from the Railway dashboard.
+
+  `ADMIN_APP_URL` also needs to be added under Supabase Dashboard ->
+  Authentication -> URL Configuration -> **Redirect URLs** — without that,
+  Supabase ignores it and staff invite emails link to whatever the
+  project's Site URL is (localhost, by default).
 
 - `apps/admin/` deploys via **Cloudflare's native GitHub integration**
   (Workers Builds — the project's Deploy command is `npx wrangler deploy`,

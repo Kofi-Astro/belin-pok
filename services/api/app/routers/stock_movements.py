@@ -21,7 +21,10 @@ from app.schemas import StockMovementCreate, StockMovementRead
 
 router = APIRouter(prefix="/stock-movements", tags=["stock-movements"])
 
-_write_roles = require_role(StaffRole.owner, StaffRole.inventory_manager)
+# Order Fulfillment can log the walk-in sales/corrections that happen at
+# the counter; Owner and Inventory Manager retain full control. Viewer
+# stays read-only, matching its name.
+_write_roles = require_role(StaffRole.owner, StaffRole.inventory_manager, StaffRole.order_fulfillment)
 
 
 @router.get("", response_model=list[StockMovementRead], dependencies=[Depends(get_current_staff)])
@@ -30,12 +33,43 @@ async def list_stock_movements(
     variant_id: uuid.UUID | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> list[StockMovement]:
-    stmt = select(StockMovement).order_by(StockMovement.created_at.desc()).limit(limit).offset(offset)
+) -> list[StockMovementRead]:
+    # Joined in (rather than modeled as relationships on StockMovement) so
+    # the Inventory screen's activity feed can show what/who without a
+    # second round trip per row -- this is the only place that needs it.
+    stmt = (
+        select(
+            StockMovement,
+            Product.name.label("product_name"),
+            ProductVariant.sku.label("variant_sku"),
+            ProductVariant.size.label("variant_size"),
+            ProductVariant.color.label("variant_color"),
+            Staff.full_name.label("performed_by_name"),
+            Staff.role.label("performed_by_role"),
+        )
+        .join(ProductVariant, ProductVariant.id == StockMovement.variant_id)
+        .join(Product, Product.id == ProductVariant.product_id)
+        .outerjoin(Staff, Staff.id == StockMovement.performed_by)
+        .order_by(StockMovement.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     if variant_id is not None:
         stmt = stmt.where(StockMovement.variant_id == variant_id)
-    result = await db.scalars(stmt)
-    return list(result)
+    rows = (await db.execute(stmt)).all()
+    return [
+        StockMovementRead.model_validate(row.StockMovement).model_copy(
+            update={
+                "product_name": row.product_name,
+                "variant_sku": row.variant_sku,
+                "variant_size": row.variant_size,
+                "variant_color": row.variant_color,
+                "performed_by_name": row.performed_by_name,
+                "performed_by_role": row.performed_by_role,
+            }
+        )
+        for row in rows
+    ]
 
 
 @router.post("", response_model=StockMovementRead, status_code=status.HTTP_201_CREATED)

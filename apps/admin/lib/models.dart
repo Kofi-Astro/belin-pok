@@ -41,6 +41,12 @@ class StaffProfile {
 
   bool get isOwner => role == 'owner';
   bool get canManageInventory => role == 'owner' || role == 'inventory_manager';
+
+  /// Narrower than [canManageInventory]: lets front-of-shop staff log a
+  /// stock movement (e.g. a walk-in sale) without granting product
+  /// management (creating, editing, publishing, archiving).
+  bool get canAdjustStock =>
+      canManageInventory || role == 'order_fulfillment';
   bool get canManageOrders => role == 'owner' || role == 'order_fulfillment';
 }
 
@@ -76,6 +82,12 @@ class StockMovement {
   final int quantityChange;
   final String? reason;
   final DateTime createdAt;
+  final String? productName;
+  final String? variantSku;
+  final String? variantSize;
+  final String? variantColor;
+  final String? performedByName;
+  final String? performedByRole;
 
   StockMovement({
     required this.id,
@@ -84,7 +96,19 @@ class StockMovement {
     required this.quantityChange,
     required this.reason,
     required this.createdAt,
+    this.productName,
+    this.variantSku,
+    this.variantSize,
+    this.variantColor,
+    this.performedByName,
+    this.performedByRole,
   });
+
+  /// A walk-in sale logged by front-of-shop staff, rather than by a
+  /// manager or the storefront checkout -- the case owners/inventory
+  /// managers most want called out in the activity feed.
+  bool get isFloorSale =>
+      performedByRole == 'order_fulfillment' && movementType == 'sale';
 
   factory StockMovement.fromJson(Map<String, dynamic> json) => StockMovement(
     id: json['id'] as String,
@@ -93,6 +117,30 @@ class StockMovement {
     quantityChange: json['quantity_change'] as int,
     reason: json['reason'] as String?,
     createdAt: DateTime.parse(json['created_at'] as String),
+    productName: json['product_name'] as String?,
+    variantSku: json['variant_sku'] as String?,
+    variantSize: json['variant_size'] as String?,
+    variantColor: json['variant_color'] as String?,
+    performedByName: json['performed_by_name'] as String?,
+    performedByRole: json['performed_by_role'] as String?,
+  );
+}
+
+class DailySales {
+  final DateTime day;
+  final int itemsSold;
+  final double totalAmount;
+
+  DailySales({
+    required this.day,
+    required this.itemsSold,
+    required this.totalAmount,
+  });
+
+  factory DailySales.fromJson(Map<String, dynamic> json) => DailySales(
+    day: DateTime.parse(json['day'] as String),
+    itemsSold: json['items_sold'] as int,
+    totalAmount: (json['total_amount'] as num).toDouble(),
   );
 }
 

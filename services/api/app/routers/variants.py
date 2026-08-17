@@ -26,6 +26,16 @@ _write_roles = require_role(StaffRole.owner, StaffRole.inventory_manager)
 # POST /stock-movements to change it, so every change is audited.
 
 
+def _generate_sku(product_slug: str, size: str, color: str | None) -> str:
+    """PRODUCT-SLUG-SIZE[-COLOR], uppercased. Unique in practice because
+    product.slug is itself unique and (product_id, size, color) is too --
+    the DB's unique constraint on sku is still the real backstop, this
+    just means staff never type one."""
+    parts = [product_slug, size, *([color] if color else [])]
+    sku = "-".join(parts).upper().replace(" ", "-")
+    return sku[:100]
+
+
 @router.get(
     "/products/{product_id}/variants",
     response_model=list[ProductVariantRead],
@@ -53,7 +63,11 @@ async def create_variant(
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
-    variant = ProductVariant(**payload.model_dump(), product_id=product_id)
+    data = payload.model_dump()
+    if not data.get("sku"):
+        data["sku"] = _generate_sku(product.slug, payload.size, payload.color)
+
+    variant = ProductVariant(**data, product_id=product_id)
     db.add(variant)
     try:
         await db.commit()

@@ -576,6 +576,43 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
     _reload();
   }
 
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete this product?'),
+        content: const Text(
+          "This removes it for good -- there's no undoing it. If it's "
+          'ever been ordered or had stock recorded, deleting is blocked '
+          'automatically; archive it instead in that case.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.deleteProduct(widget.product.id);
+      _changed = true;
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
   Future<void> _adjustStock(ProductVariant variant) async {
     final adjusted = await showDialog<bool>(
       context: context,
@@ -589,8 +626,9 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final canWrite =
-        context.watch<AuthController>().profile?.canManageInventory ?? false;
+    final profile = context.watch<AuthController>().profile;
+    final canWrite = profile?.canManageInventory ?? false;
+    final canAdjustStock = profile?.canAdjustStock ?? false;
     final product = _full;
 
     return Dialog(
@@ -712,7 +750,7 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                                             : null,
                                       ),
                                     ),
-                                    if (canWrite)
+                                    if (canAdjustStock)
                                       IconButton(
                                         icon: const Icon(Icons.tune, size: 18),
                                         tooltip: 'Adjust stock',
@@ -729,7 +767,9 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                   if (canWrite)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-                      child: Row(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
                         children: [
                           if (product.status != 'active')
                             TextButton.icon(
@@ -743,7 +783,6 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                                 style: TextStyle(color: AppColors.success),
                               ),
                             ),
-                          const Spacer(),
                           if (product.status != 'archived')
                             TextButton.icon(
                               onPressed: _archive,
@@ -756,6 +795,17 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                                 style: TextStyle(color: AppColors.danger),
                               ),
                             ),
+                          TextButton.icon(
+                            onPressed: _confirmDelete,
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: AppColors.danger,
+                            ),
+                            label: const Text(
+                              'Delete Product',
+                              style: TextStyle(color: AppColors.danger),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -776,16 +826,14 @@ class _VariantFormDialog extends StatefulWidget {
 }
 
 class _VariantFormDialogState extends State<_VariantFormDialog> {
-  final _skuController = TextEditingController();
   final _sizeController = TextEditingController();
   final _colorController = TextEditingController();
   bool _submitting = false;
   String? _error;
 
   Future<void> _submit() async {
-    if (_skuController.text.trim().isEmpty ||
-        _sizeController.text.trim().isEmpty) {
-      setState(() => _error = 'SKU and size are required');
+    if (_sizeController.text.trim().isEmpty) {
+      setState(() => _error = 'Size is required');
       return;
     }
     setState(() {
@@ -795,7 +843,6 @@ class _VariantFormDialogState extends State<_VariantFormDialog> {
     try {
       await widget.api.createVariant(
         widget.productId,
-        sku: _skuController.text.trim(),
         size: _sizeController.text.trim(),
         color: _colorController.text.trim(),
       );
@@ -823,14 +870,8 @@ class _VariantFormDialogState extends State<_VariantFormDialog> {
               ),
             ),
           TextField(
-            controller: _skuController,
-            decoration: const InputDecoration(
-              labelText: 'SKU (a unique code for this item)',
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
             controller: _sizeController,
+            autofocus: true,
             decoration: const InputDecoration(
               labelText: 'Size',
               hintText: 'e.g. M, L, XL, One Size',
@@ -840,6 +881,13 @@ class _VariantFormDialogState extends State<_VariantFormDialog> {
           TextField(
             controller: _colorController,
             decoration: const InputDecoration(labelText: 'Color (optional)'),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              "The SKU is generated for you automatically.",
+              style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
+            ),
           ),
         ],
       ),

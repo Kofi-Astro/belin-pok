@@ -23,6 +23,7 @@ async def invite_user_by_email(email: str) -> dict:
     async with httpx.AsyncClient(base_url=settings.supabase_url, timeout=10) as client:
         response = await client.post(
             "/auth/v1/invite",
+            params={"redirect_to": settings.admin_app_url},
             json={"email": email},
             headers={
                 "apikey": settings.supabase_secret_key,
