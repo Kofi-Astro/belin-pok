@@ -95,3 +95,104 @@ async def test_public_categories_are_listed(client):
         list_res = await ac.get("/public/categories")
     assert list_res.status_code == 200
     assert any(c["id"] == category_id for c in list_res.json())
+
+
+async def test_public_products_filters_by_price_range_and_sorts(client):
+    unique = uuid.uuid4().hex[:8]
+    async with client as ac:
+        category_res = await ac.post("/categories", json={"name": f"Cat3 {unique}", "slug": f"cat3-{unique}"})
+        category_id = category_res.json()["id"]
+
+        cheap = await ac.post(
+            "/products",
+            json={
+                "name": f"Cheap {unique}",
+                "slug": f"cheap-{unique}",
+                "category_id": category_id,
+                "base_price": 10,
+                "status": "active",
+            },
+        )
+        mid = await ac.post(
+            "/products",
+            json={
+                "name": f"Mid {unique}",
+                "slug": f"mid-{unique}",
+                "category_id": category_id,
+                "base_price": 50,
+                "status": "active",
+            },
+        )
+        pricey = await ac.post(
+            "/products",
+            json={
+                "name": f"Pricey {unique}",
+                "slug": f"pricey-{unique}",
+                "category_id": category_id,
+                "base_price": 100,
+                "status": "active",
+            },
+        )
+        for res in (cheap, mid, pricey):
+            assert res.status_code == 201, res.text
+
+        range_res = await ac.get(
+            "/public/products", params={"search": unique, "min_price": 20, "max_price": 80}
+        )
+        assert range_res.status_code == 200
+        names = {p["name"] for p in range_res.json()}
+        assert names == {mid.json()["name"]}
+
+        sorted_res = await ac.get("/public/products", params={"search": unique, "sort": "price_desc"})
+        assert sorted_res.status_code == 200
+        prices = [p["base_price"] for p in sorted_res.json()]
+        assert prices == sorted(prices, reverse=True)
+
+
+async def test_public_products_in_stock_only_excludes_out_of_stock(client):
+    unique = uuid.uuid4().hex[:8]
+    async with client as ac:
+        category_res = await ac.post("/categories", json={"name": f"Cat4 {unique}", "slug": f"cat4-{unique}"})
+        category_id = category_res.json()["id"]
+
+        in_stock_product = await ac.post(
+            "/products",
+            json={
+                "name": f"In Stock {unique}",
+                "slug": f"in-stock-{unique}",
+                "category_id": category_id,
+                "base_price": 15,
+                "status": "active",
+            },
+        )
+        out_of_stock_product = await ac.post(
+            "/products",
+            json={
+                "name": f"Out Of Stock {unique}",
+                "slug": f"out-of-stock-{unique}",
+                "category_id": category_id,
+                "base_price": 15,
+                "status": "active",
+            },
+        )
+        in_stock_product_id = in_stock_product.json()["id"]
+        out_of_stock_product_id = out_of_stock_product.json()["id"]
+
+        in_stock_variant = await ac.post(
+            f"/products/{in_stock_product_id}/variants", json={"sku": f"SKU-IN-{unique}", "size": "One Size"}
+        )
+        await ac.post(
+            f"/products/{out_of_stock_product_id}/variants", json={"sku": f"SKU-OUT-{unique}", "size": "One Size"}
+        )
+
+        movement_res = await ac.post(
+            "/stock-movements",
+            json={"variant_id": in_stock_variant.json()["id"], "movement_type": "initial", "quantity_change": 5},
+        )
+        assert movement_res.status_code == 201, movement_res.text
+
+        res = await ac.get("/public/products", params={"search": unique, "in_stock_only": True})
+    assert res.status_code == 200
+    ids = {p["id"] for p in res.json()}
+    assert in_stock_product_id in ids
+    assert out_of_stock_product_id not in ids

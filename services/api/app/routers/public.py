@@ -1,7 +1,8 @@
+from enum import StrEnum
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,11 +26,30 @@ async def list_public_categories(db: AsyncSession = Depends(get_db)) -> list[Cat
     return list(result)
 
 
+class ProductSort(StrEnum):
+    name = "name"
+    price_asc = "price_asc"
+    price_desc = "price_desc"
+    newest = "newest"
+
+
+_SORT_COLUMNS = {
+    ProductSort.name: (Product.name,),
+    ProductSort.price_asc: (Product.base_price.asc(), Product.name),
+    ProductSort.price_desc: (Product.base_price.desc(), Product.name),
+    ProductSort.newest: (Product.created_at.desc(),),
+}
+
+
 @router.get("/products", response_model=list[ProductRead])
 async def list_public_products(
     db: AsyncSession = Depends(get_db),
     category_id: UUID | None = None,
     search: str | None = Query(default=None, min_length=1, max_length=200),
+    min_price: float | None = Query(default=None, ge=0),
+    max_price: float | None = Query(default=None, ge=0),
+    in_stock_only: bool = False,
+    sort: ProductSort = ProductSort.name,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Product]:
@@ -37,7 +57,7 @@ async def list_public_products(
         select(Product)
         .where(Product.status == ProductStatus.active)
         .options(selectinload(Product.images))
-        .order_by(Product.name)
+        .order_by(*_SORT_COLUMNS[sort])
         .limit(limit)
         .offset(offset)
     )
@@ -45,6 +65,18 @@ async def list_public_products(
         stmt = stmt.where(Product.category_id == category_id)
     if search:
         stmt = stmt.where(Product.name.ilike(f"%{search}%"))
+    if min_price is not None:
+        stmt = stmt.where(Product.base_price >= min_price)
+    if max_price is not None:
+        stmt = stmt.where(Product.base_price <= max_price)
+    if in_stock_only:
+        stmt = stmt.where(
+            exists().where(
+                ProductVariant.product_id == Product.id,
+                ProductVariant.is_active.is_(True),
+                ProductVariant.stock_quantity > 0,
+            )
+        )
 
     result = await db.scalars(stmt)
     return list(result)

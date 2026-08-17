@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../widgets/category_icon.dart';
 import '../widgets/hero_banner.dart';
 import '../widgets/product_card.dart';
+import '../widgets/product_filters.dart';
 import '../widgets/storefront_footer.dart';
 import '../widgets/storefront_scaffold.dart';
 
@@ -24,6 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Category> _categories = [];
   List<Product> _products = [];
   String? _selectedCategoryId;
+  ProductFilters _filters = const ProductFilters();
   bool _loading = true;
   String? _error;
 
@@ -46,6 +48,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ? null
               : _searchController.text.trim(),
           categoryId: _selectedCategoryId,
+          minPrice: _filters.minPrice,
+          maxPrice: _filters.maxPrice,
+          inStockOnly: _filters.inStockOnly,
+          sort: _filters.sort,
         ),
       ]);
       setState(() {
@@ -66,6 +72,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.dispose();
     super.dispose();
   }
+
+  bool get _hasNarrowingCriteria =>
+      _searchController.text.trim().isNotEmpty ||
+      _selectedCategoryId != null ||
+      _filters.isActive;
 
   String get _selectedCategoryName =>
       _categories
@@ -99,20 +110,14 @@ class _HomeScreenState extends State<HomeScreen> {
             else if (_products.isEmpty)
               SliverFillRemaining(
                 child: EmptyState(
-                  icon:
-                      _searchController.text.trim().isNotEmpty ||
-                          _selectedCategoryId != null
+                  icon: _hasNarrowingCriteria
                       ? Icons.search_off_rounded
                       : Icons.storefront_outlined,
-                  title:
-                      _searchController.text.trim().isNotEmpty ||
-                          _selectedCategoryId != null
+                  title: _hasNarrowingCriteria
                       ? 'No matches here'
                       : 'New stock is on the way',
-                  message:
-                      _searchController.text.trim().isNotEmpty ||
-                          _selectedCategoryId != null
-                      ? 'Try a different search or category.'
+                  message: _hasNarrowingCriteria
+                      ? 'Try a different search, category, or filter.'
                       : 'We\'re setting up the shop -- check back soon for caps, tees, and more.',
                 ),
               )
@@ -137,11 +142,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     const maxCrossAxisExtent = 260.0;
                     const spacing = 16.0;
                     const cardChromeHeight = 92.0;
-                    final crossAxisCount = (constraints.crossAxisExtent / maxCrossAxisExtent)
-                        .ceil()
-                        .clamp(1, 999);
+                    final crossAxisCount =
+                        (constraints.crossAxisExtent / maxCrossAxisExtent)
+                            .ceil()
+                            .clamp(1, 999);
                     final cellWidth =
-                        (constraints.crossAxisExtent - spacing * (crossAxisCount - 1)) /
+                        (constraints.crossAxisExtent -
+                            spacing * (crossAxisCount - 1)) /
                         crossAxisCount;
                     return SliverGrid(
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -199,24 +206,80 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-      child: TextField(
-        controller: _searchController,
-        textInputAction: TextInputAction.search,
-        onSubmitted: (_) => _load(),
-        decoration: InputDecoration(
-          hintText: 'Search products',
-          prefixIcon: const Icon(Icons.search),
-          suffixIcon: _searchController.text.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () {
-                    _searchController.clear();
-                    _load();
-                  },
-                ),
-        ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _load(),
+              decoration: InputDecoration(
+                hintText: 'Search products',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          _searchController.clear();
+                          _load();
+                        },
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _buildFilterButton(),
+        ],
       ),
+    );
+  }
+
+  Widget _buildFilterButton() {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: StorefrontColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFCBC6BB)),
+          ),
+          child: IconButton(
+            tooltip: 'Filters',
+            icon: const Icon(Icons.tune_rounded),
+            onPressed: () async {
+              final result = await showProductFiltersSheet(context, _filters);
+              if (result == null) return;
+              setState(() => _filters = result);
+              _load();
+            },
+          ),
+        ),
+        if (_filters.isActive)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+              decoration: const BoxDecoration(
+                color: StorefrontColors.deepOrange,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '${_filters.activeCount}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
