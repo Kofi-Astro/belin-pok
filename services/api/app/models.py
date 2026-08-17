@@ -79,6 +79,12 @@ class FulfillmentMethod(enum.StrEnum):
     pickup = "pickup"
 
 
+class PaymentMethod(enum.StrEnum):
+    cash = "cash"
+    mobile_money = "mobile_money"
+    card = "card"
+
+
 def _pg_enum(pg_enum: enum.EnumMeta, name: str) -> PgEnum:
     return PgEnum(pg_enum, name=name, create_type=False)
 
@@ -203,6 +209,35 @@ class StockMovement(Base):
     # reference_id carry the traceability in that case instead.
     performed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class POSSale(Base):
+    """An in-person checkout transaction: what groups the several
+    stock_movements one register sale produces (one customer, several
+    different items, one payment) -- see supabase/migrations for why the
+    line items themselves live in stock_movements rather than a second
+    table here."""
+
+    __tablename__ = "pos_sales"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("customers.id", ondelete="SET NULL"))
+    staff_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
+    status: Mapped[str] = mapped_column(default="completed")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    payments: Mapped[list["POSSalePayment"]] = relationship(back_populates="sale", cascade="all, delete-orphan")
+
+
+class POSSalePayment(Base):
+    __tablename__ = "pos_sale_payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sale_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pos_sales.id", ondelete="CASCADE"))
+    method: Mapped[PaymentMethod] = mapped_column(_pg_enum(PaymentMethod, "payment_method"))
+    amount: Mapped[float] = mapped_column(Numeric(10, 2))
+
+    sale: Mapped["POSSale"] = relationship(back_populates="payments")
 
 
 class Customer(Base):

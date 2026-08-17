@@ -10,6 +10,7 @@ from app.models import (
     FulfillmentMethod,
     OrderStatus,
     OrderType,
+    PaymentMethod,
     ProductStatus,
     StaffRole,
     StockMovementType,
@@ -209,6 +210,58 @@ class DailySalesRead(BaseModel):
     day: date
     items_sold: int
     total_amount: float
+
+
+# ---------- POS sales ----------
+
+
+class POSSaleItemCreate(BaseModel):
+    variant_id: uuid.UUID
+    quantity: int = Field(gt=0)
+
+
+class POSSalePaymentCreate(BaseModel):
+    method: PaymentMethod
+    amount: float = Field(gt=0)
+
+
+class POSSaleCreate(BaseModel):
+    customer_id: uuid.UUID | None = None
+    items: list[POSSaleItemCreate] = Field(min_length=1)
+    payments: list[POSSalePaymentCreate] = Field(min_length=1)
+
+
+class POSSalePaymentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    method: PaymentMethod
+    amount: float
+
+
+class POSSaleItemRead(BaseModel):
+    variant_id: uuid.UUID
+    product_name: str
+    variant_size: str
+    variant_color: str | None
+    quantity: int
+    unit_price: float
+    line_total: float
+
+
+class POSSaleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    customer_id: uuid.UUID | None
+    staff_id: uuid.UUID
+    status: str
+    created_at: datetime
+
+    staff_name: str | None = None
+    customer_name: str | None = None
+    items: list[POSSaleItemRead] = []
+    payments: list[POSSalePaymentRead] = []
+    total: float = 0
 
 
 # ---------- staff ----------

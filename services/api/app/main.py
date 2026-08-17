@@ -9,6 +9,7 @@ from app.routers import (
     device_tokens,
     health,
     orders,
+    pos_sales,
     product_images,
     products,
     public,
@@ -47,3 +48,4 @@ app.include_router(orders.router)
 app.include_router(device_tokens.router)
 app.include_router(reports.router)
 app.include_router(audit_log.router)
+app.include_router(pos_sales.router)
