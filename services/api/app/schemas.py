@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -7,6 +7,7 @@ from app.models import (
     CustomerStatus,
     CustomerType,
     DevicePlatform,
+    FulfillmentMethod,
     OrderStatus,
     OrderType,
     ProductStatus,
@@ -54,7 +55,6 @@ class CategoryRead(CategoryBase):
 
 
 class ProductVariantBase(BaseModel):
-    sku: str = Field(min_length=1, max_length=100)
     size: str = Field(min_length=1, max_length=50)
     color: str | None = None
     color_hex: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
@@ -64,7 +64,11 @@ class ProductVariantBase(BaseModel):
 
 
 class ProductVariantCreate(ProductVariantBase):
-    pass
+    # Optional: POST /products/{id}/variants auto-generates one from the
+    # product's slug + size + color when omitted, so nobody has to invent
+    # a unique code by hand. Still overridable for the rare case a real
+    # SKU (e.g. from a supplier) needs to be used instead.
+    sku: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class ProductVariantUpdate(BaseModel):
@@ -82,6 +86,7 @@ class ProductVariantRead(ProductVariantBase):
 
     id: uuid.UUID
     product_id: uuid.UUID
+    sku: str
     stock_quantity: int
     created_at: datetime
     updated_at: datetime
@@ -188,6 +193,21 @@ class StockMovementRead(BaseModel):
     reference_id: uuid.UUID | None
     performed_by: uuid.UUID | None
     created_at: datetime
+
+    # Populated only by GET /stock-movements (joined in for the Inventory
+    # screen's activity feed) -- absent on the plain object POST returns.
+    product_name: str | None = None
+    variant_sku: str | None = None
+    variant_size: str | None = None
+    variant_color: str | None = None
+    performed_by_name: str | None = None
+    performed_by_role: StaffRole | None = None
+
+
+class DailySalesRead(BaseModel):
+    day: date
+    items_sold: int
+    total_amount: float
 
 
 # ---------- staff ----------
@@ -319,6 +339,7 @@ class OrderRead(BaseModel):
     customer_id: uuid.UUID
     order_type: OrderType
     status: OrderStatus
+    fulfillment_method: FulfillmentMethod
     subtotal: float
     discount_total: float
     tax_total: float
@@ -353,8 +374,13 @@ class CheckoutCreate(BaseModel):
     guest_email: str | None = Field(default=None, min_length=3, max_length=320)
     guest_phone: str | None = None
 
+    fulfillment_method: FulfillmentMethod = FulfillmentMethod.delivery
+
     # Shipping address: either an existing saved address (signed-in
     # customers only -- must belong to them) or a new one to create.
+    # Required for fulfillment_method='delivery' only -- a pickup order
+    # has nowhere to ship, so neither is needed (checked in the router,
+    # not here, since "required" depends on another field's value).
     address_id: uuid.UUID | None = None
     address: AddressCreate | None = None
 

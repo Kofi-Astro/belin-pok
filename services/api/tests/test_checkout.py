@@ -243,3 +243,61 @@ async def test_orders_me_never_returns_another_customers_orders(client, fake_cus
         app.dependency_overrides.pop(get_current_customer, None)
     assert my_orders_res.status_code == 200
     assert all(o["id"] != other_order_id for o in my_orders_res.json())
+
+
+async def test_guest_pickup_checkout_needs_no_address(client):
+    """A pickup order has nowhere to ship -- neither address nor
+    address_id should be required, unlike delivery."""
+    unique = uuid.uuid4().hex[:8]
+    async with client as ac:
+        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=3)
+
+    async with _fresh_client() as ac:
+        res = await ac.post(
+            "/orders/checkout",
+            json={
+                "items": [{"variant_id": variant_id, "quantity": 1}],
+                "guest_full_name": "Pickup Guest",
+                "guest_email": f"pickup-{unique}@example.com",
+                "fulfillment_method": "pickup",
+            },
+        )
+    assert res.status_code == 201, res.text
+    assert res.json()["fulfillment_method"] == "pickup"
+
+
+async def test_delivery_checkout_without_address_returns_400(client):
+    unique = uuid.uuid4().hex[:8]
+    async with client as ac:
+        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=3)
+
+    async with _fresh_client() as ac:
+        res = await ac.post(
+            "/orders/checkout",
+            json={
+                "items": [{"variant_id": variant_id, "quantity": 1}],
+                "guest_full_name": "No Address Guest",
+                "guest_email": f"noaddr-{unique}@example.com",
+                # fulfillment_method omitted -- defaults to 'delivery'.
+            },
+        )
+    assert res.status_code == 400
+
+
+async def test_checkout_defaults_to_delivery_fulfillment_method(client):
+    unique = uuid.uuid4().hex[:8]
+    async with client as ac:
+        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=3)
+
+    async with _fresh_client() as ac:
+        res = await ac.post(
+            "/orders/checkout",
+            json={
+                "items": [{"variant_id": variant_id, "quantity": 1}],
+                "guest_full_name": "Default Guest",
+                "guest_email": f"default-{unique}@example.com",
+                "address": {"line1": "1 Market St", "city": "Accra", "country": "Ghana"},
+            },
+        )
+    assert res.status_code == 201, res.text
+    assert res.json()["fulfillment_method"] == "delivery"

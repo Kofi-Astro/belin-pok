@@ -42,10 +42,12 @@ class OrderConfirmationScreen extends StatelessWidget {
                   style: const TextStyle(color: StorefrontColors.inkMuted),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'We\'ll be in touch to arrange payment and delivery.',
+                Text(
+                  order.isPickup
+                      ? 'We\'ll text/email you when it\'s ready to collect. Pay on pickup.'
+                      : 'We\'ll be in touch to arrange delivery. Pay on delivery.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: StorefrontColors.inkMuted),
+                  style: const TextStyle(color: StorefrontColors.inkMuted),
                 ),
                 const SizedBox(height: 24),
                 FilledButton(

@@ -33,10 +33,18 @@ class StorefrontApiClient {
   Future<List<Product>> listProducts({
     String? search,
     String? categoryId,
+    double? minPrice,
+    double? maxPrice,
+    bool inStockOnly = false,
+    String sort = 'name',
   }) async =>
       (await _http.get('/public/products', {
                 if (search != null && search.isNotEmpty) 'search': search,
                 if (categoryId != null) 'category_id': categoryId,
+                if (minPrice != null) 'min_price': minPrice.toString(),
+                if (maxPrice != null) 'max_price': maxPrice.toString(),
+                if (inStockOnly) 'in_stock_only': 'true',
+                'sort': sort,
               })
               as List)
           .map((e) => Product.fromJson(e as Map<String, dynamic>))
@@ -94,6 +102,7 @@ class StorefrontApiClient {
 
   Future<Order> checkout({
     required Map<String, int> itemsByVariantId,
+    bool pickup = false,
     String? guestFullName,
     String? guestEmail,
     String? guestPhone,
@@ -105,6 +114,7 @@ class StorefrontApiClient {
           'items': itemsByVariantId.entries
               .map((e) => {'variant_id': e.key, 'quantity': e.value})
               .toList(),
+          'fulfillment_method': pickup ? 'pickup' : 'delivery',
           if (guestFullName != null) 'guest_full_name': guestFullName,
           if (guestEmail != null) 'guest_email': guestEmail,
           if (guestPhone != null && guestPhone.isNotEmpty)

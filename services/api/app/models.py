@@ -74,6 +74,11 @@ class DevicePlatform(enum.StrEnum):
     android = "android"
 
 
+class FulfillmentMethod(enum.StrEnum):
+    delivery = "delivery"
+    pickup = "pickup"
+
+
 def _pg_enum(pg_enum: enum.EnumMeta, name: str) -> PgEnum:
     return PgEnum(pg_enum, name=name, create_type=False)
 
@@ -261,6 +266,13 @@ class Order(Base):
     total: Mapped[float] = mapped_column(Numeric(10, 2))
     shipping_address_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("addresses.id", ondelete="SET NULL"))
     billing_address_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("addresses.id", ondelete="SET NULL"))
+    # Explicit, not inferred from shipping_address_id being null -- that's
+    # ambiguous between "picking up in person" and "address never got
+    # recorded". Default 'delivery' keeps every pre-existing order (and
+    # every pre-existing test) correct without a backfill.
+    fulfillment_method: Mapped[FulfillmentMethod] = mapped_column(
+        _pg_enum(FulfillmentMethod, "fulfillment_method"), default=FulfillmentMethod.delivery
+    )
     notes: Mapped[str | None]
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

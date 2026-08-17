@@ -23,13 +23,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _fullNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _line1Controller = TextEditingController();
-  final _line2Controller = TextEditingController();
+  final _addressController = TextEditingController();
   final _cityController = TextEditingController();
-  final _stateController = TextEditingController();
-  final _postalController = TextEditingController();
-  final _countryController = TextEditingController(text: 'Ghana');
   final _notesController = TextEditingController();
+
+  // Delivery is the default -- a shopper who wants pickup instead makes
+  // one tap, not a form field.
+  bool _pickup = false;
 
   List<Address> _savedAddresses = [];
   String? _selectedAddressId;
@@ -43,6 +43,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   void initState() {
     super.initState();
+    // Signed-in shoppers who already have a saved address shouldn't have
+    // to type it again -- load it and pre-select the default one, so the
+    // form they actually see (once loaded) is just "confirm and place
+    // order" rather than a blank form to fill out from scratch.
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadAddresses());
   }
 
@@ -68,25 +72,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _fullNameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
-    _line1Controller.dispose();
-    _line2Controller.dispose();
+    _addressController.dispose();
     _cityController.dispose();
-    _stateController.dispose();
-    _postalController.dispose();
-    _countryController.dispose();
     _notesController.dispose();
     super.dispose();
   }
 
+  bool get _needsNewAddressFields =>
+      !_pickup && (!_signedIn || _selectedAddressId == null);
+
   Future<void> _placeOrder() async {
     final cart = context.read<CartController>();
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (_signedIn &&
-        _selectedAddressId == null &&
-        _line1Controller.text.trim().isEmpty) {
-      setState(() => _error = 'Choose a saved address or enter a new one.');
-      return;
-    }
 
     setState(() {
       _submitting = true;
@@ -95,23 +92,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final order = await _api.checkout(
         itemsByVariantId: cart.quantitiesByVariantId,
+        pickup: _pickup,
         guestFullName: _signedIn ? null : _fullNameController.text.trim(),
         guestEmail: _signedIn ? null : _emailController.text.trim(),
         guestPhone: _signedIn ? null : _phoneController.text.trim(),
-        addressId: _signedIn && _selectedAddressId != null
+        addressId: !_pickup && _signedIn && _selectedAddressId != null
             ? _selectedAddressId
             : null,
-        newAddress: (!_signedIn || _selectedAddressId == null)
+        newAddress: _needsNewAddressFields
             ? {
-                'line1': _line1Controller.text.trim(),
-                if (_line2Controller.text.trim().isNotEmpty)
-                  'line2': _line2Controller.text.trim(),
+                'line1': _addressController.text.trim(),
                 'city': _cityController.text.trim(),
-                if (_stateController.text.trim().isNotEmpty)
-                  'state': _stateController.text.trim(),
-                if (_postalController.text.trim().isNotEmpty)
-                  'postal_code': _postalController.text.trim(),
-                'country': _countryController.text.trim(),
+                'country': 'Ghana',
               }
             : null,
         notes: _notesController.text.trim().isEmpty
@@ -145,10 +137,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
-          // Scrollable, so this isn't a hard clip like the cart's pinned
-          // summary bar -- but "Place order" is the primary CTA here, so
-          // it still shouldn't land flush against the home indicator once
-          // scrolled to the end.
           padding: EdgeInsets.fromLTRB(
             16,
             16,
@@ -167,13 +155,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 const SizedBox(height: 16),
                 if (!_signedIn) ..._buildGuestContactFields(),
                 Text(
-                  'Shipping address',
+                  'Get it by',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
-                if (_signedIn) ..._buildAddressPicker(),
-                if (!_signedIn || _selectedAddressId == null)
-                  ..._buildNewAddressFields(),
+                _buildFulfillmentToggle(),
+                const SizedBox(height: 16),
+                if (!_pickup) ...[
+                  if (_signedIn) ..._buildAddressPicker(),
+                  if (_needsNewAddressFields) ..._buildNewAddressFields(),
+                ] else
+                  _buildPickupNote(),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _notesController,
@@ -184,7 +176,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 const SizedBox(height: 20),
                 _OrderSummary(cart: cart),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
+                const Text(
+                  'Pay on delivery or pickup for now -- online payment is coming soon.',
+                  style: TextStyle(
+                    color: StorefrontColors.inkMuted,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
                 if (_error != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -215,6 +215,40 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildFulfillmentToggle() {
+    return SegmentedButton<bool>(
+      segments: const [
+        ButtonSegment(
+          value: false,
+          label: Text('Delivery'),
+          icon: Icon(Icons.local_shipping_outlined),
+        ),
+        ButtonSegment(
+          value: true,
+          label: Text('Pickup'),
+          icon: Icon(Icons.storefront_outlined),
+        ),
+      ],
+      selected: {_pickup},
+      onSelectionChanged: (selection) =>
+          setState(() => _pickup = selection.first),
+    );
+  }
+
+  Widget _buildPickupNote() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: StorefrontColors.deepPurple.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Text(
+        "We'll have your order ready in-store -- we'll reach out when it's ready to collect.",
+        style: TextStyle(color: StorefrontColors.inkMuted),
       ),
     );
   }
@@ -285,60 +319,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   List<Widget> _buildNewAddressFields() {
     return [
       TextFormField(
-        controller: _line1Controller,
-        decoration: const InputDecoration(labelText: 'Address line 1'),
+        controller: _addressController,
+        decoration: const InputDecoration(labelText: 'Delivery address'),
         validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
       ),
       const SizedBox(height: 12),
       TextFormField(
-        controller: _line2Controller,
-        decoration: const InputDecoration(
-          labelText: 'Address line 2 (optional)',
-        ),
-      ),
-      const SizedBox(height: 12),
-      Row(
-        children: [
-          Expanded(
-            child: TextFormField(
-              controller: _cityController,
-              decoration: const InputDecoration(labelText: 'City'),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextFormField(
-              controller: _stateController,
-              decoration: const InputDecoration(
-                labelText: 'Region/State (optional)',
-              ),
-            ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 12),
-      Row(
-        children: [
-          Expanded(
-            child: TextFormField(
-              controller: _postalController,
-              decoration: const InputDecoration(
-                labelText: 'Postal code (optional)',
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextFormField(
-              controller: _countryController,
-              decoration: const InputDecoration(labelText: 'Country'),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
-            ),
-          ),
-        ],
+        controller: _cityController,
+        decoration: const InputDecoration(labelText: 'City'),
+        validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
       ),
       const SizedBox(height: 8),
     ];

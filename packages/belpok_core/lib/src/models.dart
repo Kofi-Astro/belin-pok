@@ -218,6 +218,7 @@ class Order {
   final String customerId;
   final String orderType;
   final String status;
+  final String fulfillmentMethod;
   final double total;
   final DateTime createdAt;
   final List<OrderItem> items;
@@ -228,10 +229,13 @@ class Order {
     required this.customerId,
     required this.orderType,
     required this.status,
+    required this.fulfillmentMethod,
     required this.total,
     required this.createdAt,
     this.items = const [],
   });
+
+  bool get isPickup => fulfillmentMethod == 'pickup';
 
   factory Order.fromJson(Map<String, dynamic> json) => Order(
     id: json['id'] as String,
@@ -239,6 +243,9 @@ class Order {
     customerId: json['customer_id'] as String,
     orderType: json['order_type'] as String,
     status: json['status'] as String,
+    // Defaults to 'delivery' for forward compatibility with any older
+    // cached/served response that predates this field.
+    fulfillmentMethod: json['fulfillment_method'] as String? ?? 'delivery',
     total: (json['total'] as num).toDouble(),
     createdAt: DateTime.parse(json['created_at'] as String),
     items:

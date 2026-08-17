@@ -14,6 +14,7 @@ from app.models import (
     CustomerDeviceToken,
     CustomerStatus,
     CustomerType,
+    FulfillmentMethod,
     Order,
     OrderItem,
     OrderStatus,
@@ -95,18 +96,25 @@ async def checkout(
                     detail="A customer with this email already exists -- sign in instead",
                 ) from exc
 
-    if payload.address_id is not None:
-        address = await db.get(Address, payload.address_id)
-        if address is None or address.customer_id != customer.id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Address not found")
-    elif payload.address is not None:
-        address = Address(customer_id=customer.id, **payload.address.model_dump())
-        db.add(address)
-        await db.flush()
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="address or address_id is required"
-        )
+    # A pickup order has nowhere to ship, so it's the one case where
+    # neither address_id nor address is required -- shipping_address_id
+    # stays null, same as it always could, but now fulfillment_method
+    # records *why* rather than leaving that ambiguous.
+    address = None
+    if payload.fulfillment_method == FulfillmentMethod.delivery:
+        if payload.address_id is not None:
+            address = await db.get(Address, payload.address_id)
+            if address is None or address.customer_id != customer.id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Address not found")
+        elif payload.address is not None:
+            address = Address(customer_id=customer.id, **payload.address.model_dump())
+            db.add(address)
+            await db.flush()
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="address or address_id is required for delivery",
+            )
 
     # Merge duplicate lines for the same variant first -- otherwise two
     # lines of the same variant would each pass a per-line stock check
@@ -152,9 +160,10 @@ async def checkout(
         customer_id=customer.id,
         order_type=OrderType.retail,
         status=OrderStatus.pending,
+        fulfillment_method=payload.fulfillment_method,
         subtotal=subtotal,
         total=subtotal,
-        shipping_address_id=address.id,
+        shipping_address_id=address.id if address is not None else None,
         notes=payload.notes,
     )
     db.add(order)
@@ -216,6 +225,36 @@ async def list_orders(
         stmt = stmt.where(Order.status == status_filter)
     if customer_id is not None:
         stmt = stmt.where(Order.customer_id == customer_id)
+    result = await db.scalars(stmt)
+    return list(result)
+
+
+@router.get("/needs-attention", response_model=list[OrderWithItems], dependencies=[Depends(get_current_staff)])
+async def orders_needing_attention(db: AsyncSession = Depends(get_db)) -> list[Order]:
+    """Not-yet-fulfilled orders where the database no longer has enough of
+    something to cover what was ordered. This isn't the checkout race the
+    row locks in checkout()/create_stock_movement() already prevent --
+    it's the gap that opens up *after* an order is placed, almost always
+    because a walk-in sale at the counter reduced the physical stock
+    without a matching stock movement ever being logged, so the database
+    still thinks there's enough. Scoped to pending/paid: once an order is
+    packed, staff have already physically confirmed the item, so it's no
+    longer "at risk" in this sense even if the count here would still
+    flag it.
+    """
+    at_risk_order_ids = (
+        select(OrderItem.order_id)
+        .join(ProductVariant, ProductVariant.id == OrderItem.variant_id)
+        .where(ProductVariant.stock_quantity < OrderItem.quantity)
+        .distinct()
+    )
+    stmt = (
+        select(Order)
+        .where(Order.status.in_([OrderStatus.pending, OrderStatus.paid]))
+        .where(Order.id.in_(at_risk_order_ids))
+        .options(selectinload(Order.items))
+        .order_by(Order.created_at.desc())
+    )
     result = await db.scalars(stmt)
     return list(result)
 
