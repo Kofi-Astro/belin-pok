@@ -1,0 +1,9 @@
+# Copy this file to android/key.properties (gitignored) once you've
+# generated an upload keystore -- see the "Android release build" section
+# of apps/storefront/README.md for how. build.gradle.kts reads this file
+# to sign release builds; without it, release builds fall back to the
+# debug key and can't be uploaded to Play Console.
+storePassword=
+keyPassword=
+keyAlias=upload
+storeFile=/absolute/path/to/upload-keystore.jks

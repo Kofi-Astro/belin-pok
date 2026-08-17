@@ -123,20 +123,42 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 260,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 0.72,
-                  ),
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final product = _products[index];
-                    return ProductCard(
-                      product: product,
-                      onTap: () => context.push('/product/${product.id}'),
+                // A fixed childAspectRatio was tuned against wide desktop
+                // cards and overflowed on phone-width columns: the card's
+                // image scales with column width (AspectRatio 1) but its
+                // text block underneath doesn't, so a ratio that leaves
+                // enough room at 260px-wide desktop columns runs out of
+                // room once columns narrow to phone width. Computing
+                // mainAxisExtent from the actual column width plus a
+                // fixed text-chrome allowance keeps that allowance
+                // constant at every screen size instead.
+                sliver: SliverLayoutBuilder(
+                  builder: (context, constraints) {
+                    const maxCrossAxisExtent = 260.0;
+                    const spacing = 16.0;
+                    const cardChromeHeight = 92.0;
+                    final crossAxisCount = (constraints.crossAxisExtent / maxCrossAxisExtent)
+                        .ceil()
+                        .clamp(1, 999);
+                    final cellWidth =
+                        (constraints.crossAxisExtent - spacing * (crossAxisCount - 1)) /
+                        crossAxisCount;
+                    return SliverGrid(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        mainAxisSpacing: spacing,
+                        crossAxisSpacing: spacing,
+                        mainAxisExtent: cellWidth + cardChromeHeight,
+                      ),
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final product = _products[index];
+                        return ProductCard(
+                          product: product,
+                          onTap: () => context.push('/product/${product.id}'),
+                        );
+                      }, childCount: _products.length),
                     );
-                  }, childCount: _products.length),
+                  },
                 ),
               ),
             ],

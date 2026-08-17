@@ -51,6 +51,22 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+# Regenerates every platform's app icon (android/, ios/) from the two
+# source images in assets/icon/ -- run `dart run flutter_launcher_icons`
+# after editing either source image. icon.png is the full-bleed brand
+# square (iOS + Android legacy/round mipmaps); icon_foreground.png is the
+# same mark on a transparent background, kept inside the safe zone, for
+# Android's adaptive icon foreground layer (adaptive_icon_background is
+# the flat brand purple behind it).
+flutter_launcher_icons:
+  image_path: "assets/icon/icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  adaptive_icon_background: "#4B2884"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

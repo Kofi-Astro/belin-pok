@@ -145,7 +145,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
+          // Scrollable, so this isn't a hard clip like the cart's pinned
+          // summary bar -- but "Place order" is the primary CTA here, so
+          // it still shouldn't land flush against the home indicator once
+          // scrolled to the end.
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            16 + MediaQuery.paddingOf(context).bottom,
+          ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
             child: Column(

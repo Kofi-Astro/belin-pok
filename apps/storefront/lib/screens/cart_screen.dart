@@ -152,33 +152,41 @@ class _CartSummary extends StatelessWidget {
         color: StorefrontColors.surface,
         border: Border(top: BorderSide(color: Color(0xFFE7E3DC))),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Total',
-                    style: TextStyle(color: StorefrontColors.inkMuted),
-                  ),
-                  Text(
-                    '₵${cart.total.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
+      // This bar is pinned outside the scrollable cart list, so unlike
+      // the rest of the screen it needs its own bottom safe-area inset --
+      // Scaffold.body doesn't add one automatically the way
+      // bottomNavigationBar does, and without it the Checkout button sits
+      // flush against the home indicator on notched phones.
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Total',
+                      style: TextStyle(color: StorefrontColors.inkMuted),
                     ),
-                  ),
-                ],
+                    Text(
+                      '₵${cart.total.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            FilledButton(
-              onPressed: () => context.push('/checkout'),
-              child: const Text('Checkout'),
-            ),
-          ],
+              FilledButton(
+                onPressed: () => context.push('/checkout'),
+                child: const Text('Checkout'),
+              ),
+            ],
+          ),
         ),
       ),
     );

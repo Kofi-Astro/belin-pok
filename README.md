@@ -181,6 +181,85 @@ Same `--dart-define` overrides as the admin app (`SUPABASE_URL`,
 `SUPABASE_PUBLISHABLE_KEY`, `API_BASE_URL`) -- same Supabase project, just a
 `customers` row instead of a `staff` one once someone signs up.
 
+### Running on a phone (Android/iOS)
+
+`android/` and `ios/` are real, configured Flutter platform projects (app
+ID / bundle ID `com.belpok.storefront` on both, branded launcher icon and
+launch screen already in place) -- this isn't scaffolding you need to set
+up, just point `flutter run` at a device:
+
+```bash
+flutter devices                          # lists connected phones + running emulators/simulators
+flutter emulators                        # lists available Android emulators / the iOS Simulator
+flutter emulators --launch <emulator-id> # boot one
+
+flutter run -d <device-id> --dart-define=API_BASE_URL=http://localhost:8000
+```
+
+**Android:** with the Flutter SDK and Android toolchain installed
+(`flutter doctor` should show both green), an emulator or a phone with USB
+debugging enabled just works with the command above -- no extra setup.
+
+**iOS: needs a Mac with Xcode.** Not something this repo or an AI agent can
+do on your behalf -- do this once, locally, at build time:
+
+1. Open `apps/storefront/ios/Runner.xcworkspace` in Xcode (not
+   `Runner.xcodeproj` -- CocoaPods integration needs the workspace).
+2. Select the `Runner` target → **Signing & Capabilities** → sign in with
+   your Apple ID and pick your team. `CODE_SIGN_STYLE` is already set to
+   `Automatic`, so Xcode handles provisioning-profile creation from there.
+3. `flutter run -d <simulator-id>` needs no Apple ID at all -- only a
+   physical device does.
+
+### Production release builds
+
+Both platforms need real credentials only you can provide; this repo is
+set up to consume them but doesn't (and shouldn't) contain them.
+
+**Android — signed App Bundle for Play Console:**
+
+1. Generate an upload keystore once (keep it and its passwords somewhere
+   safe -- losing it means you can never update the app again under the
+   same listing):
+
+   ```bash
+   keytool -genkey -v -keystore ~/upload-keystore.jks -keyalg RSA \
+     -keysize 2048 -validity 10000 -alias upload
+   ```
+
+2. Copy `apps/storefront/android/key.properties.example` to
+   `apps/storefront/android/key.properties` (already gitignored) and fill
+   in `storeFile` (path to the `.jks` above) and the passwords/alias.
+   `android/app/build.gradle.kts` picks this up automatically -- with it
+   present, release builds are signed with your upload key instead of the
+   debug key.
+3. `flutter build appbundle --release --dart-define=API_BASE_URL=https://api.belpok.xyz`
+   → `build/app/outputs/bundle/release/app-release.aab`, ready to upload
+   as a new app in Play Console (that listing itself -- store copy,
+   screenshots, content rating, rollout -- is a manual Play Console step
+   outside this repo).
+
+**iOS — signed archive for App Store Connect:**
+
+1. Needs a paid Apple Developer Program account (App Store distribution
+   isn't available on a free account).
+2. In Xcode (`ios/Runner.xcworkspace`), with your team selected as in
+   local-run setup above, switch the scheme to **Release** and
+   **Product → Archive**. Xcode's Organizer window can then validate and
+   upload the archive straight to App Store Connect.
+3. Alternatively, from the command line:
+
+   ```bash
+   flutter build ipa --release --dart-define=API_BASE_URL=https://api.belpok.xyz
+   ```
+
+   → `build/ios/archive/Runner.xcarchive` and an exported `.ipa` under
+   `build/ios/ipa/`, uploadable via Xcode Organizer or
+   `xcrun altool`/Transporter.
+4. Creating the app record itself (bundle ID registration, App Store
+   Connect listing, TestFlight) is a manual step in App Store Connect,
+   outside this repo.
+
 ## Shared Dart package: `packages/belpok_core/`
 
 Both Flutter apps depend on this via a local path dependency
