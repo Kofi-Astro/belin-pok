@@ -8,11 +8,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.deps import get_current_customer, get_current_staff, require_role
-from app.models import Address, Customer, CustomerStatus, CustomerType, Staff, StaffRole
+from app.models import (
+    Address,
+    CreditLedgerEntryType,
+    Customer,
+    CustomerCreditLedger,
+    CustomerStatus,
+    CustomerType,
+    Staff,
+    StaffRole,
+)
 from app.schemas import (
     AddressCreate,
     AddressRead,
     CustomerCreate,
+    CustomerCreditAdjustmentCreate,
+    CustomerCreditLedgerRead,
+    CustomerCreditPaymentCreate,
     CustomerRead,
     CustomerRegister,
     CustomerStatusUpdate,
@@ -192,3 +204,115 @@ async def update_customer_status(
     await db.commit()
     await db.refresh(customer)
     return customer
+
+
+# ---------- wholesale credit ledger ----------
+
+
+@router.get(
+    "/{customer_id}/credit-ledger",
+    response_model=list[CustomerCreditLedgerRead],
+    dependencies=[Depends(get_current_staff)],
+)
+async def list_credit_ledger(
+    customer_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[CustomerCreditLedgerRead]:
+    """Full audit trail behind a customer's outstanding_balance -- every
+    charge, payment, and manual adjustment that ever touched it."""
+    stmt = (
+        select(CustomerCreditLedger, Staff.full_name.label("performed_by_name"))
+        .outerjoin(Staff, Staff.id == CustomerCreditLedger.performed_by)
+        .where(CustomerCreditLedger.customer_id == customer_id)
+        .order_by(CustomerCreditLedger.created_at.desc())
+        .limit(limit)
+    )
+    rows = (await db.execute(stmt)).all()
+    return [
+        CustomerCreditLedgerRead.model_validate(row.CustomerCreditLedger).model_copy(
+            update={"performed_by_name": row.performed_by_name}
+        )
+        for row in rows
+    ]
+
+
+@router.post(
+    "/{customer_id}/credit-payments",
+    response_model=CustomerCreditLedgerRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def record_credit_payment(
+    customer_id: uuid.UUID,
+    payload: CustomerCreditPaymentCreate,
+    db: AsyncSession = Depends(get_db),
+    staff: Staff = Depends(_write_roles),
+) -> CustomerCreditLedger:
+    """A wholesale customer paying down what they owe -- the only way
+    outstanding_balance moves down other than voiding the original sale.
+    Stored as a negative ledger entry so the same trigger that enforces
+    the credit limit on charges (see supabase/migrations) also applies
+    the balance decrease atomically."""
+    customer = await db.get(Customer, customer_id)
+    if customer is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    if payload.amount > float(customer.outstanding_balance):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Payment (₵{payload.amount:.2f}) exceeds the ₵{customer.outstanding_balance:.2f} owed",
+        )
+
+    entry = CustomerCreditLedger(
+        customer_id=customer_id,
+        entry_type=CreditLedgerEntryType.payment,
+        amount=-payload.amount,
+        reason=payload.reason,
+        performed_by=staff.id,
+    )
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return entry
+
+
+@router.post(
+    "/{customer_id}/credit-adjustments",
+    response_model=CustomerCreditLedgerRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def record_credit_adjustment(
+    customer_id: uuid.UUID,
+    payload: CustomerCreditAdjustmentCreate,
+    db: AsyncSession = Depends(get_db),
+    staff: Staff = Depends(_write_roles),
+) -> CustomerCreditLedger:
+    """A manual correction to a customer's balance (e.g. writing off a bad
+    debt, fixing a data-entry mistake) -- owner/order_fulfillment only,
+    same as every other write in this router, and always requires a
+    reason since it's an override rather than a normal transaction."""
+    customer = await db.get(Customer, customer_id)
+    if customer is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    new_balance = float(customer.outstanding_balance) + payload.amount
+    if new_balance < 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This adjustment would take the balance below ₵0 (currently ₵{customer.outstanding_balance:.2f})",
+        )
+    if new_balance > float(customer.credit_limit):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This adjustment would take the balance past the ₵{customer.credit_limit:.2f} credit limit",
+        )
+
+    entry = CustomerCreditLedger(
+        customer_id=customer_id,
+        entry_type=CreditLedgerEntryType.adjustment,
+        amount=payload.amount,
+        reason=payload.reason,
+        performed_by=staff.id,
+    )
+    db.add(entry)
+    await db.commit()
+    await db.refresh(entry)
+    return entry

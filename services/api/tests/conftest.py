@@ -44,11 +44,14 @@ async def fake_staff() -> AsyncGenerator[Staff, None]:
     yield staff
 
     async with async_session_factory() as session:
-        # stock_movements.performed_by is ON DELETE RESTRICT (an audit
-        # trail shouldn't silently lose who did what) -- tests that log a
-        # movement as this staff member would otherwise leave the FK
-        # blocking staff/auth.users cleanup below.
+        # stock_movements.performed_by and pos_sales.staff_id are both ON
+        # DELETE RESTRICT (an audit trail shouldn't silently lose who did
+        # what) -- tests that log a movement or ring up a sale as this
+        # staff member would otherwise leave one of those FKs blocking
+        # staff/auth.users cleanup below. pos_sale_items/pos_sale_payments
+        # cascade from pos_sales, so deleting it is enough.
         await session.execute(text("delete from stock_movements where performed_by = :id"), {"id": staff_id})
+        await session.execute(text("delete from pos_sales where staff_id = :id"), {"id": staff_id})
         await session.execute(text("delete from staff where id = :id"), {"id": staff_id})
         await session.execute(text("delete from auth.users where id = :id"), {"id": staff_id})
         await session.commit()
@@ -208,6 +211,32 @@ def create_product_with_stock():
             )
             assert movement_res.status_code == 201, movement_res.text
         return product_id, variant_id
+
+    return _make
+
+
+@pytest.fixture
+def create_wholesale_customer():
+    """A factory for an approved wholesale customer, optionally with a
+    credit limit -- the setup several POS-sale credit tests build on.
+    Takes the already-authenticated (staff) AsyncClient to issue the
+    setup requests through, same convention as create_product_with_stock."""
+
+    async def _make(ac: AsyncClient, unique: str, credit_limit: float = 0) -> str:
+        create_res = await ac.post(
+            "/customers",
+            json={
+                "full_name": f"Wholesale Co {unique}",
+                "email": f"wholesale-{unique}@example.com",
+                "customer_type": "wholesale",
+                "credit_limit": credit_limit,
+            },
+        )
+        assert create_res.status_code == 201, create_res.text
+        customer_id = create_res.json()["id"]
+        approve_res = await ac.post(f"/customers/{customer_id}/status", json={"status": "approved"})
+        assert approve_res.status_code == 200, approve_res.text
+        return customer_id
 
     return _make
 

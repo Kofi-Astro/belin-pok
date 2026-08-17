@@ -83,6 +83,19 @@ class PaymentMethod(enum.StrEnum):
     cash = "cash"
     mobile_money = "mobile_money"
     card = "card"
+    credit = "credit"
+
+
+class PriceTier(enum.StrEnum):
+    retail = "retail"
+    wholesale = "wholesale"
+    pack = "pack"
+
+
+class CreditLedgerEntryType(enum.StrEnum):
+    charge = "charge"
+    payment = "payment"
+    adjustment = "adjustment"
 
 
 def _pg_enum(pg_enum: enum.EnumMeta, name: str) -> PgEnum:
@@ -168,6 +181,9 @@ class ProductVariant(Base):
     color: Mapped[str | None]
     color_hex: Mapped[str | None]
     price_override: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    wholesale_price: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    pack_price: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    pack_size: Mapped[int | None]
     stock_quantity: Mapped[int] = mapped_column(default=0)
     low_stock_threshold: Mapped[int] = mapped_column(default=5)
     is_active: Mapped[bool] = mapped_column(default=True)
@@ -227,6 +243,7 @@ class POSSale(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     payments: Mapped[list["POSSalePayment"]] = relationship(back_populates="sale", cascade="all, delete-orphan")
+    items: Mapped[list["POSSaleItem"]] = relationship(back_populates="sale", cascade="all, delete-orphan")
 
 
 class POSSalePayment(Base):
@@ -238,6 +255,26 @@ class POSSalePayment(Base):
     amount: Mapped[float] = mapped_column(Numeric(10, 2))
 
     sale: Mapped["POSSale"] = relationship(back_populates="payments")
+
+
+class POSSaleItem(Base):
+    """Snapshot of what a POS sale line was actually billed at -- see
+    supabase/migrations/20260817120010_pos_sale_items.sql for why this
+    exists as its own table rather than being inferred from
+    stock_movements the way it used to be."""
+
+    __tablename__ = "pos_sale_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sale_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pos_sales.id", ondelete="CASCADE"))
+    variant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("product_variants.id", ondelete="RESTRICT"))
+    price_tier: Mapped[PriceTier] = mapped_column(_pg_enum(PriceTier, "price_tier"), default=PriceTier.retail)
+    quantity: Mapped[int]
+    unit_price: Mapped[float] = mapped_column(Numeric(10, 2))
+    line_total: Mapped[float] = mapped_column(Numeric(10, 2), server_default=FetchedValue())
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    sale: Mapped["POSSale"] = relationship(back_populates="items")
 
 
 class Customer(Base):
@@ -259,8 +296,14 @@ class Customer(Base):
     notes: Mapped[str | None]
     approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))
     approved_at: Mapped[datetime | None]
+    credit_limit: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    outstanding_balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    @property
+    def is_wholesale_verified(self) -> bool:
+        return self.customer_type == CustomerType.wholesale and self.status == CustomerStatus.approved
 
 
 class Address(Base):
@@ -377,4 +420,25 @@ class AuditLog(Base):
     old_values: Mapped[dict | None] = mapped_column(JSONB)
     new_values: Mapped[dict | None] = mapped_column(JSONB)
     ip_address: Mapped[str | None] = mapped_column(INET)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class CustomerCreditLedger(Base):
+    """Append-only history of every change to a wholesale customer's
+    outstanding_balance -- see supabase/migrations/
+    20260817120007_customer_credit_ledger.sql. Never updated or deleted;
+    corrections are offsetting rows, same as stock_movements."""
+
+    __tablename__ = "customer_credit_ledger"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id", ondelete="RESTRICT"))
+    entry_type: Mapped[CreditLedgerEntryType] = mapped_column(
+        _pg_enum(CreditLedgerEntryType, "credit_ledger_entry_type")
+    )
+    amount: Mapped[float] = mapped_column(Numeric(10, 2))
+    reason: Mapped[str | None]
+    reference_type: Mapped[str | None]
+    reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    performed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

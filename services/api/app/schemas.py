@@ -4,6 +4,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import (
+    CreditLedgerEntryType,
     CustomerStatus,
     CustomerType,
     DevicePlatform,
@@ -11,6 +12,7 @@ from app.models import (
     OrderStatus,
     OrderType,
     PaymentMethod,
+    PriceTier,
     ProductStatus,
     StaffRole,
     StockMovementType,
@@ -55,13 +57,33 @@ class CategoryRead(CategoryBase):
 # ---------- product variants ----------
 
 
+def _validate_pack_pair(pack_price: float | None, pack_size: int | None) -> None:
+    if (pack_price is None) != (pack_size is None):
+        raise ValueError("pack_price and pack_size must be set together, or both left unset")
+
+
 class ProductVariantBase(BaseModel):
     size: str = Field(min_length=1, max_length=50)
     color: str | None = None
     color_hex: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     price_override: float | None = Field(default=None, ge=0)
+    # Bulk/loose wholesale unit price. Falls back to the retail price
+    # (price_override, or the product's base_price) when unset -- most
+    # variants are never sold wholesale, so that's the common case, not an
+    # error condition.
+    wholesale_price: float | None = Field(default=None, ge=0)
+    # Price for one factory-packed bundle of pack_size units. Both must be
+    # set together (checked below and by a matching DB constraint).
+    pack_price: float | None = Field(default=None, ge=0)
+    pack_size: int | None = Field(default=None, gt=0)
     low_stock_threshold: int = Field(default=5, ge=0)
     is_active: bool = True
+
+    @field_validator("pack_size")
+    @classmethod
+    def pack_price_and_size_together(cls, value: int | None, info) -> int | None:
+        _validate_pack_pair(info.data.get("pack_price"), value)
+        return value
 
 
 class ProductVariantCreate(ProductVariantBase):
@@ -78,6 +100,9 @@ class ProductVariantUpdate(BaseModel):
     color: str | None = None
     color_hex: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     price_override: float | None = Field(default=None, ge=0)
+    wholesale_price: float | None = Field(default=None, ge=0)
+    pack_price: float | None = Field(default=None, ge=0)
+    pack_size: int | None = Field(default=None, gt=0)
     low_stock_threshold: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
@@ -212,11 +237,40 @@ class DailySalesRead(BaseModel):
     total_amount: float
 
 
+# ---------- inventory rebalance ----------
+
+
+class RebalanceLine(BaseModel):
+    variant_id: uuid.UUID
+    pack_count: int = Field(gt=0, description="How many packs to organize this variant's on-hand stock into.")
+
+
+class RebalanceCreate(BaseModel):
+    lines: list[RebalanceLine] = Field(min_length=1)
+    note: str | None = None
+
+
+class RebalanceLineResult(BaseModel):
+    variant_id: uuid.UUID
+    sku: str
+    pack_count: int
+    units_packed: int
+    stock_quantity: int
+
+
+class RebalanceResult(BaseModel):
+    lines: list[RebalanceLineResult]
+
+
 # ---------- POS sales ----------
 
 
 class POSSaleItemCreate(BaseModel):
     variant_id: uuid.UUID
+    price_tier: PriceTier = PriceTier.retail
+    # For price_tier='pack', this counts *packs*, not individual units --
+    # e.g. quantity=3 on a pack_size=6 variant removes 18 units of stock at
+    # 3 x pack_price. For 'retail'/'wholesale', quantity is plain units.
     quantity: int = Field(gt=0)
 
 
@@ -243,9 +297,13 @@ class POSSaleItemRead(BaseModel):
     product_name: str
     variant_size: str
     variant_color: str | None
+    price_tier: PriceTier
+    # Stock units removed by this line (already packs * pack_size for a
+    # 'pack' line -- see POSSaleItemCreate).
     quantity: int
     unit_price: float
     line_total: float
+    pack_size: int | None = None
 
 
 class POSSaleRead(BaseModel):
@@ -262,6 +320,7 @@ class POSSaleRead(BaseModel):
     items: list[POSSaleItemRead] = []
     payments: list[POSSalePaymentRead] = []
     total: float = 0
+    credit_amount: float = 0
 
 
 # ---------- staff ----------
@@ -304,7 +363,10 @@ class CustomerBase(BaseModel):
 
 
 class CustomerCreate(CustomerBase):
-    pass
+    # Owner/order_fulfillment only (enforced by the route, same as every
+    # other field here) -- defaults to 0, i.e. no credit buying until
+    # someone deliberately grants a limit.
+    credit_limit: float = Field(default=0, ge=0)
 
 
 class CustomerUpdate(BaseModel):
@@ -313,6 +375,7 @@ class CustomerUpdate(BaseModel):
     business_name: str | None = None
     tax_id: str | None = None
     notes: str | None = None
+    credit_limit: float | None = Field(default=None, ge=0)
 
 
 class CustomerStatusUpdate(BaseModel):
@@ -326,8 +389,64 @@ class CustomerRead(CustomerBase):
     status: CustomerStatus
     approved_by: uuid.UUID | None
     approved_at: datetime | None
+    credit_limit: float
+    outstanding_balance: float
+    is_wholesale_verified: bool
     created_at: datetime
     updated_at: datetime
+
+
+# ---------- customer credit ledger ----------
+
+
+class CustomerCreditPaymentCreate(BaseModel):
+    amount: float = Field(gt=0)
+    reason: str | None = None
+
+
+class CustomerCreditAdjustmentCreate(BaseModel):
+    """A manual correction (e.g. writing off a bad debt, or fixing a
+    data-entry mistake) -- amount is signed: positive increases what the
+    customer owes, negative decreases it. Distinct from
+    CustomerCreditPaymentCreate, which is always a paydown and always
+    positive input, to keep the common case (recording a payment) from
+    needing staff to know about signs."""
+
+    amount: float
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("amount")
+    @classmethod
+    def amount_not_zero(cls, value: float) -> float:
+        if value == 0:
+            raise ValueError("amount cannot be 0")
+        return value
+
+
+class CustomerCreditLedgerRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    customer_id: uuid.UUID
+    entry_type: CreditLedgerEntryType
+    amount: float
+    reason: str | None
+    reference_type: str | None
+    reference_id: uuid.UUID | None
+    performed_by: uuid.UUID | None
+    created_at: datetime
+
+    performed_by_name: str | None = None
+
+
+class AgedDebtorRead(BaseModel):
+    customer_id: uuid.UUID
+    customer_name: str
+    business_name: str | None
+    outstanding_balance: float
+    credit_limit: float
+    oldest_unpaid_charge_at: datetime | None
+    days_outstanding: int | None
 
 
 class CustomerRegister(BaseModel):
@@ -486,3 +605,32 @@ class AuditLogRead(BaseModel):
     created_at: datetime
 
     staff_name: str | None = None
+
+
+# ---------- dashboard ----------
+
+
+class TierRevenue(BaseModel):
+    price_tier: PriceTier
+    items_sold: int
+    revenue: float
+
+
+class TopVariantRead(BaseModel):
+    variant_id: uuid.UUID
+    product_name: str
+    size: str
+    color: str | None
+    units_sold: int
+    revenue: float
+
+
+class DashboardRead(BaseModel):
+    period_days: int
+    gross_revenue: float
+    items_sold: int
+    revenue_by_tier: list[TierRevenue]
+    top_variants: list[TopVariantRead]
+    low_stock_count: int
+    aged_debtors: list[AgedDebtorRead]
+    total_outstanding_credit: float
