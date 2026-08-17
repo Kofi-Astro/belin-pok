@@ -6,13 +6,36 @@ import '../models.dart';
 import '../theme.dart';
 import '../widgets/empty_state.dart';
 
-/// One-item-at-a-time entry for an in-person sale: tap a product from the
-/// quick-pick strip (or search for one further down the list), pick the
-/// size/color sold, say how many, record it. Deducts stock the moment
-/// it's recorded (same stock-movements mechanism as everywhere else) and
-/// resets straight back to search so the next item can be logged without
-/// any extra navigation. Today's sales are listed below with price and a
-/// way to void a mistaken entry.
+const _paymentMethods = ['cash', 'mobile_money', 'card'];
+
+String _paymentLabel(String method) => switch (method) {
+  'cash' => 'Cash',
+  'mobile_money' => 'Mobile Money',
+  'card' => 'Card',
+  _ => method,
+};
+
+class _CartLine {
+  final Product product;
+  final ProductVariant variant;
+  int quantity;
+  _CartLine({
+    required this.product,
+    required this.variant,
+    required this.quantity,
+  });
+
+  double get unitPrice => variant.priceOverride ?? product.basePrice;
+  double get lineTotal => unitPrice * quantity;
+  String get label =>
+      '${product.name} (${variant.size}${variant.color != null ? ' · ${variant.color}' : ''})';
+}
+
+/// A real register: build up a cart from several products (tap a photo,
+/// pick the size/color, set a quantity), then check out once with one or
+/// more payment methods covering the total. Deducts stock and records the
+/// payment together as one transaction, so "today's sales" is a list of
+/// actual receipts rather than disconnected stock-quantity edits.
 class LogSaleScreen extends StatefulWidget {
   const LogSaleScreen({super.key});
 
@@ -26,15 +49,16 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
 
   List<Product> _quickPick = [];
   List<Product> _results = [];
-  Product? _selected;
-  ProductVariant? _variant;
-  int _quantity = 1;
+  Product? _picking;
+  ProductVariant? _pickVariant;
+  int _pickQuantity = 1;
   bool _searching = false;
   bool _loadingProduct = false;
-  bool _submitting = false;
   String? _error;
 
-  List<StockMovement> _todaySales = [];
+  final List<_CartLine> _cart = [];
+
+  List<PosSale> _todaySales = [];
   bool _loadingSales = true;
 
   @override
@@ -49,22 +73,18 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
       final products = await _api.listProducts(status: 'active');
       if (mounted) setState(() => _quickPick = products);
     } on ApiException {
-      // Quick-pick is a convenience, not core to the screen -- search still
-      // works if this fails, so there's nothing to show the user here.
+      // Convenience only -- search still works if this fails.
     }
   }
 
   Future<void> _loadTodaySales() async {
     setState(() => _loadingSales = true);
     try {
-      final movements = await _api.listStockMovements(limit: 200);
+      final sales = await _api.listPosSales(limit: 200);
       final now = DateTime.now();
-      final today = movements.where((m) {
-        final d = m.createdAt.toLocal();
-        return m.movementType == 'sale' &&
-            d.year == now.year &&
-            d.month == now.month &&
-            d.day == now.day;
+      final today = sales.where((s) {
+        final d = s.createdAt.toLocal();
+        return d.year == now.year && d.month == now.month && d.day == now.day;
       }).toList();
       if (mounted) setState(() => _todaySales = today);
     } on ApiException catch (e) {
@@ -102,9 +122,9 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
       final full = await _api.getProduct(product.id);
       if (mounted) {
         setState(() {
-          _selected = full;
-          _variant = null;
-          _quantity = 1;
+          _picking = full;
+          _pickVariant = null;
+          _pickQuantity = 1;
         });
       }
     } on ApiException catch (e) {
@@ -114,58 +134,59 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
     }
   }
 
-  void _reset() {
+  void _cancelPicking() {
     setState(() {
-      _selected = null;
-      _variant = null;
-      _quantity = 1;
+      _picking = null;
+      _pickVariant = null;
+      _pickQuantity = 1;
       _results = [];
-      _error = null;
       _searchController.clear();
     });
   }
 
-  Future<void> _recordSale() async {
-    final variant = _variant;
-    final product = _selected;
-    if (variant == null || product == null) return;
+  void _addToCart() {
+    final product = _picking;
+    final variant = _pickVariant;
+    if (product == null || variant == null) return;
 
     setState(() {
-      _submitting = true;
-      _error = null;
-    });
-    try {
-      await _api.createStockMovement(
-        variantId: variant.id,
-        movementType: 'sale',
-        quantityChange: -_quantity,
-      );
-      if (mounted) {
-        final label =
-            '${product.name} (${variant.size}'
-            '${variant.color != null ? ' · ${variant.color}' : ''})';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Recorded: $_quantity × $label')),
+      final existing = _cart.where((l) => l.variant.id == variant.id).firstOrNull;
+      if (existing != null) {
+        existing.quantity = (existing.quantity + _pickQuantity).clamp(
+          1,
+          variant.stockQuantity,
         );
-        _reset();
-        _loadTodaySales();
+      } else {
+        _cart.add(
+          _CartLine(product: product, variant: variant, quantity: _pickQuantity),
+        );
       }
-    } on ApiException catch (e) {
-      setState(() => _error = e.message);
-    } finally {
-      if (mounted) setState(() => _submitting = false);
+    });
+    _cancelPicking();
+  }
+
+  double get _cartTotal => _cart.fold(0, (sum, l) => sum + l.lineTotal);
+
+  Future<void> _openCheckout() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (_) => _CheckoutDialog(api: _api, cart: _cart, total: _cartTotal),
+    );
+    if (result == true) {
+      setState(() => _cart.clear());
+      _loadTodaySales();
     }
   }
 
-  Future<void> _voidSale(StockMovement sale) async {
+  Future<void> _voidSale(PosSale sale) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Void this sale?'),
         content: Text(
-          'This puts ${sale.quantityChange.abs()} × ${sale.itemLabel} back '
-          "in stock and removes it from today's total. For fixing a "
-          "mistake, not a customer return.",
+          'This puts every item back in stock and removes '
+          '₵${sale.total.toStringAsFixed(2)} from today\'s total. For '
+          "fixing a mistake, not a customer return.",
         ),
         actions: [
           TextButton(
@@ -183,14 +204,7 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
     if (confirmed != true) return;
 
     try {
-      await _api.createStockMovement(
-        variantId: sale.variantId,
-        movementType: 'sale',
-        quantityChange: -sale.quantityChange,
-        reason: 'Correction: voided sale entry',
-        referenceType: 'void',
-        referenceId: sale.id,
-      );
+      await _api.voidPosSale(sale.id);
       _loadTodaySales();
     } on ApiException catch (e) {
       if (mounted) {
@@ -209,24 +223,24 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final voidedIds = _todaySales
-        .where((m) => m.referenceType == 'void' && m.referenceId != null)
-        .map((m) => m.referenceId!)
-        .toSet();
-    final sold = _todaySales.where((m) => m.quantityChange < 0).toList();
-    final todayTotal = _todaySales.fold<double>(
+    final activeSales = _todaySales.where((s) => !s.isVoided).toList();
+    final todayTotal = activeSales.fold<double>(0, (sum, s) => sum + s.total);
+    final todayItemCount = activeSales.fold<int>(
       0,
-      (sum, m) => sum + (m.unitPrice ?? 0) * m.quantityChange,
-    );
-    final todayItems = -_todaySales.fold<int>(
-      0,
-      (sum, m) => sum + m.quantityChange,
+      (sum, s) => sum + s.items.fold<int>(0, (n, i) => n + i.quantity),
     );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Log a Sale')),
+      floatingActionButton: _cart.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _openCheckout,
+              icon: const Icon(Icons.point_of_sale),
+              label: Text('Checkout · ₵${_cartTotal.toStringAsFixed(2)}'),
+            ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
         children: [
           if (_error != null)
             Padding(
@@ -236,7 +250,24 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
                 style: const TextStyle(color: AppColors.danger),
               ),
             ),
-          if (_selected == null) ...[
+
+          if (_cart.isNotEmpty) ...[
+            Text(
+              'Cart',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            for (final line in _cart) _CartTile(
+              line: line,
+              onRemove: () => setState(() => _cart.remove(line)),
+              onQuantityChanged: (q) => setState(() => line.quantity = q),
+            ),
+            const SizedBox(height: 20),
+          ],
+
+          if (_picking == null) ...[
             if (_quickPick.isNotEmpty) ...[
               Text(
                 'Quick pick',
@@ -251,11 +282,10 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
                   scrollDirection: Axis.horizontal,
                   itemCount: _quickPick.length,
                   separatorBuilder: (_, _) => const SizedBox(width: 10),
-                  itemBuilder: (context, index) =>
-                      _QuickPickCard(
-                        product: _quickPick[index],
-                        onTap: () => _selectProduct(_quickPick[index]),
-                      ),
+                  itemBuilder: (context, index) => _QuickPickCard(
+                    product: _quickPick[index],
+                    onTap: () => _selectProduct(_quickPick[index]),
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -291,18 +321,17 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
                 ),
               ),
           ] else
-            _SaleForm(
-              product: _selected!,
-              variant: _variant,
-              quantity: _quantity,
-              submitting: _submitting,
+            _VariantPickForm(
+              product: _picking!,
+              variant: _pickVariant,
+              quantity: _pickQuantity,
               onVariantChanged: (v) => setState(() {
-                _variant = v;
-                _quantity = 1;
+                _pickVariant = v;
+                _pickQuantity = 1;
               }),
-              onQuantityChanged: (q) => setState(() => _quantity = q),
-              onCancel: _reset,
-              onSubmit: _recordSale,
+              onQuantityChanged: (q) => setState(() => _pickQuantity = q),
+              onCancel: _cancelPicking,
+              onAddToCart: _addToCart,
             ),
 
           const SizedBox(height: 32),
@@ -316,7 +345,7 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               Text(
-                '$todayItems item(s) · ₵${todayTotal.toStringAsFixed(2)}',
+                '$todayItemCount item(s) · ₵${todayTotal.toStringAsFixed(2)}',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ],
@@ -324,19 +353,15 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
           const SizedBox(height: 12),
           if (_loadingSales)
             const Center(child: CircularProgressIndicator())
-          else if (sold.isEmpty)
+          else if (_todaySales.isEmpty)
             const EmptyState(
               icon: Icons.point_of_sale_outlined,
               title: 'No sales logged today yet',
-              message: 'Whatever you record above will show up here.',
+              message: 'Whatever you check out above will show up here.',
             )
           else
-            for (final sale in sold)
-              _SaleRow(
-                sale: sale,
-                voided: voidedIds.contains(sale.id),
-                onVoid: () => _voidSale(sale),
-              ),
+            for (final sale in _todaySales)
+              _SaleCard(sale: sale, onVoid: () => _voidSale(sale)),
         ],
       ),
     );
@@ -434,54 +459,49 @@ class _QuickPickCard extends StatelessWidget {
   }
 }
 
-class _SaleRow extends StatelessWidget {
-  final StockMovement sale;
-  final bool voided;
-  final VoidCallback onVoid;
+class _CartTile extends StatelessWidget {
+  final _CartLine line;
+  final VoidCallback onRemove;
+  final ValueChanged<int> onQuantityChanged;
 
-  const _SaleRow({required this.sale, required this.voided, required this.onVoid});
+  const _CartTile({
+    required this.line,
+    required this.onRemove,
+    required this.onQuantityChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: (voided ? AppColors.inkMuted : AppColors.success)
-              .withValues(alpha: 0.12),
-          child: Icon(
-            voided ? Icons.undo : Icons.check,
-            color: voided ? AppColors.inkMuted : AppColors.success,
-          ),
-        ),
-        title: Text(
-          '${sale.quantityChange.abs()} × ${sale.itemLabel}',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            decoration: voided ? TextDecoration.lineThrough : null,
-            color: voided ? AppColors.inkMuted : null,
-          ),
-        ),
-        subtitle: Text(
-          [
-            if (sale.performedByName != null) sale.performedByName!,
-            '${sale.createdAt.toLocal().hour.toString().padLeft(2, '0')}:'
-                '${sale.createdAt.toLocal().minute.toString().padLeft(2, '0')}',
-          ].join(' · '),
-        ),
+        title: Text(line.label, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text('₵${line.unitPrice.toStringAsFixed(2)} each'),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              '₵${sale.lineTotal.toStringAsFixed(2)}',
-              style: const TextStyle(fontWeight: FontWeight.w700),
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline, size: 20),
+              onPressed: line.quantity > 1
+                  ? () => onQuantityChanged(line.quantity - 1)
+                  : null,
             ),
-            if (!voided)
-              IconButton(
-                icon: const Icon(Icons.undo, size: 18),
-                tooltip: 'Void this sale',
-                onPressed: onVoid,
-              ),
+            Text('${line.quantity}', style: const TextStyle(fontWeight: FontWeight.w700)),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline, size: 20),
+              onPressed: line.quantity < line.variant.stockQuantity
+                  ? () => onQuantityChanged(line.quantity + 1)
+                  : null,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '₵${line.lineTotal.toStringAsFixed(2)}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
+              onPressed: onRemove,
+            ),
           ],
         ),
       ),
@@ -489,25 +509,23 @@ class _SaleRow extends StatelessWidget {
   }
 }
 
-class _SaleForm extends StatelessWidget {
+class _VariantPickForm extends StatelessWidget {
   final Product product;
   final ProductVariant? variant;
   final int quantity;
-  final bool submitting;
   final ValueChanged<ProductVariant> onVariantChanged;
   final ValueChanged<int> onQuantityChanged;
   final VoidCallback onCancel;
-  final VoidCallback onSubmit;
+  final VoidCallback onAddToCart;
 
-  const _SaleForm({
+  const _VariantPickForm({
     required this.product,
     required this.variant,
     required this.quantity,
-    required this.submitting,
     required this.onVariantChanged,
     required this.onQuantityChanged,
     required this.onCancel,
-    required this.onSubmit,
+    required this.onAddToCart,
   });
 
   @override
@@ -604,23 +622,254 @@ class _SaleForm extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               FilledButton.icon(
-                onPressed: submitting ? null : onSubmit,
-                icon: submitting
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.check),
-                label: const Text('Record Sale'),
+                onPressed: onAddToCart,
+                icon: const Icon(Icons.add_shopping_cart),
+                label: const Text('Add to Cart'),
               ),
             ],
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SaleCard extends StatelessWidget {
+  final PosSale sale;
+  final VoidCallback onVoid;
+
+  const _SaleCard({required this.sale, required this.onVoid});
+
+  @override
+  Widget build(BuildContext context) {
+    final time = sale.createdAt.toLocal();
+    final timeLabel =
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    final paymentSummary = sale.payments
+        .map((p) => _paymentLabel(p.method))
+        .toSet()
+        .join(' + ');
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      color: sale.isVoided ? AppColors.inkMuted.withValues(alpha: 0.06) : null,
+      child: ExpansionTile(
+        title: Text(
+          '${sale.items.fold<int>(0, (n, i) => n + i.quantity)} item(s) · '
+          '₵${sale.total.toStringAsFixed(2)} · $paymentSummary',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            decoration: sale.isVoided ? TextDecoration.lineThrough : null,
+            color: sale.isVoided ? AppColors.inkMuted : null,
+          ),
+        ),
+        subtitle: Text(
+          [
+            if (sale.staffName != null) sale.staffName!,
+            if (sale.customerName != null) sale.customerName!,
+            timeLabel,
+            if (sale.isVoided) 'Voided',
+          ].join(' · '),
+        ),
+        trailing: sale.isVoided
+            ? const Icon(Icons.undo, color: AppColors.inkMuted)
+            : IconButton(
+                icon: const Icon(Icons.undo, size: 18),
+                tooltip: 'Void this sale',
+                onPressed: onVoid,
+              ),
+        children: [
+          for (final item in sale.items)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(child: Text('${item.quantity} × ${item.label}')),
+                  Text('₵${item.lineTotal.toStringAsFixed(2)}'),
+                ],
+              ),
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+class _CheckoutDialog extends StatefulWidget {
+  final ApiClient api;
+  final List<_CartLine> cart;
+  final double total;
+
+  const _CheckoutDialog({
+    required this.api,
+    required this.cart,
+    required this.total,
+  });
+
+  @override
+  State<_CheckoutDialog> createState() => _CheckoutDialogState();
+}
+
+class _Payment {
+  String method;
+  final TextEditingController controller;
+  _Payment(this.method, double amount)
+    : controller = TextEditingController(text: amount.toStringAsFixed(2));
+}
+
+class _CheckoutDialogState extends State<_CheckoutDialog> {
+  late final List<_Payment> _payments = [_Payment('cash', widget.total)];
+  bool _submitting = false;
+  String? _error;
+
+  double get _paid => _payments.fold(
+    0,
+    (sum, p) => sum + (double.tryParse(p.controller.text) ?? 0),
+  );
+
+  double get _remaining => widget.total - _paid;
+
+  void _addPaymentLine() {
+    setState(() => _payments.add(_Payment('cash', _remaining.clamp(0, widget.total))));
+  }
+
+  Future<void> _submit() async {
+    if (_remaining.abs() > 0.01) {
+      setState(() => _error = "Payments don't add up to the total yet");
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await widget.api.createPosSale(
+        items: [
+          for (final line in widget.cart)
+            {'variant_id': line.variant.id, 'quantity': line.quantity},
+        ],
+        payments: [
+          for (final p in _payments)
+            {'method': p.method, 'amount': double.tryParse(p.controller.text) ?? 0},
+        ],
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final p in _payments) {
+      p.controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Checkout'),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Total: ₵${widget.total.toStringAsFixed(2)}',
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            ),
+            const SizedBox(height: 16),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: AppColors.danger),
+                ),
+              ),
+            for (final p in _payments)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: p.method,
+                        decoration: const InputDecoration(labelText: 'Method'),
+                        items: _paymentMethods
+                            .map(
+                              (m) => DropdownMenuItem(
+                                value: m,
+                                child: Text(_paymentLabel(m)),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => p.method = v!),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: p.controller,
+                        decoration: const InputDecoration(labelText: 'Amount (₵)'),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    if (_payments.length > 1)
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () => setState(() => _payments.remove(p)),
+                      ),
+                  ],
+                ),
+              ),
+            TextButton.icon(
+              onPressed: _addPaymentLine,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Split into another payment method'),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _remaining.abs() < 0.01
+                  ? 'Fully covered'
+                  : _remaining > 0
+                  ? 'Remaining: ₵${_remaining.toStringAsFixed(2)}'
+                  : 'Over by ₵${(-_remaining).toStringAsFixed(2)}',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: _remaining.abs() < 0.01
+                    ? AppColors.success
+                    : AppColors.danger,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submitting ? null : _submit,
+          child: _submitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Complete Sale'),
+        ),
+      ],
     );
   }
 }

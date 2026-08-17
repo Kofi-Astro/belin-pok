@@ -223,6 +223,29 @@ class ApiClient {
           .map((e) => AuditLogEntry.fromJson(e as Map<String, dynamic>))
           .toList();
 
+  // ---------- pos sales ----------
+
+  Future<List<PosSale>> listPosSales({int limit = 100}) async =>
+      (await _get('/pos-sales', {'limit': '$limit'}) as List)
+          .map((e) => PosSale.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+  Future<PosSale> createPosSale({
+    String? customerId,
+    required List<Map<String, dynamic>> items,
+    required List<Map<String, dynamic>> payments,
+  }) async => PosSale.fromJson(
+    await _post('/pos-sales', {
+          if (customerId != null) 'customer_id': customerId,
+          'items': items,
+          'payments': payments,
+        })
+        as Map<String, dynamic>,
+  );
+
+  Future<PosSale> voidPosSale(String id) async =>
+      PosSale.fromJson(await _post('/pos-sales/$id/void', {}) as Map<String, dynamic>);
+
   // ---------- reports ----------
 
   Future<List<DailySales>> dailySales({int days = 30}) async =>

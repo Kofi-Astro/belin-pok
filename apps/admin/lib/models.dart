@@ -159,6 +159,94 @@ class DailySales {
   );
 }
 
+class PosSaleItem {
+  final String variantId;
+  final String productName;
+  final String variantSize;
+  final String? variantColor;
+  final int quantity;
+  final double unitPrice;
+  final double lineTotal;
+
+  PosSaleItem({
+    required this.variantId,
+    required this.productName,
+    required this.variantSize,
+    required this.variantColor,
+    required this.quantity,
+    required this.unitPrice,
+    required this.lineTotal,
+  });
+
+  String get label =>
+      '$productName ($variantSize${variantColor != null ? ' · $variantColor' : ''})';
+
+  factory PosSaleItem.fromJson(Map<String, dynamic> json) => PosSaleItem(
+    variantId: json['variant_id'] as String,
+    productName: json['product_name'] as String,
+    variantSize: json['variant_size'] as String,
+    variantColor: json['variant_color'] as String?,
+    quantity: json['quantity'] as int,
+    unitPrice: (json['unit_price'] as num).toDouble(),
+    lineTotal: (json['line_total'] as num).toDouble(),
+  );
+}
+
+class PosSalePayment {
+  final String method;
+  final double amount;
+
+  PosSalePayment({required this.method, required this.amount});
+
+  factory PosSalePayment.fromJson(Map<String, dynamic> json) =>
+      PosSalePayment(
+        method: json['method'] as String,
+        amount: (json['amount'] as num).toDouble(),
+      );
+}
+
+class PosSale {
+  final String id;
+  final String? customerId;
+  final String status;
+  final DateTime createdAt;
+  final String? staffName;
+  final String? customerName;
+  final List<PosSaleItem> items;
+  final List<PosSalePayment> payments;
+  final double total;
+
+  PosSale({
+    required this.id,
+    required this.customerId,
+    required this.status,
+    required this.createdAt,
+    required this.staffName,
+    required this.customerName,
+    required this.items,
+    required this.payments,
+    required this.total,
+  });
+
+  bool get isVoided => status == 'voided';
+
+  factory PosSale.fromJson(Map<String, dynamic> json) => PosSale(
+    id: json['id'] as String,
+    customerId: json['customer_id'] as String?,
+    status: json['status'] as String,
+    createdAt: DateTime.parse(json['created_at'] as String),
+    staffName: json['staff_name'] as String?,
+    customerName: json['customer_name'] as String?,
+    items: (json['items'] as List)
+        .map((e) => PosSaleItem.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    payments: (json['payments'] as List)
+        .map((e) => PosSalePayment.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    total: (json['total'] as num).toDouble(),
+  );
+}
+
 class AuditLogEntry {
   final String id;
   final String action;
