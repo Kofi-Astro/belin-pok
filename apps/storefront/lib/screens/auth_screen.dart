@@ -22,6 +22,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordController = TextEditingController();
   bool _signUpMode = false;
   bool _submitting = false;
+  bool _confirmationSent = false;
 
   @override
   void dispose() {
@@ -32,16 +33,34 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _submit(AuthController auth) async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      _confirmationSent = false;
+    });
     if (_signUpMode) {
-      await auth.signUp(_emailController.text.trim(), _passwordController.text);
+      final hasSession = await auth.signUp(
+        _emailController.text.trim(),
+        _passwordController.text,
+      );
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      if (auth.error != null) return;
+      if (hasSession) {
+        context.go('/account');
+      } else {
+        // Email confirmation is required on this Supabase project --
+        // there's no session yet, so nothing to navigate to. Say so
+        // explicitly instead of silently landing back on a blank form.
+        setState(() {
+          _confirmationSent = true;
+          _signUpMode = false;
+        });
+      }
     } else {
       await auth.signIn(_emailController.text.trim(), _passwordController.text);
-    }
-    if (!mounted) return;
-    setState(() => _submitting = false);
-    if (auth.error == null) {
-      context.go('/account');
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      if (auth.error == null) context.go('/account');
     }
   }
 
@@ -66,6 +85,24 @@ class _AuthScreenState extends State<AuthScreen> {
                     style: Theme.of(context).textTheme.headlineSmall,
                     textAlign: TextAlign.center,
                   ),
+                  if (_confirmationSent) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'Check your email to confirm your account, then sign in here.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   TextFormField(
                     controller: _emailController,
