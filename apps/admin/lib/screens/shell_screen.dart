@@ -15,6 +15,12 @@ class _NavItem {
 }
 
 final _navItems = <_NavItem>[
+  _NavItem(
+    '/log-sale',
+    Icons.point_of_sale,
+    'Log Sale',
+    (auth) => auth.profile?.canAdjustStock ?? false,
+  ),
   _NavItem('/products', Icons.checkroom, 'Products', (_) => true),
   _NavItem('/inventory', Icons.inventory_2, 'Inventory', (_) => true),
   _NavItem('/orders', Icons.receipt_long, 'Orders', (_) => true),
