@@ -1,9 +1,9 @@
-import 'package:belpok_core/belpok_core.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../auth_controller.dart';
+import '../theme.dart';
 import '../widgets/storefront_scaffold.dart';
 
 /// One screen for both sign-in and sign-up (a toggle, not two routes) --
@@ -90,14 +90,14 @@ class _AuthScreenState extends State<AuthScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppColors.success.withValues(alpha: 0.12),
+                        color: StorefrontColors.success.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Text(
                         'Check your email to confirm your account, then sign in here.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: AppColors.success,
+                          color: StorefrontColors.success,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -125,7 +125,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     const SizedBox(height: 12),
                     Text(
                       auth.error!,
-                      style: const TextStyle(color: AppColors.danger),
+                      style: const TextStyle(color: StorefrontColors.danger),
                     ),
                   ],
                   const SizedBox(height: 20),

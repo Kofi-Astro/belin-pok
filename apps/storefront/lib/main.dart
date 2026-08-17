@@ -1,4 +1,3 @@
-import 'package:belpok_core/belpok_core.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +8,7 @@ import 'auth_controller.dart';
 import 'cart.dart';
 import 'config.dart';
 import 'router.dart';
+import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +40,7 @@ class _StorefrontAppState extends State<StorefrontApp> {
       ],
       child: MaterialApp.router(
         title: 'Belin-Pok',
-        theme: buildAppTheme(),
+        theme: buildStorefrontTheme(),
         routerConfig: _router,
       ),
     );

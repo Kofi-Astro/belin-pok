@@ -1,10 +1,11 @@
-import 'package:belpok_core/belpok_core.dart';
 import 'package:flutter/material.dart';
+
+import '../theme.dart';
 
 /// The home screen's opening section -- without this, the page starts
 /// straight into a search bar and a (possibly empty) grid, which reads as
-/// unfinished rather than intentionally sparse. A navy banner with the
-/// brand's own colors gives the page a top before the products start.
+/// unfinished rather than intentionally sparse. A deep-purple banner with
+/// an orange accent badge gives the page a top before the products start.
 class HeroBanner extends StatelessWidget {
   const HeroBanner({super.key});
 
@@ -17,7 +18,10 @@ class HeroBanner extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.navy, AppColors.navyLight],
+          colors: [
+            StorefrontColors.deepPurple,
+            StorefrontColors.deepPurpleLight,
+          ],
         ),
       ),
       child: Center(
@@ -32,7 +36,7 @@ class HeroBanner extends StatelessWidget {
                   vertical: 5,
                 ),
                 decoration: BoxDecoration(
-                  color: AppColors.amber,
+                  color: StorefrontColors.deepOrange,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: const Text(

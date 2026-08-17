@@ -1,10 +1,10 @@
-import 'package:belpok_core/belpok_core.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../cart.dart';
 import '../config.dart';
+import '../theme.dart';
 import '../widgets/storefront_scaffold.dart';
 
 class CartScreen extends StatelessWidget {
@@ -66,13 +66,13 @@ class _CartLineTile extends StatelessWidget {
                     image.publicUrl(AppConfig.supabaseUrl),
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) =>
-                        Container(color: AppColors.canvas),
+                        Container(color: StorefrontColors.canvas),
                   )
                 : Container(
-                    color: AppColors.canvas,
+                    color: StorefrontColors.canvas,
                     child: const Icon(
                       Icons.checkroom,
-                      color: AppColors.inkMuted,
+                      color: StorefrontColors.inkMuted,
                     ),
                   ),
           ),
@@ -88,7 +88,7 @@ class _CartLineTile extends StatelessWidget {
               ),
               Text(
                 variantLabel,
-                style: const TextStyle(color: AppColors.inkMuted),
+                style: const TextStyle(color: StorefrontColors.inkMuted),
               ),
               const SizedBox(height: 8),
               Row(
@@ -149,7 +149,7 @@ class _CartSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: const BoxDecoration(
-        color: AppColors.surface,
+        color: StorefrontColors.surface,
         border: Border(top: BorderSide(color: Color(0xFFE7E3DC))),
       ),
       child: Padding(
@@ -162,7 +162,7 @@ class _CartSummary extends StatelessWidget {
                 children: [
                   const Text(
                     'Total',
-                    style: TextStyle(color: AppColors.inkMuted),
+                    style: TextStyle(color: StorefrontColors.inkMuted),
                   ),
                   Text(
                     '₵${cart.total.toStringAsFixed(2)}',

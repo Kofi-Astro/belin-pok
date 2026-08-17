@@ -2,6 +2,7 @@ import 'package:belpok_core/belpok_core.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../theme.dart';
 import '../widgets/storefront_scaffold.dart';
 
 class OrderConfirmationScreen extends StatelessWidget {
@@ -22,7 +23,7 @@ class OrderConfirmationScreen extends StatelessWidget {
               children: [
                 const Icon(
                   Icons.check_circle,
-                  color: AppColors.success,
+                  color: StorefrontColors.success,
                   size: 64,
                 ),
                 const SizedBox(height: 16),
@@ -38,13 +39,13 @@ class OrderConfirmationScreen extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   'Total ₵${order.total.toStringAsFixed(2)} · Status: ${order.status}',
-                  style: const TextStyle(color: AppColors.inkMuted),
+                  style: const TextStyle(color: StorefrontColors.inkMuted),
                 ),
                 const SizedBox(height: 8),
                 const Text(
                   'We\'ll be in touch to arrange payment and delivery.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.inkMuted),
+                  style: TextStyle(color: StorefrontColors.inkMuted),
                 ),
                 const SizedBox(height: 24),
                 FilledButton(

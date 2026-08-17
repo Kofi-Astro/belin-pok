@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../api_client.dart';
+import '../theme.dart';
 import '../widgets/category_icon.dart';
 import '../widgets/hero_banner.dart';
 import '../widgets/product_card.dart';
@@ -164,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 4),
               Text(
                 '${_products.length} item${_products.length == 1 ? '' : 's'}',
-                style: const TextStyle(color: AppColors.inkMuted),
+                style: const TextStyle(color: StorefrontColors.inkMuted),
               ),
             ],
           ),

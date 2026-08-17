@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../api_client.dart';
 import '../auth_controller.dart';
+import '../theme.dart';
 import '../widgets/storefront_scaffold.dart';
 
 class AccountScreen extends StatelessWidget {
@@ -82,7 +83,7 @@ class _CompleteRegistrationFormState extends State<_CompleteRegistrationForm> {
                 const Text(
                   'One more step -- tell us your name so we know who\'s ordering.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.inkMuted),
+                  style: TextStyle(color: StorefrontColors.inkMuted),
                 ),
                 const SizedBox(height: 24),
                 TextFormField(
@@ -103,7 +104,7 @@ class _CompleteRegistrationFormState extends State<_CompleteRegistrationForm> {
                   const SizedBox(height: 12),
                   Text(
                     auth.error!,
-                    style: const TextStyle(color: AppColors.danger),
+                    style: const TextStyle(color: StorefrontColors.danger),
                   ),
                 ],
                 const SizedBox(height: 20),
@@ -180,7 +181,7 @@ class _AccountDetailsState extends State<_AccountDetails> {
               ),
               Text(
                 profile.email,
-                style: const TextStyle(color: AppColors.inkMuted),
+                style: const TextStyle(color: StorefrontColors.inkMuted),
               ),
             ],
             const SizedBox(height: 8),
@@ -198,13 +199,16 @@ class _AccountDetailsState extends State<_AccountDetails> {
             ),
             const SizedBox(height: 8),
             if (_error != null)
-              Text(_error!, style: const TextStyle(color: AppColors.danger))
+              Text(
+                _error!,
+                style: const TextStyle(color: StorefrontColors.danger),
+              )
             else if (_orders == null)
               const Center(child: CircularProgressIndicator())
             else if (_orders!.isEmpty)
               const Text(
                 'No orders yet.',
-                style: TextStyle(color: AppColors.inkMuted),
+                style: TextStyle(color: StorefrontColors.inkMuted),
               )
             else
               ..._orders!.map(

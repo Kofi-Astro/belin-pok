@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../api_client.dart';
 import '../cart.dart';
 import '../config.dart';
+import '../theme.dart';
 import '../widgets/storefront_scaffold.dart';
 
 class ProductDetailScreen extends StatefulWidget {
@@ -97,20 +98,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         product.primaryImage!.publicUrl(AppConfig.supabaseUrl),
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) => Container(
-                          color: AppColors.canvas,
+                          color: StorefrontColors.canvas,
                           child: const Icon(
                             Icons.checkroom,
                             size: 64,
-                            color: AppColors.inkMuted,
+                            color: StorefrontColors.inkMuted,
                           ),
                         ),
                       )
                     : Container(
-                        color: AppColors.canvas,
+                        color: StorefrontColors.canvas,
                         child: const Icon(
                           Icons.checkroom,
                           size: 64,
-                          color: AppColors.inkMuted,
+                          color: StorefrontColors.inkMuted,
                         ),
                       ),
               ),
@@ -124,7 +125,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               const SizedBox(height: 4),
               Text(
                 product.brand!,
-                style: const TextStyle(color: AppColors.inkMuted),
+                style: const TextStyle(color: StorefrontColors.inkMuted),
               ),
             ],
             const SizedBox(height: 8),
@@ -142,7 +143,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             if (product.variants.isEmpty)
               const Text(
                 'Currently unavailable.',
-                style: TextStyle(color: AppColors.inkMuted),
+                style: TextStyle(color: StorefrontColors.inkMuted),
               )
             else
               Wrap(

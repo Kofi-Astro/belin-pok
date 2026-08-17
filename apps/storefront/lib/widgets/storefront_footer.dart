@@ -1,5 +1,6 @@
-import 'package:belpok_core/belpok_core.dart';
 import 'package:flutter/material.dart';
+
+import '../theme.dart';
 
 class StorefrontFooter extends StatelessWidget {
   const StorefrontFooter({super.key});
@@ -8,7 +9,7 @@ class StorefrontFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      color: AppColors.navy,
+      color: StorefrontColors.deepPurple,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
       child: Center(
         child: ConstrainedBox(

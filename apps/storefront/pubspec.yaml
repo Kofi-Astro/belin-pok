@@ -37,6 +37,7 @@ dependencies:
   supabase_flutter: ^2.17.2
   go_router: ^17.5.0
   provider: ^6.1.5+1
+  google_fonts: ^8.2.1
   belpok_core:
     path: ../../packages/belpok_core
 

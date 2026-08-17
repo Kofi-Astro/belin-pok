@@ -1,10 +1,10 @@
-import 'package:belpok_core/belpok_core.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../auth_controller.dart';
 import '../cart.dart';
+import '../theme.dart';
 
 /// Shared top bar (brand, account, cart-with-badge) every top-level
 /// screen wraps itself in. A plain widget rather than a go_router
@@ -69,7 +69,7 @@ class StorefrontScaffold extends StatelessWidget {
                         minHeight: 16,
                       ),
                       decoration: const BoxDecoration(
-                        color: AppColors.amber,
+                        color: StorefrontColors.deepOrange,
                         shape: BoxShape.circle,
                       ),
                       child: Text(

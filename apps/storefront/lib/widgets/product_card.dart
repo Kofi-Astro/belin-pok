@@ -2,6 +2,7 @@ import 'package:belpok_core/belpok_core.dart';
 import 'package:flutter/material.dart';
 
 import '../config.dart';
+import '../theme.dart';
 
 class ProductCard extends StatelessWidget {
   final Product product;
@@ -45,7 +46,7 @@ class ProductCard extends StatelessWidget {
                   Text(
                     '₵${product.basePrice.toStringAsFixed(2)}',
                     style: const TextStyle(
-                      color: AppColors.navy,
+                      color: StorefrontColors.deepPurple,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -68,20 +69,23 @@ class _PlaceholderImage extends StatelessWidget {
       gradient: LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [AppColors.canvas, AppColors.navy.withValues(alpha: 0.06)],
+        colors: [
+          StorefrontColors.canvas,
+          StorefrontColors.deepPurple.withValues(alpha: 0.06),
+        ],
       ),
     ),
     alignment: Alignment.center,
     child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.navy.withValues(alpha: 0.06),
+        color: StorefrontColors.deepPurple.withValues(alpha: 0.06),
         shape: BoxShape.circle,
       ),
       child: Icon(
         Icons.checkroom,
         size: 32,
-        color: AppColors.navy.withValues(alpha: 0.45),
+        color: StorefrontColors.deepPurple.withValues(alpha: 0.45),
       ),
     ),
   );

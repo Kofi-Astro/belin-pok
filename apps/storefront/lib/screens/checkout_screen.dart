@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../api_client.dart';
 import '../auth_controller.dart';
 import '../cart.dart';
+import '../theme.dart';
 import '../widgets/storefront_scaffold.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -180,7 +181,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Text(
                       _error!,
-                      style: const TextStyle(color: AppColors.danger),
+                      style: const TextStyle(color: StorefrontColors.danger),
                     ),
                   ),
                 SizedBox(
