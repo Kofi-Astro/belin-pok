@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from app.deps import get_current_customer, get_current_staff, get_optional_custo
 from app.models import (
     Address,
     Customer,
+    CustomerDeviceToken,
     CustomerStatus,
     CustomerType,
     Order,
@@ -26,6 +27,7 @@ from app.models import (
     StockMovement,
     StockMovementType,
 )
+from app.push import send_push
 from app.schemas import CheckoutCreate, OrderStatusUpdate, OrderWithItems
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -231,6 +233,7 @@ async def get_order(order_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
 async def update_order_status(
     order_id: uuid.UUID,
     payload: OrderStatusUpdate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     staff: Staff = Depends(_write_roles),
 ) -> Order:
@@ -242,6 +245,21 @@ async def update_order_status(
     db.add(OrderStatusHistory(order_id=order.id, status=payload.status, changed_by=staff.id, note=payload.note))
 
     await db.commit()
+
+    # Best-effort: scheduled with BackgroundTasks so it runs after this
+    # response is sent, and can never fail or roll back the status update
+    # above, which has already committed by this point.
+    tokens = await db.scalars(
+        select(CustomerDeviceToken.token).where(CustomerDeviceToken.customer_id == order.customer_id)
+    )
+    token_list = list(tokens)
+    if token_list:
+        background_tasks.add_task(
+            send_push,
+            token_list,
+            "Order update",
+            f"Your order #{order.order_number} is now {payload.status.value}.",
+        )
 
     stmt = select(Order).where(Order.id == order_id).options(selectinload(Order.items))
     return await db.scalar(stmt)

@@ -5,6 +5,7 @@ from app.config import get_settings
 from app.routers import (
     categories,
     customers,
+    device_tokens,
     health,
     orders,
     product_images,
@@ -41,3 +42,4 @@ app.include_router(stock_movements.router)
 app.include_router(staff.router)
 app.include_router(customers.router)
 app.include_router(orders.router)
+app.include_router(device_tokens.router)

@@ -3,7 +3,16 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models import CustomerStatus, CustomerType, OrderStatus, OrderType, ProductStatus, StaffRole, StockMovementType
+from app.models import (
+    CustomerStatus,
+    CustomerType,
+    DevicePlatform,
+    OrderStatus,
+    OrderType,
+    ProductStatus,
+    StaffRole,
+    StockMovementType,
+)
 
 
 class HealthResponse(BaseModel):
@@ -350,3 +359,32 @@ class CheckoutCreate(BaseModel):
     address: AddressCreate | None = None
 
     notes: str | None = None
+
+
+# ---------- device tokens ----------
+
+
+class DeviceTokenRegister(BaseModel):
+    platform: DevicePlatform
+    token: str = Field(min_length=1, max_length=4096)
+
+
+class DeviceTokenRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    platform: DevicePlatform
+    token: str
+    created_at: datetime
+
+
+# ---------- back-in-stock notifications ----------
+
+
+class StockNotificationRequestRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    variant_id: uuid.UUID
+    requested_at: datetime
+    notified_at: datetime | None

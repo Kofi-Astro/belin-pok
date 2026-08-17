@@ -7,9 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_db
-from app.deps import get_current_staff, require_role
-from app.models import Product, ProductVariant, StaffRole
-from app.schemas import LowStockVariantRead, ProductVariantCreate, ProductVariantRead, ProductVariantUpdate
+from app.deps import get_current_customer, get_current_staff, require_role
+from app.models import Customer, Product, ProductVariant, StaffRole, StockNotificationRequest
+from app.schemas import (
+    LowStockVariantRead,
+    ProductVariantCreate,
+    ProductVariantRead,
+    ProductVariantUpdate,
+    StockNotificationRequestRead,
+)
 
 router = APIRouter(tags=["variants"])
 
@@ -115,3 +121,45 @@ async def low_stock_variants(db: AsyncSession = Depends(get_db)) -> list[LowStoc
         )
         for variant in result
     ]
+
+
+# ---------- storefront ----------
+
+
+@router.post(
+    "/variants/{variant_id}/notify-when-in-stock",
+    response_model=StockNotificationRequestRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def subscribe_to_back_in_stock(
+    variant_id: uuid.UUID,
+    customer: Customer = Depends(get_current_customer),
+    db: AsyncSession = Depends(get_db),
+) -> StockNotificationRequest:
+    """"Notify me" on an out-of-stock variant. Idempotent while a
+    subscription is still pending (the DB's partial unique index on
+    (customer_id, variant_id) where notified_at is null backs this up --
+    the check here is just what turns that into a friendly reuse instead
+    of a 409). Once fulfilled (see the zero-crossing check in
+    stock_movements.py), a customer is free to subscribe again next time
+    it sells out.
+    """
+    variant = await db.get(ProductVariant, variant_id)
+    if variant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+
+    existing = await db.scalar(
+        select(StockNotificationRequest).where(
+            StockNotificationRequest.customer_id == customer.id,
+            StockNotificationRequest.variant_id == variant_id,
+            StockNotificationRequest.notified_at.is_(None),
+        )
+    )
+    if existing is not None:
+        return existing
+
+    request = StockNotificationRequest(customer_id=customer.id, variant_id=variant_id)
+    db.add(request)
+    await db.commit()
+    await db.refresh(request)
+    return request

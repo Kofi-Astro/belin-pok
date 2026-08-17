@@ -69,6 +69,11 @@ class StockMovementType(enum.StrEnum):
     initial = "initial"
 
 
+class DevicePlatform(enum.StrEnum):
+    ios = "ios"
+    android = "android"
+
+
 def _pg_enum(pg_enum: enum.EnumMeta, name: str) -> PgEnum:
     return PgEnum(pg_enum, name=name, create_type=False)
 
@@ -292,6 +297,26 @@ class OrderStatusHistory(Base):
     changed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))
     note: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class CustomerDeviceToken(Base):
+    __tablename__ = "customer_device_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"))
+    platform: Mapped[DevicePlatform] = mapped_column(_pg_enum(DevicePlatform, "device_platform"))
+    token: Mapped[str] = mapped_column(unique=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class StockNotificationRequest(Base):
+    __tablename__ = "stock_notification_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"))
+    variant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("product_variants.id", ondelete="CASCADE"))
+    requested_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    notified_at: Mapped[datetime | None]
 
 
 class AuditLog(Base):
