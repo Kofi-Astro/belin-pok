@@ -110,6 +110,9 @@ class ApiClient {
   Future<void> archiveProduct(String id) =>
       updateProduct(id, {'status': 'archived'});
 
+  Future<void> activateProduct(String id) =>
+      updateProduct(id, {'status': 'active'});
+
   // ---------- product images ----------
   //
   // The file bytes go straight to Supabase Storage using the signed-in

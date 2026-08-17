@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../auth_controller.dart';
 import '../theme.dart';
+import '../widgets/change_password_dialog.dart';
 
 class _NavItem {
   final String location;
@@ -29,6 +30,18 @@ class AppShell extends StatelessWidget {
   final Widget child;
   final String location;
   const AppShell({super.key, required this.child, required this.location});
+
+  Future<void> _changePassword(BuildContext context, AuthController auth) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (_) => ChangePasswordDialog(auth: auth),
+    );
+    if (changed == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password updated')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -136,6 +149,15 @@ class AppShell extends StatelessWidget {
                               ),
                             ),
                             IconButton(
+                              tooltip: 'Change password',
+                              icon: const Icon(
+                                Icons.key_outlined,
+                                color: Colors.white70,
+                                size: 20,
+                              ),
+                              onPressed: () => _changePassword(context, auth),
+                            ),
+                            IconButton(
                               tooltip: 'Sign out',
                               icon: const Icon(
                                 Icons.logout,
@@ -146,10 +168,26 @@ class AppShell extends StatelessWidget {
                             ),
                           ],
                         )
-                      : IconButton(
-                          tooltip: 'Sign out',
-                          icon: const Icon(Icons.logout, color: Colors.white70),
-                          onPressed: auth.signOut,
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Change password',
+                              icon: const Icon(
+                                Icons.key_outlined,
+                                color: Colors.white70,
+                              ),
+                              onPressed: () => _changePassword(context, auth),
+                            ),
+                            IconButton(
+                              tooltip: 'Sign out',
+                              icon: const Icon(
+                                Icons.logout,
+                                color: Colors.white70,
+                              ),
+                              onPressed: auth.signOut,
+                            ),
+                          ],
                         ),
                 ),
               ],

@@ -570,6 +570,12 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
     if (mounted) Navigator.of(context).pop(true);
   }
 
+  Future<void> _publish() async {
+    await widget.api.activateProduct(widget.product.id);
+    _changed = true;
+    _reload();
+  }
+
   Future<void> _adjustStock(ProductVariant variant) async {
     final adjusted = await showDialog<bool>(
       context: context,
@@ -720,22 +726,37 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                       ),
                     ),
                   ),
-                  if (canWrite && product.status != 'archived')
+                  if (canWrite)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: _archive,
-                          icon: const Icon(
-                            Icons.archive_outlined,
-                            color: AppColors.danger,
-                          ),
-                          label: const Text(
-                            'Archive Product',
-                            style: TextStyle(color: AppColors.danger),
-                          ),
-                        ),
+                      child: Row(
+                        children: [
+                          if (product.status != 'active')
+                            TextButton.icon(
+                              onPressed: _publish,
+                              icon: const Icon(
+                                Icons.storefront_outlined,
+                                color: AppColors.success,
+                              ),
+                              label: const Text(
+                                'Publish to Storefront',
+                                style: TextStyle(color: AppColors.success),
+                              ),
+                            ),
+                          const Spacer(),
+                          if (product.status != 'archived')
+                            TextButton.icon(
+                              onPressed: _archive,
+                              icon: const Icon(
+                                Icons.archive_outlined,
+                                color: AppColors.danger,
+                              ),
+                              label: const Text(
+                                'Archive Product',
+                                style: TextStyle(color: AppColors.danger),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                 ],

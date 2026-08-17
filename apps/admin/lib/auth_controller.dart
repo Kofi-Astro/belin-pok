@@ -58,4 +58,16 @@ class AuthController extends ChangeNotifier {
   Future<void> signOut() async {
     await Supabase.instance.client.auth.signOut();
   }
+
+  /// Returns null on success, or a message to show the user on failure.
+  Future<String?> changePassword(String newPassword) async {
+    try {
+      await Supabase.instance.client.auth.updateUser(
+        UserAttributes(password: newPassword),
+      );
+      return null;
+    } on AuthException catch (e) {
+      return e.message;
+    }
+  }
 }
