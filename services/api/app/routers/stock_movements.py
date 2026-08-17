@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -37,6 +37,7 @@ async def list_stock_movements(
     # Joined in (rather than modeled as relationships on StockMovement) so
     # the Inventory screen's activity feed can show what/who without a
     # second round trip per row -- this is the only place that needs it.
+    unit_price = func.coalesce(ProductVariant.price_override, Product.base_price)
     stmt = (
         select(
             StockMovement,
@@ -46,6 +47,7 @@ async def list_stock_movements(
             ProductVariant.color.label("variant_color"),
             Staff.full_name.label("performed_by_name"),
             Staff.role.label("performed_by_role"),
+            unit_price.label("unit_price"),
         )
         .join(ProductVariant, ProductVariant.id == StockMovement.variant_id)
         .join(Product, Product.id == ProductVariant.product_id)
@@ -66,6 +68,7 @@ async def list_stock_movements(
                 "variant_color": row.variant_color,
                 "performed_by_name": row.performed_by_name,
                 "performed_by_role": row.performed_by_role,
+                "unit_price": float(row.unit_price),
             }
         )
         for row in rows

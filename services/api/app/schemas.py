@@ -202,6 +202,7 @@ class StockMovementRead(BaseModel):
     variant_color: str | None = None
     performed_by_name: str | None = None
     performed_by_role: StaffRole | None = None
+    unit_price: float | None = None
 
 
 class DailySalesRead(BaseModel):
@@ -414,3 +415,21 @@ class StockNotificationRequestRead(BaseModel):
     variant_id: uuid.UUID
     requested_at: datetime
     notified_at: datetime | None
+
+
+# ---------- audit log ----------
+
+
+class AuditLogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    staff_id: uuid.UUID | None
+    action: str
+    table_name: str
+    record_id: uuid.UUID | None
+    old_values: dict | None
+    new_values: dict | None
+    created_at: datetime
+
+    staff_name: str | None = None

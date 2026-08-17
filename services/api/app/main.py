@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.routers import (
+    audit_log,
     categories,
     customers,
     device_tokens,
@@ -45,3 +46,4 @@ app.include_router(customers.router)
 app.include_router(orders.router)
 app.include_router(device_tokens.router)
 app.include_router(reports.router)
+app.include_router(audit_log.router)
