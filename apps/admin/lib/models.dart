@@ -164,31 +164,44 @@ class PosSaleItem {
   final String productName;
   final String variantSize;
   final String? variantColor;
+  final String priceTier;
   final int quantity;
   final double unitPrice;
   final double lineTotal;
+  final int? packSize;
 
   PosSaleItem({
     required this.variantId,
     required this.productName,
     required this.variantSize,
     required this.variantColor,
+    required this.priceTier,
     required this.quantity,
     required this.unitPrice,
     required this.lineTotal,
+    required this.packSize,
   });
 
   String get label =>
       '$productName ($variantSize${variantColor != null ? ' · $variantColor' : ''})';
+
+  /// Human count for display -- packs for a 'pack' line (quantity is
+  /// already in stock units on the wire, see services/api's
+  /// POSSaleItemCreate), plain units otherwise.
+  String get quantityLabel => priceTier == 'pack' && packSize != null
+      ? '${quantity ~/ packSize!} pack(s) of $packSize'
+      : '$quantity';
 
   factory PosSaleItem.fromJson(Map<String, dynamic> json) => PosSaleItem(
     variantId: json['variant_id'] as String,
     productName: json['product_name'] as String,
     variantSize: json['variant_size'] as String,
     variantColor: json['variant_color'] as String?,
+    priceTier: json['price_tier'] as String? ?? 'retail',
     quantity: json['quantity'] as int,
     unitPrice: (json['unit_price'] as num).toDouble(),
     lineTotal: (json['line_total'] as num).toDouble(),
+    packSize: json['pack_size'] as int?,
   );
 }
 
@@ -215,6 +228,7 @@ class PosSale {
   final List<PosSaleItem> items;
   final List<PosSalePayment> payments;
   final double total;
+  final double creditAmount;
 
   PosSale({
     required this.id,
@@ -226,6 +240,7 @@ class PosSale {
     required this.items,
     required this.payments,
     required this.total,
+    required this.creditAmount,
   });
 
   bool get isVoided => status == 'voided';
@@ -244,6 +259,7 @@ class PosSale {
         .map((e) => PosSalePayment.fromJson(e as Map<String, dynamic>))
         .toList(),
     total: (json['total'] as num).toDouble(),
+    creditAmount: (json['credit_amount'] as num?)?.toDouble() ?? 0,
   );
 }
 
@@ -290,23 +306,181 @@ class Customer {
   final String id;
   final String fullName;
   final String email;
+  final String? phone;
   final String customerType;
   final String status;
+  final String? businessName;
+  final String? notes;
+  final double creditLimit;
+  final double outstandingBalance;
+  final bool isWholesaleVerified;
 
   Customer({
     required this.id,
     required this.fullName,
     required this.email,
+    required this.phone,
     required this.customerType,
     required this.status,
+    required this.businessName,
+    required this.notes,
+    required this.creditLimit,
+    required this.outstandingBalance,
+    required this.isWholesaleVerified,
   });
+
+  bool get isWholesale => customerType == 'wholesale';
+  double get availableCredit => (creditLimit - outstandingBalance).clamp(0, creditLimit);
 
   factory Customer.fromJson(Map<String, dynamic> json) => Customer(
     id: json['id'] as String,
     fullName: json['full_name'] as String,
     email: json['email'] as String,
+    phone: json['phone'] as String?,
     customerType: json['customer_type'] as String,
     status: json['status'] as String,
+    businessName: json['business_name'] as String?,
+    notes: json['notes'] as String?,
+    creditLimit: (json['credit_limit'] as num).toDouble(),
+    outstandingBalance: (json['outstanding_balance'] as num).toDouble(),
+    isWholesaleVerified: json['is_wholesale_verified'] as bool,
+  );
+}
+
+class CreditLedgerEntry {
+  final String id;
+  final String entryType;
+  final double amount;
+  final String? reason;
+  final String? referenceType;
+  final DateTime createdAt;
+  final String? performedByName;
+
+  CreditLedgerEntry({
+    required this.id,
+    required this.entryType,
+    required this.amount,
+    required this.reason,
+    required this.referenceType,
+    required this.createdAt,
+    required this.performedByName,
+  });
+
+  factory CreditLedgerEntry.fromJson(Map<String, dynamic> json) => CreditLedgerEntry(
+    id: json['id'] as String,
+    entryType: json['entry_type'] as String,
+    amount: (json['amount'] as num).toDouble(),
+    reason: json['reason'] as String?,
+    referenceType: json['reference_type'] as String?,
+    createdAt: DateTime.parse(json['created_at'] as String),
+    performedByName: json['performed_by_name'] as String?,
+  );
+}
+
+class TierRevenue {
+  final String priceTier;
+  final int itemsSold;
+  final double revenue;
+
+  TierRevenue({required this.priceTier, required this.itemsSold, required this.revenue});
+
+  factory TierRevenue.fromJson(Map<String, dynamic> json) => TierRevenue(
+    priceTier: json['price_tier'] as String,
+    itemsSold: json['items_sold'] as int,
+    revenue: (json['revenue'] as num).toDouble(),
+  );
+}
+
+class TopVariant {
+  final String variantId;
+  final String productName;
+  final String size;
+  final String? color;
+  final int unitsSold;
+  final double revenue;
+
+  TopVariant({
+    required this.variantId,
+    required this.productName,
+    required this.size,
+    required this.color,
+    required this.unitsSold,
+    required this.revenue,
+  });
+
+  factory TopVariant.fromJson(Map<String, dynamic> json) => TopVariant(
+    variantId: json['variant_id'] as String,
+    productName: json['product_name'] as String,
+    size: json['size'] as String,
+    color: json['color'] as String?,
+    unitsSold: json['units_sold'] as int,
+    revenue: (json['revenue'] as num).toDouble(),
+  );
+}
+
+class AgedDebtor {
+  final String customerId;
+  final String customerName;
+  final String? businessName;
+  final double outstandingBalance;
+  final double creditLimit;
+  final int? daysOutstanding;
+
+  AgedDebtor({
+    required this.customerId,
+    required this.customerName,
+    required this.businessName,
+    required this.outstandingBalance,
+    required this.creditLimit,
+    required this.daysOutstanding,
+  });
+
+  factory AgedDebtor.fromJson(Map<String, dynamic> json) => AgedDebtor(
+    customerId: json['customer_id'] as String,
+    customerName: json['customer_name'] as String,
+    businessName: json['business_name'] as String?,
+    outstandingBalance: (json['outstanding_balance'] as num).toDouble(),
+    creditLimit: (json['credit_limit'] as num).toDouble(),
+    daysOutstanding: json['days_outstanding'] as int?,
+  );
+}
+
+class Dashboard {
+  final int periodDays;
+  final double grossRevenue;
+  final int itemsSold;
+  final List<TierRevenue> revenueByTier;
+  final List<TopVariant> topVariants;
+  final int lowStockCount;
+  final List<AgedDebtor> agedDebtors;
+  final double totalOutstandingCredit;
+
+  Dashboard({
+    required this.periodDays,
+    required this.grossRevenue,
+    required this.itemsSold,
+    required this.revenueByTier,
+    required this.topVariants,
+    required this.lowStockCount,
+    required this.agedDebtors,
+    required this.totalOutstandingCredit,
+  });
+
+  factory Dashboard.fromJson(Map<String, dynamic> json) => Dashboard(
+    periodDays: json['period_days'] as int,
+    grossRevenue: (json['gross_revenue'] as num).toDouble(),
+    itemsSold: json['items_sold'] as int,
+    revenueByTier: (json['revenue_by_tier'] as List)
+        .map((e) => TierRevenue.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    topVariants: (json['top_variants'] as List)
+        .map((e) => TopVariant.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    lowStockCount: json['low_stock_count'] as int,
+    agedDebtors: (json['aged_debtors'] as List)
+        .map((e) => AgedDebtor.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    totalOutstandingCredit: (json['total_outstanding_credit'] as num).toDouble(),
   );
 }
 

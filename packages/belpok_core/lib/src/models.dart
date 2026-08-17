@@ -29,6 +29,9 @@ class ProductVariant {
   final String? color;
   final String? colorHex;
   final double? priceOverride;
+  final double? wholesalePrice;
+  final double? packPrice;
+  final int? packSize;
   final int stockQuantity;
   final int lowStockThreshold;
   final bool isActive;
@@ -41,6 +44,9 @@ class ProductVariant {
     required this.color,
     required this.colorHex,
     required this.priceOverride,
+    required this.wholesalePrice,
+    required this.packPrice,
+    required this.packSize,
     required this.stockQuantity,
     required this.lowStockThreshold,
     required this.isActive,
@@ -48,6 +54,7 @@ class ProductVariant {
 
   bool get isLowStock => stockQuantity <= lowStockThreshold;
   bool get isInStock => stockQuantity > 0;
+  bool get hasPackPricing => packPrice != null && packSize != null;
 
   factory ProductVariant.fromJson(Map<String, dynamic> json) => ProductVariant(
     id: json['id'] as String,
@@ -57,6 +64,9 @@ class ProductVariant {
     color: json['color'] as String?,
     colorHex: json['color_hex'] as String?,
     priceOverride: (json['price_override'] as num?)?.toDouble(),
+    wholesalePrice: (json['wholesale_price'] as num?)?.toDouble(),
+    packPrice: (json['pack_price'] as num?)?.toDouble(),
+    packSize: json['pack_size'] as int?,
     stockQuantity: json['stock_quantity'] as int,
     lowStockThreshold: json['low_stock_threshold'] as int,
     isActive: json['is_active'] as bool,

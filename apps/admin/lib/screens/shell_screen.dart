@@ -16,6 +16,12 @@ class _NavItem {
 
 final _navItems = <_NavItem>[
   _NavItem(
+    '/dashboard',
+    Icons.dashboard_outlined,
+    'Dashboard',
+    (auth) => auth.profile?.canManageInventory ?? false,
+  ),
+  _NavItem(
     '/log-sale',
     Icons.point_of_sale,
     'Log Sale',
@@ -24,6 +30,7 @@ final _navItems = <_NavItem>[
   _NavItem('/products', Icons.checkroom, 'Products', (_) => true),
   _NavItem('/inventory', Icons.inventory_2, 'Inventory', (_) => true),
   _NavItem('/orders', Icons.receipt_long, 'Orders', (_) => true),
+  _NavItem('/customers', Icons.people_alt_outlined, 'Customers', (_) => true),
   _NavItem(
     '/staff',
     Icons.people,

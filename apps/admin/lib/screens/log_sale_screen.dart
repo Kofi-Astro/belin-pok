@@ -6,29 +6,53 @@ import '../models.dart';
 import '../theme.dart';
 import '../widgets/empty_state.dart';
 
-const _paymentMethods = ['cash', 'mobile_money', 'card'];
+const _paymentMethods = ['cash', 'mobile_money', 'card', 'credit'];
 
 String _paymentLabel(String method) => switch (method) {
   'cash' => 'Cash',
   'mobile_money' => 'Mobile Money',
   'card' => 'Card',
+  'credit' => 'On Account (Credit)',
   _ => method,
 };
+
+/// Retail Mode prices every cart line at the item's normal retail price.
+/// Wholesale Mode prices new lines at wholesale/pack rates instead and
+/// opens the customer picker -- see the banner at the top of the screen.
+enum SaleMode { retail, wholesale }
 
 class _CartLine {
   final Product product;
   final ProductVariant variant;
   int quantity;
+  String priceTier;
   _CartLine({
     required this.product,
     required this.variant,
     required this.quantity,
+    this.priceTier = 'retail',
   });
 
-  double get unitPrice => variant.priceOverride ?? product.basePrice;
+  /// Price per selection unit: per piece for retail/wholesale, per pack
+  /// for 'pack' (quantity itself then counts packs, not pieces -- see
+  /// _VariantPickForm and the payload built in _CheckoutDialogState).
+  double get unitPrice => switch (priceTier) {
+    'wholesale' => variant.wholesalePrice ?? (variant.priceOverride ?? product.basePrice),
+    'pack' => (variant.packPrice ?? 0) / (variant.packSize ?? 1),
+    _ => variant.priceOverride ?? product.basePrice,
+  };
+
+  /// Stock units this line actually removes -- packs multiply out by
+  /// pack_size, matching how the API interprets a 'pack' line's quantity.
+  int get stockUnits => priceTier == 'pack' ? quantity * (variant.packSize ?? 1) : quantity;
+
+  int get maxQuantity =>
+      priceTier == 'pack' ? variant.stockQuantity ~/ (variant.packSize ?? 1) : variant.stockQuantity;
+
   double get lineTotal => unitPrice * quantity;
   String get label =>
-      '${product.name} (${variant.size}${variant.color != null ? ' · ${variant.color}' : ''})';
+      '${product.name} (${variant.size}${variant.color != null ? ' · ${variant.color}' : ''})'
+      '${priceTier == 'pack' ? ' · pack of ${variant.packSize}' : priceTier == 'wholesale' ? ' · wholesale' : ''}';
 }
 
 /// A real register: build up a cart from several products (tap a photo,
@@ -51,6 +75,7 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
   List<Product> _results = [];
   Product? _picking;
   ProductVariant? _pickVariant;
+  String _pickTier = 'retail';
   int _pickQuantity = 1;
   bool _searching = false;
   bool _loadingProduct = false;
@@ -61,11 +86,45 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
   List<PosSale> _todaySales = [];
   bool _loadingSales = true;
 
+  SaleMode _mode = SaleMode.retail;
+  List<Customer> _wholesaleCustomers = [];
+  Customer? _selectedCustomer;
+
   @override
   void initState() {
     super.initState();
     _loadQuickPick();
     _loadTodaySales();
+  }
+
+  Future<void> _loadWholesaleCustomers() async {
+    try {
+      final customers = await _api.listCustomers(customerType: 'wholesale');
+      if (mounted) setState(() => _wholesaleCustomers = customers);
+    } on ApiException {
+      // Non-critical -- staff can retry by reopening the picker.
+    }
+  }
+
+  void _setMode(SaleMode mode) {
+    setState(() {
+      _mode = mode;
+      if (mode == SaleMode.retail) {
+        _selectedCustomer = null;
+      } else if (_wholesaleCustomers.isEmpty) {
+        _loadWholesaleCustomers();
+      }
+    });
+  }
+
+  Future<void> _pickCustomer() async {
+    if (_wholesaleCustomers.isEmpty) await _loadWholesaleCustomers();
+    if (!mounted) return;
+    final picked = await showDialog<Customer>(
+      context: context,
+      builder: (_) => _CustomerPickerDialog(customers: _wholesaleCustomers),
+    );
+    if (picked != null) setState(() => _selectedCustomer = picked);
   }
 
   Future<void> _loadQuickPick() async {
@@ -125,6 +184,7 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
           _picking = full;
           _pickVariant = null;
           _pickQuantity = 1;
+          _pickTier = _mode == SaleMode.wholesale ? 'wholesale' : 'retail';
         });
       }
     } on ApiException catch (e) {
@@ -139,6 +199,7 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
       _picking = null;
       _pickVariant = null;
       _pickQuantity = 1;
+      _pickTier = _mode == SaleMode.wholesale ? 'wholesale' : 'retail';
       _results = [];
       _searchController.clear();
     });
@@ -150,15 +211,19 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
     if (product == null || variant == null) return;
 
     setState(() {
-      final existing = _cart.where((l) => l.variant.id == variant.id).firstOrNull;
+      final existing = _cart
+          .where((l) => l.variant.id == variant.id && l.priceTier == _pickTier)
+          .firstOrNull;
       if (existing != null) {
-        existing.quantity = (existing.quantity + _pickQuantity).clamp(
-          1,
-          variant.stockQuantity,
-        );
+        existing.quantity = (existing.quantity + _pickQuantity).clamp(1, existing.maxQuantity);
       } else {
         _cart.add(
-          _CartLine(product: product, variant: variant, quantity: _pickQuantity),
+          _CartLine(
+            product: product,
+            variant: variant,
+            quantity: _pickQuantity,
+            priceTier: _pickTier,
+          ),
         );
       }
     });
@@ -170,10 +235,19 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
   Future<void> _openCheckout() async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (_) => _CheckoutDialog(api: _api, cart: _cart, total: _cartTotal),
+      builder: (_) => _CheckoutDialog(
+        api: _api,
+        cart: _cart,
+        total: _cartTotal,
+        customer: _selectedCustomer,
+      ),
     );
     if (result == true) {
-      setState(() => _cart.clear());
+      setState(() {
+        _cart.clear();
+        _selectedCustomer = null;
+        _mode = SaleMode.retail;
+      });
       _loadTodaySales();
     }
   }
@@ -242,6 +316,14 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
         children: [
+          _ModeBanner(
+            mode: _mode,
+            customer: _selectedCustomer,
+            onModeChanged: _setMode,
+            onPickCustomer: _pickCustomer,
+          ),
+          const SizedBox(height: 16),
+
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -325,8 +407,15 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
               product: _picking!,
               variant: _pickVariant,
               quantity: _pickQuantity,
+              mode: _mode,
+              priceTier: _pickTier,
               onVariantChanged: (v) => setState(() {
                 _pickVariant = v;
+                _pickQuantity = 1;
+                _pickTier = _mode == SaleMode.wholesale ? 'wholesale' : 'retail';
+              }),
+              onTierChanged: (t) => setState(() {
+                _pickTier = t;
                 _pickQuantity = 1;
               }),
               onQuantityChanged: (q) => setState(() => _pickQuantity = q),
@@ -476,7 +565,9 @@ class _CartTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         title: Text(line.label, style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: Text('₵${line.unitPrice.toStringAsFixed(2)} each'),
+        subtitle: Text(
+          '₵${line.unitPrice.toStringAsFixed(2)} ${line.priceTier == 'pack' ? 'per pack' : 'each'}',
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -489,7 +580,7 @@ class _CartTile extends StatelessWidget {
             Text('${line.quantity}', style: const TextStyle(fontWeight: FontWeight.w700)),
             IconButton(
               icon: const Icon(Icons.add_circle_outline, size: 20),
-              onPressed: line.quantity < line.variant.stockQuantity
+              onPressed: line.quantity < line.maxQuantity
                   ? () => onQuantityChanged(line.quantity + 1)
                   : null,
             ),
@@ -509,11 +600,141 @@ class _CartTile extends StatelessWidget {
   }
 }
 
+/// The global toggle described in the spec: switching to Wholesale Mode
+/// shifts new cart lines to wholesale/pack pricing and prompts for a
+/// verified customer. Retail Mode always prices at the normal retail
+/// price and clears whichever customer was selected.
+class _ModeBanner extends StatelessWidget {
+  final SaleMode mode;
+  final Customer? customer;
+  final ValueChanged<SaleMode> onModeChanged;
+  final VoidCallback onPickCustomer;
+
+  const _ModeBanner({
+    required this.mode,
+    required this.customer,
+    required this.onModeChanged,
+    required this.onPickCustomer,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isWholesale = mode == SaleMode.wholesale;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isWholesale ? AppColors.amber.withValues(alpha: 0.12) : AppColors.navy.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isWholesale ? AppColors.amber : AppColors.navy.withValues(alpha: 0.15),
+        ),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SegmentedButton<SaleMode>(
+            segments: const [
+              ButtonSegment(value: SaleMode.retail, label: Text('Retail Mode'), icon: Icon(Icons.storefront)),
+              ButtonSegment(value: SaleMode.wholesale, label: Text('Wholesale Mode'), icon: Icon(Icons.inventory)),
+            ],
+            selected: {mode},
+            onSelectionChanged: (s) => onModeChanged(s.first),
+          ),
+          if (isWholesale)
+            ActionChip(
+              avatar: Icon(
+                customer == null ? Icons.person_search : Icons.person,
+                size: 18,
+              ),
+              label: Text(customer?.fullName ?? 'Select wholesale customer'),
+              onPressed: onPickCustomer,
+            ),
+          if (isWholesale && customer != null && !customer!.isWholesaleVerified)
+            const Chip(
+              avatar: Icon(Icons.warning_amber, size: 18, color: AppColors.warning),
+              label: Text('Not yet approved -- credit sales blocked'),
+              backgroundColor: Color(0x1AFFA000),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CustomerPickerDialog extends StatefulWidget {
+  final List<Customer> customers;
+  const _CustomerPickerDialog({required this.customers});
+
+  @override
+  State<_CustomerPickerDialog> createState() => _CustomerPickerDialogState();
+}
+
+class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.customers
+        .where((c) => c.fullName.toLowerCase().contains(_query.toLowerCase()) ||
+            (c.businessName?.toLowerCase().contains(_query.toLowerCase()) ?? false))
+        .toList();
+    return AlertDialog(
+      title: const Text('Select wholesale customer'),
+      content: SizedBox(
+        width: 380,
+        height: 420,
+        child: Column(
+          children: [
+            TextField(
+              autofocus: true,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                labelText: 'Search by name or business',
+              ),
+              onChanged: (v) => setState(() => _query = v),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: filtered.isEmpty
+                  ? const Center(
+                      child: Text('No wholesale customers found.', style: TextStyle(color: AppColors.inkMuted)),
+                    )
+                  : ListView.builder(
+                      itemCount: filtered.length,
+                      itemBuilder: (context, i) {
+                        final c = filtered[i];
+                        return ListTile(
+                          title: Text(c.businessName?.isNotEmpty == true ? c.businessName! : c.fullName),
+                          subtitle: Text(
+                            c.isWholesaleVerified
+                                ? 'Approved · ₵${c.availableCredit.toStringAsFixed(2)} credit available'
+                                : 'Not yet approved',
+                          ),
+                          onTap: () => Navigator.of(context).pop(c),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+      ],
+    );
+  }
+}
+
 class _VariantPickForm extends StatelessWidget {
   final Product product;
   final ProductVariant? variant;
   final int quantity;
+  final SaleMode mode;
+  final String priceTier;
   final ValueChanged<ProductVariant> onVariantChanged;
+  final ValueChanged<String> onTierChanged;
   final ValueChanged<int> onQuantityChanged;
   final VoidCallback onCancel;
   final VoidCallback onAddToCart;
@@ -522,15 +743,30 @@ class _VariantPickForm extends StatelessWidget {
     required this.product,
     required this.variant,
     required this.quantity,
+    required this.mode,
+    required this.priceTier,
     required this.onVariantChanged,
+    required this.onTierChanged,
     required this.onQuantityChanged,
     required this.onCancel,
     required this.onAddToCart,
   });
 
+  double _unitPriceFor(String tier) => switch (tier) {
+    'wholesale' => variant?.wholesalePrice ?? (variant?.priceOverride ?? product.basePrice),
+    'pack' => (variant?.packPrice ?? 0) / (variant?.packSize ?? 1),
+    _ => variant?.priceOverride ?? product.basePrice,
+  };
+
+  int get _maxQuantity {
+    final v = variant;
+    if (v == null) return 0;
+    return priceTier == 'pack' ? v.stockQuantity ~/ (v.packSize ?? 1) : v.stockQuantity;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final unitPrice = variant?.priceOverride ?? product.basePrice;
+    final unitPrice = _unitPriceFor(priceTier);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -582,9 +818,40 @@ class _VariantPickForm extends StatelessWidget {
                   ),
               ],
             ),
+            if (variant != null && mode == SaleMode.wholesale) ...[
+              const SizedBox(height: 16),
+              Text('Price', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: Text('Wholesale · ₵${_unitPriceFor('wholesale').toStringAsFixed(2)}'),
+                    selected: priceTier == 'wholesale',
+                    onSelected: (_) => onTierChanged('wholesale'),
+                  ),
+                  if (variant!.hasPackPricing)
+                    ChoiceChip(
+                      label: Text(
+                        'Pack of ${variant!.packSize} · ₵${variant!.packPrice!.toStringAsFixed(2)}',
+                      ),
+                      selected: priceTier == 'pack',
+                      onSelected: (_) => onTierChanged('pack'),
+                    ),
+                  ChoiceChip(
+                    label: const Text('Retail'),
+                    selected: priceTier == 'retail',
+                    onSelected: (_) => onTierChanged('retail'),
+                  ),
+                ],
+              ),
+            ],
             if (variant != null) ...[
               const SizedBox(height: 20),
-              Text('Quantity', style: Theme.of(context).textTheme.titleSmall),
+              Text(
+                priceTier == 'pack' ? 'Packs' : 'Quantity',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -606,7 +873,7 @@ class _VariantPickForm extends StatelessWidget {
                   ),
                   IconButton.filledTonal(
                     icon: const Icon(Icons.add),
-                    onPressed: quantity < variant!.stockQuantity
+                    onPressed: quantity < _maxQuantity
                         ? () => onQuantityChanged(quantity + 1)
                         : null,
                   ),
@@ -700,11 +967,13 @@ class _CheckoutDialog extends StatefulWidget {
   final ApiClient api;
   final List<_CartLine> cart;
   final double total;
+  final Customer? customer;
 
   const _CheckoutDialog({
     required this.api,
     required this.cart,
     required this.total,
+    required this.customer,
   });
 
   @override
@@ -723,6 +992,12 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
   bool _submitting = false;
   String? _error;
 
+  /// Credit is only offered as a tender when a wholesale-verified customer
+  /// is attached to the sale -- the backend enforces this too (a DB
+  /// trigger blocks it outright), but hiding the option here is what
+  /// keeps the checkout UI from ever suggesting it's possible otherwise.
+  bool get _creditAvailable => widget.customer?.isWholesaleVerified ?? false;
+
   double get _paid => _payments.fold(
     0,
     (sum, p) => sum + (double.tryParse(p.controller.text) ?? 0),
@@ -730,24 +1005,35 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
 
   double get _remaining => widget.total - _paid;
 
+  double get _creditRequested => _payments
+      .where((p) => p.method == 'credit')
+      .fold(0.0, (sum, p) => sum + (double.tryParse(p.controller.text) ?? 0));
+
+  bool get _exceedsCreditLimit =>
+      widget.customer != null && _creditRequested > widget.customer!.availableCredit;
+
+  bool get _canSubmit => !_submitting && _remaining.abs() < 0.01 && !_exceedsCreditLimit;
+
   void _addPaymentLine() {
     setState(() => _payments.add(_Payment('cash', _remaining.clamp(0, widget.total))));
   }
 
   Future<void> _submit() async {
-    if (_remaining.abs() > 0.01) {
-      setState(() => _error = "Payments don't add up to the total yet");
-      return;
-    }
+    if (!_canSubmit) return;
     setState(() {
       _submitting = true;
       _error = null;
     });
     try {
       await widget.api.createPosSale(
+        customerId: widget.customer?.id,
         items: [
           for (final line in widget.cart)
-            {'variant_id': line.variant.id, 'quantity': line.quantity},
+            {
+              'variant_id': line.variant.id,
+              'price_tier': line.priceTier,
+              'quantity': line.quantity,
+            },
         ],
         payments: [
           for (final p in _payments)
@@ -793,6 +1079,18 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
                   style: const TextStyle(color: AppColors.danger),
                 ),
               ),
+            if (widget.customer != null) ...[
+              Text(
+                _creditAvailable
+                    ? 'Customer: ${widget.customer!.fullName} · ₵${widget.customer!.availableCredit.toStringAsFixed(2)} credit available'
+                    : '${widget.customer!.fullName} is not an approved wholesale account -- credit unavailable',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _creditAvailable ? AppColors.inkMuted : AppColors.warning,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
             for (final p in _payments)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -803,6 +1101,7 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
                         initialValue: p.method,
                         decoration: const InputDecoration(labelText: 'Method'),
                         items: _paymentMethods
+                            .where((m) => m != 'credit' || _creditAvailable)
                             .map(
                               (m) => DropdownMenuItem(
                                 value: m,
@@ -851,6 +1150,30 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
                     : AppColors.danger,
               ),
             ),
+            if (_exceedsCreditLimit)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline, size: 16, color: AppColors.danger),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Exceeds available credit of ₵${widget.customer!.availableCredit.toStringAsFixed(2)}',
+                          style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.danger),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -860,14 +1183,14 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: _submitting ? null : _submit,
+          onPressed: _canSubmit ? _submit : null,
           child: _submitting
               ? const SizedBox(
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Complete Sale'),
+              : Text(_creditRequested > 0 ? 'Complete Credit Sale' : 'Complete Sale'),
         ),
       ],
     );

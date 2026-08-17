@@ -162,13 +162,26 @@ class ApiClient {
     required String size,
     String? color,
     double? priceOverride,
+    double? wholesalePrice,
+    double? packPrice,
+    int? packSize,
   }) async => ProductVariant.fromJson(
     await _post('/products/$productId/variants', {
           'size': size,
           if (color != null && color.isNotEmpty) 'color': color,
           if (priceOverride != null) 'price_override': priceOverride,
+          if (wholesalePrice != null) 'wholesale_price': wholesalePrice,
+          if (packPrice != null) 'pack_price': packPrice,
+          if (packSize != null) 'pack_size': packSize,
         })
         as Map<String, dynamic>,
+  );
+
+  Future<ProductVariant> updateVariant(
+    String id,
+    Map<String, dynamic> fields,
+  ) async => ProductVariant.fromJson(
+    await _patch('/variants/$id', fields) as Map<String, dynamic>,
   );
 
   Future<List<LowStockVariant>> lowStockVariants() async =>
@@ -279,8 +292,97 @@ class ApiClient {
 
   // ---------- customers ----------
 
-  Future<List<Customer>> listCustomers({String? status}) async =>
-      (await _get('/customers', {if (status != null) 'status': status}) as List)
+  Future<List<Customer>> listCustomers({
+    String? status,
+    String? customerType,
+  }) async =>
+      (await _get('/customers', {
+                if (status != null) 'status': status,
+                if (customerType != null) 'customer_type': customerType,
+              })
+              as List)
           .map((e) => Customer.fromJson(e as Map<String, dynamic>))
           .toList();
+
+  Future<Customer> getCustomer(String id) async =>
+      Customer.fromJson(await _get('/customers/$id') as Map<String, dynamic>);
+
+  Future<Customer> createCustomer({
+    required String fullName,
+    required String email,
+    String? phone,
+    String customerType = 'retail',
+    String? businessName,
+    double creditLimit = 0,
+  }) async => Customer.fromJson(
+    await _post('/customers', {
+          'full_name': fullName,
+          'email': email,
+          if (phone != null && phone.isNotEmpty) 'phone': phone,
+          'customer_type': customerType,
+          if (businessName != null && businessName.isNotEmpty) 'business_name': businessName,
+          'credit_limit': creditLimit,
+        })
+        as Map<String, dynamic>,
+  );
+
+  Future<Customer> updateCustomer(String id, Map<String, dynamic> fields) async =>
+      Customer.fromJson(
+        await _patch('/customers/$id', fields) as Map<String, dynamic>,
+      );
+
+  Future<Customer> updateCustomerStatus(String id, String status) async =>
+      Customer.fromJson(
+        await _post('/customers/$id/status', {'status': status})
+            as Map<String, dynamic>,
+      );
+
+  // ---------- wholesale credit ----------
+
+  Future<List<CreditLedgerEntry>> listCreditLedger(String customerId) async =>
+      (await _get('/customers/$customerId/credit-ledger') as List)
+          .map((e) => CreditLedgerEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+  Future<CreditLedgerEntry> recordCreditPayment(
+    String customerId, {
+    required double amount,
+    String? reason,
+  }) async => CreditLedgerEntry.fromJson(
+    await _post('/customers/$customerId/credit-payments', {
+          'amount': amount,
+          if (reason != null && reason.isNotEmpty) 'reason': reason,
+        })
+        as Map<String, dynamic>,
+  );
+
+  Future<CreditLedgerEntry> recordCreditAdjustment(
+    String customerId, {
+    required double amount,
+    required String reason,
+  }) async => CreditLedgerEntry.fromJson(
+    await _post('/customers/$customerId/credit-adjustments', {
+          'amount': amount,
+          'reason': reason,
+        })
+        as Map<String, dynamic>,
+  );
+
+  // ---------- dashboard ----------
+
+  Future<Dashboard> getDashboard({int days = 30}) async => Dashboard.fromJson(
+    await _get('/reports/dashboard', {'days': '$days'}) as Map<String, dynamic>,
+  );
+
+  // ---------- inventory ----------
+
+  Future<void> rebalanceInventory({
+    required List<Map<String, dynamic>> lines,
+    String? note,
+  }) async {
+    await _post('/inventory/rebalance', {
+      'lines': lines,
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
 }

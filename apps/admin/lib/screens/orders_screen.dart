@@ -60,8 +60,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
           id: id,
           fullName: 'Unknown',
           email: '',
+          phone: null,
           customerType: '',
           status: '',
+          businessName: null,
+          notes: null,
+          creditLimit: 0,
+          outstandingBalance: 0,
+          isWholesaleVerified: false,
         ),
       )
       .fullName;

@@ -1,6 +1,8 @@
 import 'package:go_router/go_router.dart';
 
 import 'auth_controller.dart';
+import 'screens/customers_screen.dart';
+import 'screens/dashboard_screen.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/log_sale_screen.dart';
 import 'screens/login_screen.dart';
@@ -37,6 +39,10 @@ GoRouter buildRouter(AuthController auth) {
             AppShell(location: state.matchedLocation, child: child),
         routes: [
           GoRoute(
+            path: '/dashboard',
+            builder: (context, state) => const DashboardScreen(),
+          ),
+          GoRoute(
             path: '/log-sale',
             builder: (context, state) => const LogSaleScreen(),
           ),
@@ -51,6 +57,10 @@ GoRouter buildRouter(AuthController auth) {
           GoRoute(
             path: '/orders',
             builder: (context, state) => const OrdersScreen(),
+          ),
+          GoRoute(
+            path: '/customers',
+            builder: (context, state) => const CustomersScreen(),
           ),
           GoRoute(
             path: '/staff',

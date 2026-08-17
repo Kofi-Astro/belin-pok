@@ -624,6 +624,17 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
     }
   }
 
+  Future<void> _editPricing(ProductVariant variant) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => _VariantPricingDialog(api: widget.api, variant: variant),
+    );
+    if (saved == true) {
+      _changed = true;
+      _reload();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final profile = context.watch<AuthController>().profile;
@@ -746,6 +757,17 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                                 title: Text(
                                   '${v.size}${v.color != null ? ' · ${v.color}' : ''}  (${v.sku})',
                                 ),
+                                subtitle: (v.wholesalePrice != null || v.hasPackPricing)
+                                    ? Text(
+                                        [
+                                          if (v.wholesalePrice != null)
+                                            'Wholesale ₵${v.wholesalePrice!.toStringAsFixed(2)}',
+                                          if (v.hasPackPricing)
+                                            'Pack of ${v.packSize} · ₵${v.packPrice!.toStringAsFixed(2)}',
+                                        ].join(' · '),
+                                        style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
+                                      )
+                                    : null,
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -760,6 +782,12 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                                             : null,
                                       ),
                                     ),
+                                    if (canWrite)
+                                      IconButton(
+                                        icon: const Icon(Icons.sell_outlined, size: 18),
+                                        tooltip: 'Edit pricing',
+                                        onPressed: () => _editPricing(v),
+                                      ),
                                     if (canAdjustStock)
                                       IconButton(
                                         icon: const Icon(Icons.tune, size: 18),
@@ -1031,6 +1059,154 @@ class _VariantFormDialogState extends State<_VariantFormDialog> {
         FilledButton(
           onPressed: _submitting ? null : _submit,
           child: const Text('Add'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Sets the three price points a variant can be sold at -- retail
+/// (price_override, blank falls back to the product's base price),
+/// wholesale (blank falls back to the retail price at checkout), and a
+/// factory pack (price + how many units make up one pack; both or
+/// neither, same rule the backend enforces).
+class _VariantPricingDialog extends StatefulWidget {
+  final ApiClient api;
+  final ProductVariant variant;
+  const _VariantPricingDialog({required this.api, required this.variant});
+
+  @override
+  State<_VariantPricingDialog> createState() => _VariantPricingDialogState();
+}
+
+class _VariantPricingDialogState extends State<_VariantPricingDialog> {
+  late final _retailController = TextEditingController(
+    text: widget.variant.priceOverride?.toStringAsFixed(2) ?? '',
+  );
+  late final _wholesaleController = TextEditingController(
+    text: widget.variant.wholesalePrice?.toStringAsFixed(2) ?? '',
+  );
+  late final _packPriceController = TextEditingController(
+    text: widget.variant.packPrice?.toStringAsFixed(2) ?? '',
+  );
+  late final _packSizeController = TextEditingController(
+    text: widget.variant.packSize?.toString() ?? '',
+  );
+  bool _submitting = false;
+  String? _error;
+
+  Future<void> _submit() async {
+    final packPriceText = _packPriceController.text.trim();
+    final packSizeText = _packSizeController.text.trim();
+    if (packPriceText.isEmpty != packSizeText.isEmpty) {
+      setState(() => _error = 'Pack price and pack size must be set together, or both left blank');
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await widget.api.updateVariant(widget.variant.id, {
+        'price_override': double.tryParse(_retailController.text.trim()),
+        'wholesale_price': double.tryParse(_wholesaleController.text.trim()),
+        'pack_price': double.tryParse(packPriceText),
+        'pack_size': int.tryParse(packSizeText),
+      });
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _retailController.dispose();
+    _wholesaleController.dispose();
+    _packPriceController.dispose();
+    _packSizeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Pricing · ${widget.variant.sku}'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(_error!, style: const TextStyle(color: AppColors.danger)),
+              ),
+            TextField(
+              controller: _retailController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Retail price override (₵)',
+                helperText: 'Leave blank to use the product\'s base price.',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _wholesaleController,
+              decoration: const InputDecoration(
+                labelText: 'Wholesale price (₵)',
+                helperText: 'Leave blank to fall back to the retail price.',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _packPriceController,
+                    decoration: const InputDecoration(labelText: 'Pack price (₵)'),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _packSizeController,
+                    decoration: const InputDecoration(labelText: 'Units per pack'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'e.g. a factory-sealed box of 6 -- both fields together, or leave both blank.',
+                style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submitting ? null : _submit,
+          child: _submitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Save'),
         ),
       ],
     );
