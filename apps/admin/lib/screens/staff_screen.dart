@@ -7,6 +7,9 @@ import '../models.dart';
 import '../theme.dart';
 import '../widgets/empty_state.dart';
 
+String _roleLabel(String role) =>
+    role.split('_').map((w) => w[0].toUpperCase() + w.substring(1)).join(' ');
+
 class StaffScreen extends StatefulWidget {
   const StaffScreen({super.key});
 
@@ -90,69 +93,128 @@ class _StaffScreenState extends State<StaffScreen> {
               itemCount: _staff.length,
               itemBuilder: (context, index) {
                 final staff = _staff[index];
-                final isSelf = staff.id == myId;
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 6,
-                    ),
-                    title: Text(
-                      staff.fullName,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      staff.email,
-                      style: const TextStyle(color: AppColors.inkMuted),
-                    ),
-                    leading: CircleAvatar(
-                      backgroundColor: AppColors.navy,
-                      child: Text(
-                        staff.fullName.isNotEmpty
-                            ? staff.fullName[0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        DropdownButton<String>(
-                          value: staff.role,
-                          underline: const SizedBox(),
-                          items: kStaffRoles
-                              .map(
-                                (r) =>
-                                    DropdownMenuItem(value: r, child: Text(r)),
-                              )
-                              .toList(),
-                          onChanged: isSelf
-                              ? null
-                              : (v) => v == null ? null : _changeRole(staff, v),
-                        ),
-                        const SizedBox(width: 8),
-                        Tooltip(
-                          message: isSelf
-                              ? "You can't deactivate your own account"
-                              : '',
-                          child: Switch(
-                            value: staff.isActive,
-                            activeTrackColor: AppColors.amber,
-                            onChanged: isSelf
-                                ? null
-                                : (_) => _toggleActive(staff),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                return _StaffCard(
+                  staff: staff,
+                  isSelf: staff.id == myId,
+                  onChangeRole: (role) => _changeRole(staff, role),
+                  onToggleActive: () => _toggleActive(staff),
                 );
               },
             ),
+    );
+  }
+}
+
+/// One staff member's row. On a wide screen this fits on one line; on a
+/// narrow one (a phone's browser, not just a small window) the name/email
+/// and the role/active controls stack instead of squeezing into a
+/// ListTile's trailing slot, which is what was overflowing/truncating
+/// badly on mobile web before.
+class _StaffCard extends StatelessWidget {
+  final StaffProfile staff;
+  final bool isSelf;
+  final ValueChanged<String> onChangeRole;
+  final VoidCallback onToggleActive;
+
+  const _StaffCard({
+    required this.staff,
+    required this.isSelf,
+    required this.onChangeRole,
+    required this.onToggleActive,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final identity = Row(
+      children: [
+        CircleAvatar(
+          backgroundColor: AppColors.navy,
+          child: Text(
+            staff.fullName.isNotEmpty ? staff.fullName[0].toUpperCase() : '?',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                staff.fullName,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              Text(
+                staff.email,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.inkMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    final controls = Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 4,
+      children: [
+        DropdownButton<String>(
+          value: staff.role,
+          underline: const SizedBox(),
+          items: kStaffRoles
+              .map(
+                (r) => DropdownMenuItem(value: r, child: Text(_roleLabel(r))),
+              )
+              .toList(),
+          onChanged: isSelf ? null : (v) => v == null ? null : onChangeRole(v),
+        ),
+        Tooltip(
+          message: isSelf ? "You can't deactivate your own account" : '',
+          child: Switch(
+            value: staff.isActive,
+            activeTrackColor: AppColors.amber,
+            onChanged: isSelf ? null : (_) => onToggleActive(),
+          ),
+        ),
+      ],
+    );
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Roughly enough room for both the identity block and the
+            // controls on one line without either getting squeezed.
+            if (constraints.maxWidth >= 480) {
+              return Row(
+                children: [
+                  Expanded(child: identity),
+                  const SizedBox(width: 12),
+                  controls,
+                ],
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                identity,
+                const SizedBox(height: 8),
+                controls,
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -226,7 +288,9 @@ class _InviteStaffDialogState extends State<_InviteStaffDialog> {
             initialValue: _role,
             decoration: const InputDecoration(labelText: 'Role'),
             items: kStaffRoles
-                .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                .map(
+                  (r) => DropdownMenuItem(value: r, child: Text(_roleLabel(r))),
+                )
                 .toList(),
             onChanged: (v) => setState(() => _role = v!),
           ),
