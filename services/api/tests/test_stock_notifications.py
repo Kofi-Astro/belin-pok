@@ -1,44 +1,17 @@
 import uuid
 
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.db import async_session_factory
-from app.main import app
 from app.models import Customer, StockNotificationRequest
 
 
-def _fresh_client() -> AsyncClient:
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
-
-
-async def _setup_product_with_variant(ac, unique: str) -> tuple[str, str]:
-    category_res = await ac.post(
-        "/categories", json={"name": f"Restock Cat {unique}", "slug": f"restock-cat-{unique}"}
-    )
-    category_id = category_res.json()["id"]
-    product_res = await ac.post(
-        "/products",
-        json={
-            "name": f"Restock Item {unique}",
-            "slug": f"restock-item-{unique}",
-            "category_id": category_id,
-            "base_price": 10,
-            "status": "active",
-        },
-    )
-    product_id = product_res.json()["id"]
-    variant_res = await ac.post(
-        f"/products/{product_id}/variants", json={"sku": f"SKU-RESTOCK-{unique}", "size": "One Size"}
-    )
-    variant_id = variant_res.json()["id"]
-    return product_id, variant_id
-
-
-async def test_subscribing_to_back_in_stock_is_idempotent_while_pending(client, customer_client):
+async def test_subscribing_to_back_in_stock_is_idempotent_while_pending(
+    client, customer_client, create_product_with_stock
+):
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        _product_id, variant_id = await _setup_product_with_variant(ac, unique)
+        _product_id, variant_id = await create_product_with_stock(ac, unique)
 
     async with customer_client as cc:
         first_res = await cc.post(f"/variants/{variant_id}/notify-when-in-stock")
@@ -51,7 +24,7 @@ async def test_subscribing_to_back_in_stock_is_idempotent_while_pending(client, 
 
 
 async def test_restock_from_zero_marks_pending_subscriptions_notified(
-    client, customer_client, fake_customer: Customer
+    client, customer_client, fresh_client, create_product_with_stock, fake_customer: Customer
 ):
     """A variant starts at 0 stock (no initial movement). A subscribed
     customer's request must get notified_at set once a movement brings it
@@ -64,13 +37,13 @@ async def test_restock_from_zero_marks_pending_subscriptions_notified(
     """
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        _product_id, variant_id = await _setup_product_with_variant(ac, unique)
+        _product_id, variant_id = await create_product_with_stock(ac, unique)
 
     async with customer_client as cc:
         subscribe_res = await cc.post(f"/variants/{variant_id}/notify-when-in-stock")
         assert subscribe_res.status_code == 201, subscribe_res.text
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         movement_res = await ac.post(
             "/stock-movements",
             json={"variant_id": variant_id, "movement_type": "restock", "quantity_change": 5},
@@ -89,26 +62,20 @@ async def test_restock_from_zero_marks_pending_subscriptions_notified(
 
 
 async def test_restock_that_does_not_cross_zero_leaves_subscription_pending(
-    client, customer_client, fake_customer: Customer
+    client, customer_client, fresh_client, create_product_with_stock, fake_customer: Customer
 ):
     """Topping up stock that's already positive isn't a "back in stock"
     event -- a pending subscription must stay pending (notified_at still
     null) rather than being consumed by it."""
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        _product_id, variant_id = await _setup_product_with_variant(ac, unique)
-
-        initial_res = await ac.post(
-            "/stock-movements",
-            json={"variant_id": variant_id, "movement_type": "initial", "quantity_change": 3},
-        )
-        assert initial_res.status_code == 201, initial_res.text
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=3)
 
     async with customer_client as cc:
         subscribe_res = await cc.post(f"/variants/{variant_id}/notify-when-in-stock")
         assert subscribe_res.status_code == 201, subscribe_res.text
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         movement_res = await ac.post(
             "/stock-movements",
             json={"variant_id": variant_id, "movement_type": "restock", "quantity_change": 5},

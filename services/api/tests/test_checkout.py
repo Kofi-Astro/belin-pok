@@ -1,59 +1,16 @@
 import uuid
 
-from httpx import ASGITransport, AsyncClient
-
 from app.deps import get_current_customer
 from app.main import app
 from app.models import Customer
 
 
-def _fresh_client() -> AsyncClient:
-    # A plain client with no dependency overrides of its own. Which
-    # identity (if any) a request through it resolves to depends entirely
-    # on what's registered in app.dependency_overrides at call time (set
-    # by whichever of the client/customer_client fixtures the test is
-    # using) -- not on anything about this particular AsyncClient
-    # instance. httpx.AsyncClient can only be opened once via `async
-    # with`, so tests that need several phases build a fresh one per
-    # phase rather than re-entering the client/customer_client fixture's
-    # own instance.
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
-
-
-async def _setup_product_with_stock(ac, unique: str, stock: int, price: float = 25.0) -> tuple[str, str]:
-    category_res = await ac.post(
-        "/categories", json={"name": f"Checkout Cat {unique}", "slug": f"checkout-cat-{unique}"}
-    )
-    category_id = category_res.json()["id"]
-    product_res = await ac.post(
-        "/products",
-        json={
-            "name": f"Checkout Item {unique}",
-            "slug": f"checkout-item-{unique}",
-            "category_id": category_id,
-            "base_price": price,
-            "status": "active",
-        },
-    )
-    product_id = product_res.json()["id"]
-    variant_res = await ac.post(
-        f"/products/{product_id}/variants", json={"sku": f"SKU-CHECKOUT-{unique}", "size": "One Size"}
-    )
-    variant_id = variant_res.json()["id"]
-    movement_res = await ac.post(
-        "/stock-movements",
-        json={"variant_id": variant_id, "movement_type": "initial", "quantity_change": stock},
-    )
-    assert movement_res.status_code == 201, movement_res.text
-    return product_id, variant_id
-
-
-async def test_guest_checkout_creates_order_and_decrements_stock(client):
+async def test_guest_checkout_creates_order_and_decrements_stock(client, fresh_client, create_product_with_stock):
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=3)
+        product_id, variant_id = await create_product_with_stock(ac, unique, stock=3)
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         checkout_res = await ac.post(
             "/orders/checkout",
             json={
@@ -71,13 +28,15 @@ async def test_guest_checkout_creates_order_and_decrements_stock(client):
     assert order["items"][0]["quantity"] == 2
     assert order["total"] == 50.0
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         variants_res = await ac.get(f"/products/{product_id}/variants")
     variant = next(v for v in variants_res.json() if v["id"] == variant_id)
     assert variant["stock_quantity"] == 1
 
 
-async def test_repeat_guest_checkout_with_same_email_reuses_existing_guest_customer(client):
+async def test_repeat_guest_checkout_with_same_email_reuses_existing_guest_customer(
+    client, fresh_client, create_product_with_stock
+):
     """A second guest checkout with the same email must succeed by reusing
     the customers row created by the first (auth_user_id IS NULL) instead
     of 409ing -- a guest has no password, so "sign in instead" would leave
@@ -85,9 +44,9 @@ async def test_repeat_guest_checkout_with_same_email_reuses_existing_guest_custo
     unique = uuid.uuid4().hex[:8]
     email = f"repeat-guest-{unique}@example.com"
     async with client as ac:
-        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=5)
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=5)
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         first_res = await ac.post(
             "/orders/checkout",
             json={
@@ -100,7 +59,7 @@ async def test_repeat_guest_checkout_with_same_email_reuses_existing_guest_custo
     assert first_res.status_code == 201, first_res.text
     first_customer_id = first_res.json()["customer_id"]
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         second_res = await ac.post(
             "/orders/checkout",
             json={
@@ -115,15 +74,17 @@ async def test_repeat_guest_checkout_with_same_email_reuses_existing_guest_custo
     assert second_res.json()["id"] != first_res.json()["id"]
 
 
-async def test_guest_checkout_with_registered_account_email_still_409s(client, fake_customer: Customer):
+async def test_guest_checkout_with_registered_account_email_still_409s(
+    client, fresh_client, create_product_with_stock, fake_customer: Customer
+):
     """A guest checkout against an email that belongs to a real registered
     account (auth_user_id IS NOT NULL) is a genuine conflict and must keep
     409ing -- that email really does have a password to sign in with."""
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=5)
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=5)
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         res = await ac.post(
             "/orders/checkout",
             json={
@@ -137,12 +98,14 @@ async def test_guest_checkout_with_registered_account_email_still_409s(client, f
     assert "sign in" in res.json()["detail"].lower()
 
 
-async def test_checkout_insufficient_stock_returns_409_and_leaves_stock_unchanged(client):
+async def test_checkout_insufficient_stock_returns_409_and_leaves_stock_unchanged(
+    client, fresh_client, create_product_with_stock
+):
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=1)
+        product_id, variant_id = await create_product_with_stock(ac, unique, stock=1)
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         res = await ac.post(
             "/orders/checkout",
             json={
@@ -154,21 +117,21 @@ async def test_checkout_insufficient_stock_returns_409_and_leaves_stock_unchange
         )
     assert res.status_code == 409
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         variants_res = await ac.get(f"/products/{product_id}/variants")
     variant = next(v for v in variants_res.json() if v["id"] == variant_id)
     assert variant["stock_quantity"] == 1
 
 
-async def test_checkout_merges_duplicate_lines_before_checking_stock(client):
+async def test_checkout_merges_duplicate_lines_before_checking_stock(client, fresh_client, create_product_with_stock):
     """Two lines of the same variant (2 + 2) against 3 in stock must 409 --
     checking each line independently against the pre-checkout stock level
     would wrongly let both through."""
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=3)
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=3)
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         res = await ac.post(
             "/orders/checkout",
             json={
@@ -184,10 +147,12 @@ async def test_checkout_merges_duplicate_lines_before_checking_stock(client):
     assert res.status_code == 409
 
 
-async def test_signed_in_checkout_with_saved_address_appears_in_order_history(client, customer_client):
+async def test_signed_in_checkout_with_saved_address_appears_in_order_history(
+    client, customer_client, create_product_with_stock
+):
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=5)
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=5)
 
     async with customer_client as ac:
         address_res = await ac.post(
@@ -208,7 +173,9 @@ async def test_signed_in_checkout_with_saved_address_appears_in_order_history(cl
     assert any(o["id"] == order_id for o in my_orders_res.json())
 
 
-async def test_orders_me_never_returns_another_customers_orders(client, fake_customer: Customer):
+async def test_orders_me_never_returns_another_customers_orders(
+    client, fresh_client, create_product_with_stock, fake_customer: Customer
+):
     """Deliberately doesn't use the customer_client fixture for the whole
     test: its get_optional_customer override would stay active for the
     "someone else" guest checkout below too (overrides are global on
@@ -220,9 +187,9 @@ async def test_orders_me_never_returns_another_customers_orders(client, fake_cus
     """
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=5)
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=5)
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         other_res = await ac.post(
             "/orders/checkout",
             json={
@@ -237,7 +204,7 @@ async def test_orders_me_never_returns_another_customers_orders(client, fake_cus
 
     app.dependency_overrides[get_current_customer] = lambda: fake_customer
     try:
-        async with _fresh_client() as ac:
+        async with fresh_client() as ac:
             my_orders_res = await ac.get("/orders/me")
     finally:
         app.dependency_overrides.pop(get_current_customer, None)
@@ -245,14 +212,14 @@ async def test_orders_me_never_returns_another_customers_orders(client, fake_cus
     assert all(o["id"] != other_order_id for o in my_orders_res.json())
 
 
-async def test_guest_pickup_checkout_needs_no_address(client):
+async def test_guest_pickup_checkout_needs_no_address(client, fresh_client, create_product_with_stock):
     """A pickup order has nowhere to ship -- neither address nor
     address_id should be required, unlike delivery."""
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=3)
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=3)
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         res = await ac.post(
             "/orders/checkout",
             json={
@@ -266,12 +233,12 @@ async def test_guest_pickup_checkout_needs_no_address(client):
     assert res.json()["fulfillment_method"] == "pickup"
 
 
-async def test_delivery_checkout_without_address_returns_400(client):
+async def test_delivery_checkout_without_address_returns_400(client, fresh_client, create_product_with_stock):
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=3)
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=3)
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         res = await ac.post(
             "/orders/checkout",
             json={
@@ -284,12 +251,12 @@ async def test_delivery_checkout_without_address_returns_400(client):
     assert res.status_code == 400
 
 
-async def test_checkout_defaults_to_delivery_fulfillment_method(client):
+async def test_checkout_defaults_to_delivery_fulfillment_method(client, fresh_client, create_product_with_stock):
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=3)
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=3)
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         res = await ac.post(
             "/orders/checkout",
             json={

@@ -154,6 +154,64 @@ def signup_client(fake_auth_identity: dict):
         app.dependency_overrides.pop(get_current_auth_user, None)
 
 
+@pytest.fixture
+def fresh_client():
+    """A factory for plain AsyncClients with no dependency overrides of
+    their own. Which identity (if any) a request through one resolves to
+    depends entirely on what's registered in app.dependency_overrides at
+    call time (set by whichever of client/customer_client/etc. the test
+    is also using) -- not on anything about the instance itself.
+    httpx.AsyncClient can only be opened once via `async with`, so tests
+    needing several phases (e.g. setup as staff, act as a guest, verify
+    as staff again) call this again for each phase rather than re-
+    entering another fixture's own instance."""
+
+    def _make() -> AsyncClient:
+        return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+    return _make
+
+
+@pytest.fixture
+def create_product_with_stock():
+    """A factory for the "active product with one variant" shape several
+    checkout/stock tests build on. Takes the already-authenticated (staff)
+    AsyncClient to issue the setup requests through, since which one
+    depends on the calling test's fixtures. stock=0 (the default) leaves
+    the variant genuinely stockless -- no movement at all, same as it
+    starts -- rather than rejected by the API's quantity_change != 0
+    validation on a POST /stock-movements call that would try to add
+    zero."""
+
+    async def _make(ac: AsyncClient, unique: str, stock: int = 0, price: float = 25.0) -> tuple[str, str]:
+        category_res = await ac.post("/categories", json={"name": f"Cat {unique}", "slug": f"cat-{unique}"})
+        category_id = category_res.json()["id"]
+        product_res = await ac.post(
+            "/products",
+            json={
+                "name": f"Item {unique}",
+                "slug": f"item-{unique}",
+                "category_id": category_id,
+                "base_price": price,
+                "status": "active",
+            },
+        )
+        product_id = product_res.json()["id"]
+        variant_res = await ac.post(
+            f"/products/{product_id}/variants", json={"sku": f"SKU-{unique}", "size": "One Size"}
+        )
+        variant_id = variant_res.json()["id"]
+        if stock:
+            movement_res = await ac.post(
+                "/stock-movements",
+                json={"variant_id": variant_id, "movement_type": "initial", "quantity_change": stock},
+            )
+            assert movement_res.status_code == 201, movement_res.text
+        return product_id, variant_id
+
+    return _make
+
+
 @pytest.fixture(autouse=True)
 def _require_database_url():
     if not os.getenv("DATABASE_URL"):

@@ -1,6 +1,5 @@
 import uuid
 
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.db import async_session_factory
@@ -9,12 +8,8 @@ from app.main import app
 from app.models import Customer, CustomerDeviceToken
 
 
-def _fresh_client() -> AsyncClient:
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
-
-
-async def test_register_device_token_requires_signed_in_customer():
-    async with _fresh_client() as ac:
+async def test_register_device_token_requires_signed_in_customer(fresh_client):
+    async with fresh_client() as ac:
         res = await ac.post("/customers/me/device-tokens", json={"platform": "ios", "token": "tok-anonymous"})
     assert res.status_code == 401
 
@@ -37,7 +32,7 @@ async def test_register_and_unregister_device_token(customer_client):
         assert unregister_res.status_code == 204, unregister_res.text
 
 
-async def test_unregister_is_scoped_to_the_calling_customer(customer_client, fake_customer: Customer):
+async def test_unregister_is_scoped_to_the_calling_customer(customer_client, fresh_client, fake_customer: Customer):
     """One customer can't unregister a token registered by someone else,
     even if they know its value -- the DELETE is scoped by customer_id, so
     it's a silent no-op (still 204) rather than able to affect another
@@ -56,7 +51,7 @@ async def test_unregister_is_scoped_to_the_calling_customer(customer_client, fak
     other_customer = Customer(id=uuid.uuid4(), full_name="Someone Else", email=f"other-{uuid.uuid4().hex}@example.com")
     app.dependency_overrides[get_current_customer] = lambda: other_customer
     try:
-        async with _fresh_client() as ac:
+        async with fresh_client() as ac:
             res = await ac.delete(f"/customers/me/device-tokens/{token}")
     finally:
         app.dependency_overrides.pop(get_current_customer, None)

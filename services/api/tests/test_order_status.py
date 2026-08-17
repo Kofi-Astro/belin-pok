@@ -1,17 +1,10 @@
 import uuid
 
-from httpx import ASGITransport, AsyncClient
-
-from app.main import app
 from app.models import Customer
 
 
-def _fresh_client() -> AsyncClient:
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
-
-
 async def test_staff_updates_order_status_and_push_is_best_effort(
-    client, customer_client, fake_customer: Customer
+    client, customer_client, fresh_client, create_product_with_stock, fake_customer: Customer
 ):
     """The status update itself must succeed regardless of push delivery --
     no FIREBASE_SERVICE_ACCOUNT_JSON is configured in tests, so this also
@@ -21,30 +14,7 @@ async def test_staff_updates_order_status_and_push_is_best_effort(
     """
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
-        category_res = await ac.post(
-            "/categories", json={"name": f"Status Cat {unique}", "slug": f"status-cat-{unique}"}
-        )
-        category_id = category_res.json()["id"]
-        product_res = await ac.post(
-            "/products",
-            json={
-                "name": f"Status Item {unique}",
-                "slug": f"status-item-{unique}",
-                "category_id": category_id,
-                "base_price": 15,
-                "status": "active",
-            },
-        )
-        product_id = product_res.json()["id"]
-        variant_res = await ac.post(
-            f"/products/{product_id}/variants", json={"sku": f"SKU-STATUS-{unique}", "size": "One Size"}
-        )
-        variant_id = variant_res.json()["id"]
-        movement_res = await ac.post(
-            "/stock-movements",
-            json={"variant_id": variant_id, "movement_type": "initial", "quantity_change": 5},
-        )
-        assert movement_res.status_code == 201, movement_res.text
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=5)
 
     async with customer_client as ac:
         address_res = await ac.post(
@@ -66,7 +36,7 @@ async def test_staff_updates_order_status_and_push_is_best_effort(
         )
         assert token_res.status_code == 204, token_res.text
 
-    async with _fresh_client() as ac:
+    async with fresh_client() as ac:
         status_res = await ac.post(f"/orders/{order_id}/status", json={"status": "shipped"})
     assert status_res.status_code == 200, status_res.text
     assert status_res.json()["status"] == "shipped"
