@@ -1,5 +1,7 @@
 from collections.abc import AsyncGenerator
+from datetime import datetime
 
+from sqlalchemy import DateTime
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -18,7 +20,15 @@ async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
-    pass
+    # Every timestamp column in supabase/migrations/ is `timestamptz`, but
+    # SQLAlchemy's default mapping for a bare `datetime` annotation is a
+    # naive DateTime -- asyncpg then rejects any tz-aware Python datetime
+    # (e.g. `datetime.now(UTC)`) bound to it with a confusing "can't
+    # subtract offset-naive and offset-aware datetimes" error. This makes
+    # every `Mapped[datetime]`/`Mapped[datetime | None]` column
+    # timezone-aware by default instead of needing that spelled out
+    # per-column.
+    type_annotation_map = {datetime: DateTime(timezone=True)}
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
