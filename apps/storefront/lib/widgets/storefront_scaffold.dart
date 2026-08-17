@@ -11,6 +11,16 @@ import '../theme.dart';
 /// ShellRoute -- simpler for a mostly-linear browse -> product ->
 /// cart -> checkout flow than nested-navigator state preservation would
 /// be worth here.
+///
+/// The account/cart icons here use context.go(), not push(): they're
+/// reachable from every screen this scaffold wraps, so pushing would
+/// pile up an arbitrarily deep, unpredictable stack (e.g. product ->
+/// cart -> account -> cart again). go() instead treats them as a jump to
+/// a top-level section, same as tapping the brand name to go home --
+/// there's always exactly one way back to a clean state. Genuine
+/// drill-downs that DO have one sensible "previous screen" (product
+/// detail from the grid, checkout from the cart) still push(), and keep
+/// their working back arrow.
 class StorefrontScaffold extends StatelessWidget {
   final Widget body;
   final bool showBackButton;
@@ -44,7 +54,7 @@ class StorefrontScaffold extends StatelessWidget {
                   ? Icons.person
                   : Icons.person_outline,
             ),
-            onPressed: () => context.push(
+            onPressed: () => context.go(
               auth.status == AuthStatus.signedIn ? '/account' : '/login',
             ),
           ),
@@ -56,7 +66,7 @@ class StorefrontScaffold extends StatelessWidget {
                 IconButton(
                   tooltip: 'Cart',
                   icon: const Icon(Icons.shopping_bag_outlined),
-                  onPressed: () => context.push('/cart'),
+                  onPressed: () => context.go('/cart'),
                 ),
                 if (cart.itemCount > 0)
                   Positioned(

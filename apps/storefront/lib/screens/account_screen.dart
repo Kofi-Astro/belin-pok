@@ -15,7 +15,6 @@ class AccountScreen extends StatelessWidget {
     final auth = context.watch<AuthController>();
 
     return StorefrontScaffold(
-      showBackButton: true,
       body: switch (auth.status) {
         AuthStatus.unknown => const Center(child: CircularProgressIndicator()),
         AuthStatus.signedOut => const Center(

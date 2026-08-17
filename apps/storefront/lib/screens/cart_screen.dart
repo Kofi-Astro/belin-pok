@@ -15,7 +15,6 @@ class CartScreen extends StatelessWidget {
     final cart = context.watch<CartController>();
 
     return StorefrontScaffold(
-      showBackButton: true,
       body: cart.isEmpty
           ? const Center(child: Text('Your cart is empty.'))
           : Column(

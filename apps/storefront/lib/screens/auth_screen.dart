@@ -69,7 +69,6 @@ class _AuthScreenState extends State<AuthScreen> {
     final auth = context.watch<AuthController>();
 
     return StorefrontScaffold(
-      showBackButton: true,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
