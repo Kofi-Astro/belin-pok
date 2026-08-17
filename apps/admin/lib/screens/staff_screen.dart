@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../api_client.dart';
+import '../auth_controller.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets/empty_state.dart';
@@ -59,6 +61,7 @@ class _StaffScreenState extends State<StaffScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final myId = context.watch<AuthController>().profile?.id;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Staff'),
@@ -87,6 +90,7 @@ class _StaffScreenState extends State<StaffScreen> {
               itemCount: _staff.length,
               itemBuilder: (context, index) {
                 final staff = _staff[index];
+                final isSelf = staff.id == myId;
                 return Card(
                   margin: const EdgeInsets.only(bottom: 10),
                   child: ListTile(
@@ -126,14 +130,22 @@ class _StaffScreenState extends State<StaffScreen> {
                                     DropdownMenuItem(value: r, child: Text(r)),
                               )
                               .toList(),
-                          onChanged: (v) =>
-                              v == null ? null : _changeRole(staff, v),
+                          onChanged: isSelf
+                              ? null
+                              : (v) => v == null ? null : _changeRole(staff, v),
                         ),
                         const SizedBox(width: 8),
-                        Switch(
-                          value: staff.isActive,
-                          activeTrackColor: AppColors.amber,
-                          onChanged: (_) => _toggleActive(staff),
+                        Tooltip(
+                          message: isSelf
+                              ? "You can't deactivate your own account"
+                              : '',
+                          child: Switch(
+                            value: staff.isActive,
+                            activeTrackColor: AppColors.amber,
+                            onChanged: isSelf
+                                ? null
+                                : (_) => _toggleActive(staff),
+                          ),
                         ),
                       ],
                     ),
