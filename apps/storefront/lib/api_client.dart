@@ -120,4 +120,20 @@ class StorefrontApiClient {
       (await _http.get('/orders/me') as List)
           .map((e) => Order.fromJson(e as Map<String, dynamic>))
           .toList();
+
+  // ---------- push notifications ----------
+
+  Future<void> registerDeviceToken({
+    required String platform,
+    required String token,
+  }) async => await _http.post('/customers/me/device-tokens', {
+    'platform': platform,
+    'token': token,
+  });
+
+  Future<void> unregisterDeviceToken(String token) async =>
+      await _http.delete('/customers/me/device-tokens/$token');
+
+  Future<void> subscribeToBackInStock(String variantId) async =>
+      await _http.post('/variants/$variantId/notify-when-in-stock', {});
 }

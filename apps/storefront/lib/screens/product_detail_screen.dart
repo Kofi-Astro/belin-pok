@@ -1,8 +1,10 @@
 import 'package:belpok_core/belpok_core.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../api_client.dart';
+import '../auth_controller.dart';
 import '../cart.dart';
 import '../config.dart';
 import '../theme.dart';
@@ -25,6 +27,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   int _quantity = 1;
   bool _loading = true;
   String? _error;
+  bool _notifyRequested = false;
+  bool _notifySubmitting = false;
 
   @override
   void initState() {
@@ -64,6 +68,38 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Added ${product.name} to cart')));
+  }
+
+  Future<void> _notifyWhenInStock() async {
+    final variant = _selectedVariant;
+    if (variant == null) return;
+
+    // Subscribing only makes sense if there's a way to reach this
+    // shopper later -- a guest has no account for that, so send them to
+    // sign in first instead of failing the request.
+    if (context.read<AuthController>().status != AuthStatus.signedIn) {
+      context.push('/login');
+      return;
+    }
+
+    setState(() => _notifySubmitting = true);
+    try {
+      await _api.subscribeToBackInStock(variant.id);
+      if (!mounted) return;
+      setState(() {
+        _notifyRequested = true;
+        _notifySubmitting = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("We'll let you know when it's back.")),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _notifySubmitting = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   @override
@@ -167,28 +203,48 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 }).toList(),
               ),
             const SizedBox(height: 24),
-            Row(
-              children: [
-                _QuantityStepper(
-                  quantity: _quantity,
-                  max: variant?.stockQuantity ?? 1,
-                  onChanged: (q) => setState(() => _quantity = q),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: variant != null && variant.isInStock
-                        ? _addToCart
-                        : null,
-                    child: Text(
-                      variant == null || !variant.isInStock
-                          ? 'Out of stock'
-                          : 'Add to cart',
+            if (variant != null && variant.isInStock)
+              Row(
+                children: [
+                  _QuantityStepper(
+                    quantity: _quantity,
+                    max: variant.stockQuantity,
+                    onChanged: (q) => setState(() => _quantity = q),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _addToCart,
+                      child: const Text('Add to cart'),
                     ),
                   ),
+                ],
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: variant == null || _notifyRequested
+                      ? null
+                      : (_notifySubmitting ? null : _notifyWhenInStock),
+                  icon: _notifySubmitting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          _notifyRequested
+                              ? Icons.notifications_active
+                              : Icons.notifications_none,
+                        ),
+                  label: Text(
+                    _notifyRequested
+                        ? "We'll notify you"
+                        : 'Notify me when back in stock',
+                  ),
                 ),
-              ],
-            ),
+              ),
           ],
         ),
       ),
