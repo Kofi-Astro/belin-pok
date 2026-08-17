@@ -45,8 +45,8 @@ class ProductCard extends StatelessWidget {
                   Text(
                     '₵${product.basePrice.toStringAsFixed(2)}',
                     style: const TextStyle(
-                      color: AppColors.inkMuted,
-                      fontWeight: FontWeight.w600,
+                      color: AppColors.navy,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],
@@ -64,8 +64,25 @@ class _PlaceholderImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    color: AppColors.canvas,
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [AppColors.canvas, AppColors.navy.withValues(alpha: 0.06)],
+      ),
+    ),
     alignment: Alignment.center,
-    child: const Icon(Icons.checkroom, size: 40, color: AppColors.inkMuted),
+    child: Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.navy.withValues(alpha: 0.06),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        Icons.checkroom,
+        size: 32,
+        color: AppColors.navy.withValues(alpha: 0.45),
+      ),
+    ),
   );
 }

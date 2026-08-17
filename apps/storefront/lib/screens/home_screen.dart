@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../api_client.dart';
+import '../widgets/category_icon.dart';
+import '../widgets/hero_banner.dart';
 import '../widgets/product_card.dart';
+import '../widgets/storefront_footer.dart';
 import '../widgets/storefront_scaffold.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -63,6 +66,13 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  String get _selectedCategoryName =>
+      _categories
+          .where((c) => c.id == _selectedCategoryId)
+          .map((c) => c.name)
+          .firstOrNull ??
+      'All products';
+
   @override
   Widget build(BuildContext context) {
     return StorefrontScaffold(
@@ -70,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onRefresh: _load,
         child: CustomScrollView(
           slivers: [
+            const SliverToBoxAdapter(child: HeroBanner()),
             SliverToBoxAdapter(child: _buildSearchBar()),
             SliverToBoxAdapter(child: _buildCategoryChips()),
             if (_loading)
@@ -78,15 +89,39 @@ class _HomeScreenState extends State<HomeScreen> {
               )
             else if (_error != null)
               SliverFillRemaining(
-                child: Center(child: Text('Couldn\'t load products: $_error')),
+                child: EmptyState(
+                  icon: Icons.wifi_off_rounded,
+                  title: 'Couldn\'t load products',
+                  message: _error!,
+                ),
               )
             else if (_products.isEmpty)
-              const SliverFillRemaining(
-                child: Center(child: Text('No products found.')),
+              SliverFillRemaining(
+                child: EmptyState(
+                  icon:
+                      _searchController.text.trim().isNotEmpty ||
+                          _selectedCategoryId != null
+                      ? Icons.search_off_rounded
+                      : Icons.storefront_outlined,
+                  title:
+                      _searchController.text.trim().isNotEmpty ||
+                          _selectedCategoryId != null
+                      ? 'No matches here'
+                      : 'New stock is on the way',
+                  message:
+                      _searchController.text.trim().isNotEmpty ||
+                          _selectedCategoryId != null
+                      ? 'Try a different search or category.'
+                      : 'We\'re setting up the shop -- check back soon for caps, tees, and more.',
+                ),
               )
-            else
+            else ...[
               SliverPadding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 28, 16, 12),
+                sliver: SliverToBoxAdapter(child: _buildSectionHeader()),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 sliver: SliverGrid(
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 260,
@@ -103,7 +138,36 @@ class _HomeScreenState extends State<HomeScreen> {
                   }, childCount: _products.length),
                 ),
               ),
+            ],
+            const SliverToBoxAdapter(child: StorefrontFooter()),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader() {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1200),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _selectedCategoryName,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${_products.length} item${_products.length == 1 ? '' : 's'}',
+                style: const TextStyle(color: AppColors.inkMuted),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -111,7 +175,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSearchBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       child: TextField(
         controller: _searchController,
         textInputAction: TextInputAction.search,
@@ -136,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildCategoryChips() {
     if (_categories.isEmpty) return const SizedBox.shrink();
     return SizedBox(
-      height: 44,
+      height: 48,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -144,6 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: ChoiceChip(
+              avatar: const Icon(Icons.apps_rounded, size: 18),
               label: const Text('All'),
               selected: _selectedCategoryId == null,
               onSelected: (_) {
@@ -156,6 +221,7 @@ class _HomeScreenState extends State<HomeScreen> {
             (category) => Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
+                avatar: Icon(categoryIcon(category.slug), size: 18),
                 label: Text(category.name),
                 selected: _selectedCategoryId == category.id,
                 onSelected: (_) {
@@ -172,4 +238,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
+
+extension _FirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
 }
