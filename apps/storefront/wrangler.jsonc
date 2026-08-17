@@ -10,10 +10,12 @@
   // (storefront on the bare belpok.xyz / www.belpok.xyz, admin on
   // admin.belpok.xyz -- see the README's Deployment section). Keep this
   // name matching whatever Worker is already deployed/wired to
-  // belpok.xyz once that's set up -- renaming it here would deploy a
-  // *second*, differently-named Worker instead of updating the existing
-  // one.
-  "name": "belpok-storefront",
+  // belpok.xyz -- renaming it here would deploy a *second*,
+  // differently-named Worker instead of updating the existing one.
+  // "belin-pok-storefront" (not "belpok-storefront") because that's what
+  // the Cloudflare project actually auto-named itself when it was
+  // created from this repo.
+  "name": "belin-pok-storefront",
   "compatibility_date": "2026-08-16",
   "assets": {
     "directory": "build/web"
