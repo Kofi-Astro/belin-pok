@@ -654,6 +654,16 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                                 ?.copyWith(fontWeight: FontWeight.w800),
                           ),
                         ),
+                        if (profile?.isOwner ?? false)
+                          IconButton(
+                            icon: const Icon(Icons.history),
+                            tooltip: 'Change history',
+                            onPressed: () => showDialog(
+                              context: context,
+                              builder: (_) =>
+                                  _ProductHistoryDialog(api: widget.api, product: product),
+                            ),
+                          ),
                         IconButton(
                           icon: const Icon(Icons.close),
                           onPressed: () => Navigator.of(context).pop(_changed),
@@ -814,6 +824,128 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
       ),
     );
   }
+}
+
+class _ProductHistoryDialog extends StatefulWidget {
+  final ApiClient api;
+  final Product product;
+  const _ProductHistoryDialog({required this.api, required this.product});
+
+  @override
+  State<_ProductHistoryDialog> createState() => _ProductHistoryDialogState();
+}
+
+class _ProductHistoryDialogState extends State<_ProductHistoryDialog> {
+  List<AuditLogEntry> _entries = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final entries = await widget.api.auditLog(
+        tableName: 'products',
+        recordId: widget.product.id,
+      );
+      if (mounted) setState(() => _entries = entries);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _actionLabel(String action) => switch (action) {
+    'product.create' => 'Created',
+    'product.update' => 'Edited',
+    'product.delete' => 'Deleted',
+    _ => action,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('History · ${widget.product.name}'),
+      content: SizedBox(
+        width: 420,
+        height: 420,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(child: Text(_error!))
+            : _entries.isEmpty
+            ? const EmptyState(
+                icon: Icons.history,
+                title: 'No history yet',
+                message: 'Edits to this product will show up here.',
+              )
+            : ListView.separated(
+                itemCount: _entries.length,
+                separatorBuilder: (_, _) => const Divider(),
+                itemBuilder: (context, index) {
+                  final entry = _entries[index];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              _actionLabel(entry.action),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              _formatDate(entry.createdAt.toLocal()),
+                              style: const TextStyle(
+                                color: AppColors.inkMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          entry.staffName ?? 'Unknown staff',
+                          style: const TextStyle(
+                            color: AppColors.inkMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                        for (final field in entry.changedFields)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '$field: ${entry.oldValues?[field] ?? '—'} → '
+                              '${entry.newValues?[field] ?? '—'}',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+
+  String _formatDate(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 }
 
 class _VariantFormDialog extends StatefulWidget {

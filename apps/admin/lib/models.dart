@@ -81,6 +81,8 @@ class StockMovement {
   final String movementType;
   final int quantityChange;
   final String? reason;
+  final String? referenceType;
+  final String? referenceId;
   final DateTime createdAt;
   final String? productName;
   final String? variantSku;
@@ -88,6 +90,7 @@ class StockMovement {
   final String? variantColor;
   final String? performedByName;
   final String? performedByRole;
+  final double? unitPrice;
 
   StockMovement({
     required this.id,
@@ -96,12 +99,15 @@ class StockMovement {
     required this.quantityChange,
     required this.reason,
     required this.createdAt,
+    this.referenceType,
+    this.referenceId,
     this.productName,
     this.variantSku,
     this.variantSize,
     this.variantColor,
     this.performedByName,
     this.performedByRole,
+    this.unitPrice,
   });
 
   /// A walk-in sale logged by front-of-shop staff, rather than by a
@@ -110,12 +116,20 @@ class StockMovement {
   bool get isFloorSale =>
       performedByRole == 'order_fulfillment' && movementType == 'sale';
 
+  String get itemLabel =>
+      '${productName ?? 'Item'}'
+      '${variantSize != null ? ' ($variantSize${variantColor != null ? ' · $variantColor' : ''})' : ''}';
+
+  double get lineTotal => (unitPrice ?? 0) * quantityChange.abs();
+
   factory StockMovement.fromJson(Map<String, dynamic> json) => StockMovement(
     id: json['id'] as String,
     variantId: json['variant_id'] as String,
     movementType: json['movement_type'] as String,
     quantityChange: json['quantity_change'] as int,
     reason: json['reason'] as String?,
+    referenceType: json['reference_type'] as String?,
+    referenceId: json['reference_id'] as String?,
     createdAt: DateTime.parse(json['created_at'] as String),
     productName: json['product_name'] as String?,
     variantSku: json['variant_sku'] as String?,
@@ -123,6 +137,7 @@ class StockMovement {
     variantColor: json['variant_color'] as String?,
     performedByName: json['performed_by_name'] as String?,
     performedByRole: json['performed_by_role'] as String?,
+    unitPrice: (json['unit_price'] as num?)?.toDouble(),
   );
 }
 
@@ -141,6 +156,45 @@ class DailySales {
     day: DateTime.parse(json['day'] as String),
     itemsSold: json['items_sold'] as int,
     totalAmount: (json['total_amount'] as num).toDouble(),
+  );
+}
+
+class AuditLogEntry {
+  final String id;
+  final String action;
+  final String? staffName;
+  final Map<String, dynamic>? oldValues;
+  final Map<String, dynamic>? newValues;
+  final DateTime createdAt;
+
+  AuditLogEntry({
+    required this.id,
+    required this.action,
+    required this.staffName,
+    required this.oldValues,
+    required this.newValues,
+    required this.createdAt,
+  });
+
+  /// Field names whose old/new value actually differ -- what's worth
+  /// showing, rather than every field the update touched (exclude_unset on
+  /// the API side already narrows this some, but a field can be "set" to
+  /// the value it already had).
+  List<String> get changedFields {
+    final old = oldValues ?? const {};
+    final fresh = newValues ?? const {};
+    return {...old.keys, ...fresh.keys}
+        .where((k) => old[k] != fresh[k])
+        .toList();
+  }
+
+  factory AuditLogEntry.fromJson(Map<String, dynamic> json) => AuditLogEntry(
+    id: json['id'] as String,
+    action: json['action'] as String,
+    staffName: json['staff_name'] as String?,
+    oldValues: json['old_values'] as Map<String, dynamic>?,
+    newValues: json['new_values'] as Map<String, dynamic>?,
+    createdAt: DateTime.parse(json['created_at'] as String),
   );
 }
 

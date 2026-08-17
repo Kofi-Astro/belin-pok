@@ -178,26 +178,49 @@ class ApiClient {
 
   // ---------- stock movements ----------
 
-  Future<void> createStockMovement({
+  Future<StockMovement> createStockMovement({
     required String variantId,
     required String movementType,
     required int quantityChange,
     String? reason,
-  }) async {
+    String? referenceType,
+    String? referenceId,
+  }) async => StockMovement.fromJson(
     await _post('/stock-movements', {
-      'variant_id': variantId,
-      'movement_type': movementType,
-      'quantity_change': quantityChange,
-      if (reason != null && reason.isNotEmpty) 'reason': reason,
-    });
-  }
+          'variant_id': variantId,
+          'movement_type': movementType,
+          'quantity_change': quantityChange,
+          if (reason != null && reason.isNotEmpty) 'reason': reason,
+          if (referenceType != null) 'reference_type': referenceType,
+          if (referenceId != null) 'reference_id': referenceId,
+        })
+        as Map<String, dynamic>,
+  );
 
-  Future<List<StockMovement>> listStockMovements({String? variantId}) async =>
+  Future<List<StockMovement>> listStockMovements({
+    String? variantId,
+    int limit = 50,
+  }) async =>
       (await _get('/stock-movements', {
                 if (variantId != null) 'variant_id': variantId,
+                'limit': '$limit',
               })
               as List)
           .map((e) => StockMovement.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+  // ---------- audit log ----------
+
+  Future<List<AuditLogEntry>> auditLog({
+    required String tableName,
+    String? recordId,
+  }) async =>
+      (await _get('/audit-log', {
+                'table_name': tableName,
+                if (recordId != null) 'record_id': recordId,
+              })
+              as List)
+          .map((e) => AuditLogEntry.fromJson(e as Map<String, dynamic>))
           .toList();
 
   // ---------- reports ----------
