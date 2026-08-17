@@ -61,22 +61,37 @@ async def checkout(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="guest_full_name and guest_email are required for guest checkout",
             )
-        customer = Customer(
-            full_name=payload.guest_full_name,
-            email=payload.guest_email,
-            phone=payload.guest_phone,
-            customer_type=CustomerType.retail,
-            status=CustomerStatus.approved,
-        )
-        db.add(customer)
-        try:
-            await db.flush()
-        except IntegrityError as exc:
-            await db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="A customer with this email already exists -- sign in instead",
-            ) from exc
+        # A repeat guest checkout with the same email is normal -- most
+        # repeat customers never create an account. Reuse the existing
+        # customers row for that email as long as it's still a guest
+        # (auth_user_id IS NULL); only a genuine registered account under
+        # that email is a real conflict, since there's nothing to "sign in
+        # instead" to for a guest who has no password.
+        existing_customer = await db.scalar(select(Customer).where(Customer.email == payload.guest_email))
+        if existing_customer is not None:
+            if existing_customer.auth_user_id is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A customer with this email already exists -- sign in instead",
+                )
+            customer = existing_customer
+        else:
+            customer = Customer(
+                full_name=payload.guest_full_name,
+                email=payload.guest_email,
+                phone=payload.guest_phone,
+                customer_type=CustomerType.retail,
+                status=CustomerStatus.approved,
+            )
+            db.add(customer)
+            try:
+                await db.flush()
+            except IntegrityError as exc:
+                await db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A customer with this email already exists -- sign in instead",
+                ) from exc
 
     if payload.address_id is not None:
         address = await db.get(Address, payload.address_id)

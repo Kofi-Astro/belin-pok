@@ -77,6 +77,66 @@ async def test_guest_checkout_creates_order_and_decrements_stock(client):
     assert variant["stock_quantity"] == 1
 
 
+async def test_repeat_guest_checkout_with_same_email_reuses_existing_guest_customer(client):
+    """A second guest checkout with the same email must succeed by reusing
+    the customers row created by the first (auth_user_id IS NULL) instead
+    of 409ing -- a guest has no password, so "sign in instead" would leave
+    them with no way to ever check out again under that email."""
+    unique = uuid.uuid4().hex[:8]
+    email = f"repeat-guest-{unique}@example.com"
+    async with client as ac:
+        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=5)
+
+    async with _fresh_client() as ac:
+        first_res = await ac.post(
+            "/orders/checkout",
+            json={
+                "items": [{"variant_id": variant_id, "quantity": 1}],
+                "guest_full_name": "Repeat Guest",
+                "guest_email": email,
+                "address": {"line1": "1 Market St", "city": "Accra", "country": "Ghana"},
+            },
+        )
+    assert first_res.status_code == 201, first_res.text
+    first_customer_id = first_res.json()["customer_id"]
+
+    async with _fresh_client() as ac:
+        second_res = await ac.post(
+            "/orders/checkout",
+            json={
+                "items": [{"variant_id": variant_id, "quantity": 1}],
+                "guest_full_name": "Repeat Guest",
+                "guest_email": email,
+                "address": {"line1": "1 Market St", "city": "Accra", "country": "Ghana"},
+            },
+        )
+    assert second_res.status_code == 201, second_res.text
+    assert second_res.json()["customer_id"] == first_customer_id
+    assert second_res.json()["id"] != first_res.json()["id"]
+
+
+async def test_guest_checkout_with_registered_account_email_still_409s(client, fake_customer: Customer):
+    """A guest checkout against an email that belongs to a real registered
+    account (auth_user_id IS NOT NULL) is a genuine conflict and must keep
+    409ing -- that email really does have a password to sign in with."""
+    unique = uuid.uuid4().hex[:8]
+    async with client as ac:
+        _product_id, variant_id = await _setup_product_with_stock(ac, unique, stock=5)
+
+    async with _fresh_client() as ac:
+        res = await ac.post(
+            "/orders/checkout",
+            json={
+                "items": [{"variant_id": variant_id, "quantity": 1}],
+                "guest_full_name": "Impersonator",
+                "guest_email": fake_customer.email,
+                "address": {"line1": "1 Market St", "city": "Accra", "country": "Ghana"},
+            },
+        )
+    assert res.status_code == 409
+    assert "sign in" in res.json()["detail"].lower()
+
+
 async def test_checkout_insufficient_stock_returns_409_and_leaves_stock_unchanged(client):
     unique = uuid.uuid4().hex[:8]
     async with client as ac:
