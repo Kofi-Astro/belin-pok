@@ -1,12 +1,19 @@
 import 'package:belpok_core/belpok_core.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../api_client.dart';
 import '../auth_controller.dart';
 import '../theme.dart';
-import '../widgets/storefront_scaffold.dart';
 
+/// Signed-out visitors see this inline rather than being bounced to a
+/// separate /login route the moment they tap the Account tab -- keeping
+/// the tab itself a plain branch switch with nothing to redirect through
+/// (see AppShell's doc comment on why an ambient router-level redirect
+/// here was a source of flaky browser-history entries). /login stays
+/// around for the deliberate "Sign in" tap below, which is a genuine
+/// navigation the user chose, not a per-tap side effect.
 class AccountScreen extends StatelessWidget {
   const AccountScreen({super.key});
 
@@ -14,15 +21,50 @@ class AccountScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthController>();
 
-    return StorefrontScaffold(
-      body: switch (auth.status) {
-        AuthStatus.unknown => const Center(child: CircularProgressIndicator()),
-        AuthStatus.signedOut => const Center(
-          child: Text('Sign in to view your account.'),
+    return switch (auth.status) {
+      AuthStatus.unknown => const Center(child: CircularProgressIndicator()),
+      AuthStatus.signedOut => const _SignedOutPrompt(),
+      AuthStatus.needsRegistration => const _CompleteRegistrationForm(),
+      AuthStatus.signedIn => const _AccountDetails(),
+    };
+  }
+}
+
+class _SignedOutPrompt extends StatelessWidget {
+  const _SignedOutPrompt();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.person_outline,
+              size: 48,
+              color: StorefrontColors.inkMuted,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Sign in to view your account',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Track orders and check out faster next time.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: StorefrontColors.inkMuted),
+            ),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: () => context.push('/login'),
+              child: const Text('Sign in'),
+            ),
+          ],
         ),
-        AuthStatus.needsRegistration => const _CompleteRegistrationForm(),
-        AuthStatus.signedIn => const _AccountDetails(),
-      },
+      ),
     );
   }
 }

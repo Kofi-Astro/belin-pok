@@ -1,3 +1,4 @@
+import 'package:belpok_core/belpok_core.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -5,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../cart.dart';
 import '../config.dart';
 import '../theme.dart';
-import '../widgets/storefront_scaffold.dart';
 
 class CartScreen extends StatelessWidget {
   const CartScreen({super.key});
@@ -14,27 +14,29 @@ class CartScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final cart = context.watch<CartController>();
 
-    return StorefrontScaffold(
-      body: cart.isEmpty
-          ? const Center(child: Text('Your cart is empty.'))
-          : Column(
-              children: [
-                Expanded(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: cart.lines.length,
-                    separatorBuilder: (context, index) =>
-                        const Divider(height: 24),
-                    itemBuilder: (context, index) {
-                      final line = cart.lines[index];
-                      return _CartLineTile(line: line);
-                    },
-                  ),
+    return cart.isEmpty
+        ? const EmptyState(
+            icon: Icons.shopping_bag_outlined,
+            title: 'Your cart is empty',
+            message: 'Add something you like and it\'ll show up here.',
+          )
+        : Column(
+            children: [
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: cart.lines.length,
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 24),
+                  itemBuilder: (context, index) {
+                    final line = cart.lines[index];
+                    return _CartLineTile(line: line);
+                  },
                 ),
-                _CartSummary(cart: cart),
-              ],
-            ),
-    );
+              ),
+              _CartSummary(cart: cart),
+            ],
+          );
   }
 }
 

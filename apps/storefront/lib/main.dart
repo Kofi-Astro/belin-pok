@@ -29,7 +29,7 @@ class StorefrontApp extends StatefulWidget {
 class _StorefrontAppState extends State<StorefrontApp> {
   late final AuthController _auth = AuthController(StorefrontApiClient());
   late final CartController _cart = CartController();
-  late final GoRouter _router = buildRouter(_auth);
+  late final GoRouter _router = buildRouter();
 
   @override
   Widget build(BuildContext context) {
