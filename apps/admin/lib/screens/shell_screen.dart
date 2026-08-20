@@ -28,6 +28,12 @@ final _navItems = <_NavItem>[
     (auth) => auth.profile?.canAdjustStock ?? false,
   ),
   _NavItem('/products', Icons.checkroom, 'Products', (_) => true),
+  _NavItem(
+    '/categories',
+    Icons.category_outlined,
+    'Categories',
+    (auth) => auth.profile?.canManageInventory ?? false,
+  ),
   _NavItem('/inventory', Icons.inventory_2, 'Inventory', (_) => true),
   _NavItem('/orders', Icons.receipt_long, 'Orders', (_) => true),
   _NavItem('/customers', Icons.people_alt_outlined, 'Customers', (_) => true),

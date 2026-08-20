@@ -66,6 +66,31 @@ class ApiClient {
           .map((e) => Category.fromJson(e as Map<String, dynamic>))
           .toList();
 
+  Future<Category> createCategory({
+    required String name,
+    required String slug,
+    String? description,
+    int displayOrder = 0,
+  }) async => Category.fromJson(
+    await _post('/categories', {
+          'name': name,
+          'slug': slug,
+          if (description != null && description.isNotEmpty)
+            'description': description,
+          'display_order': displayOrder,
+        })
+        as Map<String, dynamic>,
+  );
+
+  Future<Category> updateCategory(
+    String id,
+    Map<String, dynamic> fields,
+  ) async => Category.fromJson(
+    await _patch('/categories/$id', fields) as Map<String, dynamic>,
+  );
+
+  Future<void> deleteCategory(String id) => _delete('/categories/$id');
+
   // ---------- products ----------
 
   Future<List<Product>> listProducts({

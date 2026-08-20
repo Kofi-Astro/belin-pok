@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import 'auth_controller.dart';
+import 'screens/categories_screen.dart';
 import 'screens/customers_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/inventory_screen.dart';
@@ -49,6 +50,10 @@ GoRouter buildRouter(AuthController auth) {
           GoRoute(
             path: '/products',
             builder: (context, state) => const ProductsScreen(),
+          ),
+          GoRoute(
+            path: '/categories',
+            builder: (context, state) => const CategoriesScreen(),
           ),
           GoRoute(
             path: '/inventory',
