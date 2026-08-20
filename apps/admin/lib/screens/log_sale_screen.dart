@@ -21,38 +21,68 @@ String _paymentLabel(String method) => switch (method) {
 /// opens the customer picker -- see the banner at the top of the screen.
 enum SaleMode { retail, wholesale }
 
+/// A cart line is either picked from the product grid (product/variant
+/// set, exact price looked up server-side at checkout) or "quick logged"
+/// by product type (category set instead, price entered by hand) --
+/// see _QuickLogForm. Exactly one of the two is set.
 class _CartLine {
-  final Product product;
-  final ProductVariant variant;
+  final Product? product;
+  final ProductVariant? variant;
+  final Category? category;
+  final String? note;
   int quantity;
   String priceTier;
-  _CartLine({
-    required this.product,
-    required this.variant,
+  double? _quickPrice;
+
+  _CartLine.picked({
+    required Product this.product,
+    required ProductVariant this.variant,
     required this.quantity,
     this.priceTier = 'retail',
-  });
+  }) : category = null,
+       note = null;
+
+  _CartLine.quickLog({
+    required Category this.category,
+    required this.quantity,
+    required double unitPrice,
+    this.note,
+    this.priceTier = 'retail',
+  }) : product = null,
+       variant = null,
+       _quickPrice = unitPrice;
+
+  bool get isQuickLog => variant == null;
 
   /// Price per selection unit: per piece for retail/wholesale, per pack
   /// for 'pack' (quantity itself then counts packs, not pieces -- see
   /// _VariantPickForm and the payload built in _CheckoutDialogState).
-  double get unitPrice => switch (priceTier) {
-    'wholesale' => variant.wholesalePrice ?? (variant.priceOverride ?? product.basePrice),
-    'pack' => (variant.packPrice ?? 0) / (variant.packSize ?? 1),
-    _ => variant.priceOverride ?? product.basePrice,
-  };
+  double get unitPrice {
+    if (isQuickLog) return _quickPrice ?? 0;
+    final v = variant!;
+    final p = product!;
+    return switch (priceTier) {
+      'wholesale' => v.wholesalePrice ?? (v.priceOverride ?? p.basePrice),
+      'pack' => (v.packPrice ?? 0) / (v.packSize ?? 1),
+      _ => v.priceOverride ?? p.basePrice,
+    };
+  }
 
-  /// Stock units this line actually removes -- packs multiply out by
-  /// pack_size, matching how the API interprets a 'pack' line's quantity.
-  int get stockUnits => priceTier == 'pack' ? quantity * (variant.packSize ?? 1) : quantity;
-
-  int get maxQuantity =>
-      priceTier == 'pack' ? variant.stockQuantity ~/ (variant.packSize ?? 1) : variant.stockQuantity;
+  int get maxQuantity {
+    if (isQuickLog) return 999;
+    final v = variant!;
+    return priceTier == 'pack' ? v.stockQuantity ~/ (v.packSize ?? 1) : v.stockQuantity;
+  }
 
   double get lineTotal => unitPrice * quantity;
-  String get label =>
-      '${product.name} (${variant.size}${variant.color != null ? ' · ${variant.color}' : ''})'
-      '${priceTier == 'pack' ? ' · pack of ${variant.packSize}' : priceTier == 'wholesale' ? ' · wholesale' : ''}';
+
+  String get label {
+    if (isQuickLog) return category!.name;
+    final v = variant!;
+    final p = product!;
+    return '${p.name} (${v.size}${v.color != null ? ' · ${v.color}' : ''})'
+        '${priceTier == 'pack' ? ' · pack of ${v.packSize}' : priceTier == 'wholesale' ? ' · wholesale' : ''}';
+  }
 }
 
 /// A real register: build up a cart from several products (tap a photo,
@@ -90,11 +120,27 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
   List<Customer> _wholesaleCustomers = [];
   Customer? _selectedCustomer;
 
+  // "Pick from products" (the image/size/color grid, unchanged) vs "Log
+  // by type" (category + price by hand -- see _QuickLogForm) are two
+  // different ways to add a cart line; which one is showing right now.
+  bool _quickLogMode = false;
+  List<Category> _categories = [];
+
   @override
   void initState() {
     super.initState();
     _loadQuickPick();
     _loadTodaySales();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final categories = await _api.listCategories();
+      if (mounted) setState(() => _categories = categories);
+    } on ApiException {
+      // Non-critical -- Log by Type just won't have options until retry.
+    }
   }
 
   Future<void> _loadWholesaleCustomers() async {
@@ -212,13 +258,13 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
 
     setState(() {
       final existing = _cart
-          .where((l) => l.variant.id == variant.id && l.priceTier == _pickTier)
+          .where((l) => l.variant?.id == variant.id && l.priceTier == _pickTier)
           .firstOrNull;
       if (existing != null) {
         existing.quantity = (existing.quantity + _pickQuantity).clamp(1, existing.maxQuantity);
       } else {
         _cart.add(
-          _CartLine(
+          _CartLine.picked(
             product: product,
             variant: variant,
             quantity: _pickQuantity,
@@ -228,6 +274,20 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
       }
     });
     _cancelPicking();
+  }
+
+  void _addQuickLogToCart(Category category, double unitPrice, int quantity, String? note) {
+    setState(() {
+      _cart.add(
+        _CartLine.quickLog(
+          category: category,
+          quantity: quantity,
+          unitPrice: unitPrice,
+          note: note,
+          priceTier: _mode == SaleMode.wholesale ? 'wholesale' : 'retail',
+        ),
+      );
+    });
   }
 
   double get _cartTotal => _cart.fold(0, (sum, l) => sum + l.lineTotal);
@@ -350,6 +410,25 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
           ],
 
           if (_picking == null) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('Pick from Products'), icon: Icon(Icons.checkroom)),
+                  ButtonSegment(value: true, label: Text('Log by Type'), icon: Icon(Icons.edit_note)),
+                ],
+                selected: {_quickLogMode},
+                onSelectionChanged: (s) => setState(() => _quickLogMode = s.first),
+              ),
+            ),
+          ],
+
+          if (_quickLogMode && _picking == null)
+            _QuickLogForm(
+              categories: _categories,
+              onAdd: _addQuickLogToCart,
+            )
+          else if (_picking == null) ...[
             if (_quickPick.isNotEmpty) ...[
               Text(
                 'Quick pick',
@@ -450,7 +529,12 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
             )
           else
             for (final sale in _todaySales)
-              _SaleCard(sale: sale, onVoid: () => _voidSale(sale)),
+              _SaleCard(
+                api: _api,
+                sale: sale,
+                onVoid: () => _voidSale(sale),
+                onChanged: _loadTodaySales,
+              ),
         ],
       ),
     );
@@ -727,6 +811,131 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
   }
 }
 
+/// Log a sale by product type instead of hunting down the exact SKU --
+/// for a staff member entering a wholesale sale by hand who knows "3 caps
+/// at ₵15, 2 sweaters at ₵40" but doesn't have time to look up which cap,
+/// which sweater. Only category + price are required; a note is optional
+/// context for whoever later attaches the exact product (see the
+/// "Identify" action on today's sales below) -- which itself is optional,
+/// entirely at the owner's pace.
+class _QuickLogForm extends StatefulWidget {
+  final List<Category> categories;
+  final void Function(Category category, double unitPrice, int quantity, String? note) onAdd;
+
+  const _QuickLogForm({required this.categories, required this.onAdd});
+
+  @override
+  State<_QuickLogForm> createState() => _QuickLogFormState();
+}
+
+class _QuickLogFormState extends State<_QuickLogForm> {
+  Category? _category;
+  final _priceController = TextEditingController();
+  final _noteController = TextEditingController();
+  int _quantity = 1;
+  String? _error;
+
+  void _submit() {
+    final category = _category;
+    final price = double.tryParse(_priceController.text.trim());
+    if (category == null) {
+      setState(() => _error = 'Pick a product type');
+      return;
+    }
+    if (price == null || price <= 0) {
+      setState(() => _error = 'Enter a price');
+      return;
+    }
+    widget.onAdd(category, price, _quantity, _noteController.text.trim());
+    setState(() {
+      _category = null;
+      _quantity = 1;
+      _error = null;
+      _priceController.clear();
+      _noteController.clear();
+    });
+  }
+
+  @override
+  void dispose() {
+    _priceController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'For when there\'s no time to find the exact item -- record what type '
+              'and what it sold for now, and attach the exact product later if you want to.',
+              style: TextStyle(color: AppColors.inkMuted, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(_error!, style: const TextStyle(color: AppColors.danger)),
+              ),
+            DropdownButtonFormField<Category>(
+              initialValue: _category,
+              decoration: const InputDecoration(labelText: 'Product type'),
+              items: widget.categories
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c.name)))
+                  .toList(),
+              onChanged: (c) => setState(() => _category = c),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _priceController,
+              decoration: const InputDecoration(labelText: 'Price sold at (₵)'),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Text('Quantity', style: Theme.of(context).textTheme.titleSmall),
+                const Spacer(),
+                IconButton.filledTonal(
+                  icon: const Icon(Icons.remove),
+                  onPressed: _quantity > 1 ? () => setState(() => _quantity--) : null,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text('$_quantity', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                ),
+                IconButton.filledTonal(
+                  icon: const Icon(Icons.add),
+                  onPressed: () => setState(() => _quantity++),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _noteController,
+              decoration: const InputDecoration(
+                labelText: 'Note (optional)',
+                hintText: 'e.g. blue, medium -- helps whoever identifies it later',
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _submit,
+              icon: const Icon(Icons.add_shopping_cart),
+              label: const Text('Add to Cart'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _VariantPickForm extends StatelessWidget {
   final Product product;
   final ProductVariant? variant;
@@ -902,10 +1111,33 @@ class _VariantPickForm extends StatelessWidget {
 }
 
 class _SaleCard extends StatelessWidget {
+  final ApiClient api;
   final PosSale sale;
   final VoidCallback onVoid;
+  final VoidCallback onChanged;
 
-  const _SaleCard({required this.sale, required this.onVoid});
+  const _SaleCard({
+    required this.api,
+    required this.sale,
+    required this.onVoid,
+    required this.onChanged,
+  });
+
+  Future<void> _identify(BuildContext context, PosSaleItem item) async {
+    final variant = await showDialog<ProductVariant>(
+      context: context,
+      builder: (_) => _IdentifyProductDialog(api: api),
+    );
+    if (variant == null) return;
+    try {
+      await api.identifyPosSaleItem(sale.id, item.id, variantId: variant.id);
+      onChanged();
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -916,6 +1148,7 @@ class _SaleCard extends StatelessWidget {
         .map((p) => _paymentLabel(p.method))
         .toSet()
         .join(' + ');
+    final unidentifiedCount = sale.items.where((i) => !i.isIdentified).length;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -936,7 +1169,11 @@ class _SaleCard extends StatelessWidget {
             if (sale.customerName != null) sale.customerName!,
             timeLabel,
             if (sale.isVoided) 'Voided',
+            if (!sale.isVoided && unidentifiedCount > 0) '$unidentifiedCount need product details',
           ].join(' · '),
+          style: unidentifiedCount > 0 && !sale.isVoided
+              ? const TextStyle(color: AppColors.warning, fontWeight: FontWeight.w600)
+              : null,
         ),
         trailing: sale.isVoided
             ? const Icon(Icons.undo, color: AppColors.inkMuted)
@@ -951,14 +1188,149 @@ class _SaleCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Row(
                 children: [
-                  Expanded(child: Text('${item.quantity} × ${item.label}')),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${item.quantity} × ${item.label}'),
+                        if (item.note?.isNotEmpty == true)
+                          Text(
+                            item.note!,
+                            style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
+                          ),
+                      ],
+                    ),
+                  ),
                   Text('₵${item.lineTotal.toStringAsFixed(2)}'),
+                  if (!item.isIdentified && !sale.isVoided)
+                    TextButton(
+                      onPressed: () => _identify(context, item),
+                      child: const Text('Identify'),
+                    ),
                 ],
               ),
             ),
           const SizedBox(height: 8),
         ],
       ),
+    );
+  }
+}
+
+/// A slimmer product/variant picker for attaching an exact SKU to a
+/// quick-logged sale after the fact -- same search-then-pick shape as
+/// the main Log Sale flow, without the cart/checkout machinery.
+class _IdentifyProductDialog extends StatefulWidget {
+  final ApiClient api;
+  const _IdentifyProductDialog({required this.api});
+
+  @override
+  State<_IdentifyProductDialog> createState() => _IdentifyProductDialogState();
+}
+
+class _IdentifyProductDialogState extends State<_IdentifyProductDialog> {
+  List<Product> _results = [];
+  Product? _picking;
+  bool _searching = false;
+
+  Future<void> _search(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() => _results = []);
+      return;
+    }
+    setState(() => _searching = true);
+    try {
+      final results = await widget.api.listProducts(search: query.trim());
+      if (mounted) setState(() => _results = results);
+    } on ApiException {
+      // Leave results as-is -- staff can retry the search.
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  Future<void> _selectProduct(Product product) async {
+    final full = await widget.api.getProduct(product.id);
+    if (mounted) setState(() => _picking = full);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Identify product'),
+      content: SizedBox(
+        width: 380,
+        height: 420,
+        child: _picking == null
+            ? Column(
+                children: [
+                  TextField(
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search),
+                      labelText: 'Search by name',
+                      suffixIcon: _searching
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            )
+                          : null,
+                    ),
+                    onChanged: _search,
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _results.length,
+                      itemBuilder: (context, i) => ListTile(
+                        title: Text(_results[i].name),
+                        subtitle: Text('₵${_results[i].basePrice.toStringAsFixed(2)}'),
+                        onTap: () => _selectProduct(_results[i]),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _picking!.name,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => setState(() => _picking = null),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final v in _picking!.variants)
+                        ActionChip(
+                          label: Text('${v.size}${v.color != null ? ' · ${v.color}' : ''} (${v.stockQuantity})'),
+                          onPressed: () => Navigator.of(context).pop(v),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+      ],
     );
   }
 }
@@ -1029,11 +1401,20 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
         customerId: widget.customer?.id,
         items: [
           for (final line in widget.cart)
-            {
-              'variant_id': line.variant.id,
-              'price_tier': line.priceTier,
-              'quantity': line.quantity,
-            },
+            if (line.isQuickLog)
+              {
+                'category_id': line.category!.id,
+                if (line.note != null && line.note!.isNotEmpty) 'note': line.note,
+                'price_tier': line.priceTier,
+                'quantity': line.quantity,
+                'unit_price': line.unitPrice,
+              }
+            else
+              {
+                'variant_id': line.variant!.id,
+                'price_tier': line.priceTier,
+                'quantity': line.quantity,
+              },
         ],
         payments: [
           for (final p in _payments)

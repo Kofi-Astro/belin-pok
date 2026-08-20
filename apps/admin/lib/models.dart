@@ -160,10 +160,19 @@ class DailySales {
 }
 
 class PosSaleItem {
-  final String variantId;
-  final String productName;
-  final String variantSize;
+  final String id;
+  // Null for a "quick log" line -- rung up by product type (categoryId/
+  // categoryName/note) rather than an exact SKU, because staff enter
+  // everything by hand with no barcode scanner and a busy wholesale sale
+  // combining several product types is slow to look up SKU-by-SKU. See
+  // isIdentified.
+  final String? variantId;
+  final String? productName;
+  final String? variantSize;
   final String? variantColor;
+  final String? categoryId;
+  final String? categoryName;
+  final String? note;
   final String priceTier;
   final int quantity;
   final double unitPrice;
@@ -171,10 +180,14 @@ class PosSaleItem {
   final int? packSize;
 
   PosSaleItem({
+    required this.id,
     required this.variantId,
     required this.productName,
     required this.variantSize,
     required this.variantColor,
+    required this.categoryId,
+    required this.categoryName,
+    required this.note,
     required this.priceTier,
     required this.quantity,
     required this.unitPrice,
@@ -182,8 +195,11 @@ class PosSaleItem {
     required this.packSize,
   });
 
-  String get label =>
-      '$productName ($variantSize${variantColor != null ? ' · $variantColor' : ''})';
+  bool get isIdentified => variantId != null;
+
+  String get label => isIdentified
+      ? '$productName ($variantSize${variantColor != null ? ' · $variantColor' : ''})'
+      : (categoryName ?? 'Unidentified item');
 
   /// Human count for display -- packs for a 'pack' line (quantity is
   /// already in stock units on the wire, see services/api's
@@ -193,10 +209,14 @@ class PosSaleItem {
       : '$quantity';
 
   factory PosSaleItem.fromJson(Map<String, dynamic> json) => PosSaleItem(
-    variantId: json['variant_id'] as String,
-    productName: json['product_name'] as String,
-    variantSize: json['variant_size'] as String,
+    id: json['id'] as String,
+    variantId: json['variant_id'] as String?,
+    productName: json['product_name'] as String?,
+    variantSize: json['variant_size'] as String?,
     variantColor: json['variant_color'] as String?,
+    categoryId: json['category_id'] as String?,
+    categoryName: json['category_name'] as String?,
+    note: json['note'] as String?,
     priceTier: json['price_tier'] as String? ?? 'retail',
     quantity: json['quantity'] as int,
     unitPrice: (json['unit_price'] as num).toDouble(),
@@ -454,6 +474,7 @@ class Dashboard {
   final int lowStockCount;
   final List<AgedDebtor> agedDebtors;
   final double totalOutstandingCredit;
+  final int unidentifiedItemCount;
 
   Dashboard({
     required this.periodDays,
@@ -464,6 +485,7 @@ class Dashboard {
     required this.lowStockCount,
     required this.agedDebtors,
     required this.totalOutstandingCredit,
+    required this.unidentifiedItemCount,
   });
 
   factory Dashboard.fromJson(Map<String, dynamic> json) => Dashboard(
@@ -481,6 +503,7 @@ class Dashboard {
         .map((e) => AgedDebtor.fromJson(e as Map<String, dynamic>))
         .toList(),
     totalOutstandingCredit: (json['total_outstanding_credit'] as num).toDouble(),
+    unidentifiedItemCount: json['unidentified_item_count'] as int,
   );
 }
 

@@ -114,12 +114,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         icon: Icons.account_balance_wallet_outlined,
                         color: d.totalOutstandingCredit > 0 ? AppColors.danger : AppColors.inkMuted,
                       ),
+                      _StatTile(
+                        label: 'Needs product details',
+                        value: '${d.unidentifiedItemCount}',
+                        icon: Icons.edit_note,
+                        color: d.unidentifiedItemCount > 0 ? AppColors.warning : AppColors.inkMuted,
+                      ),
                     ];
                     return wide
                         ? Row(children: [for (final t in tiles) Expanded(child: t)])
                         : Column(children: tiles);
                   },
                 ),
+                if (d.unidentifiedItemCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, size: 18, color: AppColors.warning),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${d.unidentifiedItemCount} quick-logged sale line(s) still need a product '
+                              'attached -- open Log Sale, expand a sale, and tap "Identify".',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 28),
                 Text('Revenue by sale type', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 10),

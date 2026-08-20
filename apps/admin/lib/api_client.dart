@@ -259,6 +259,15 @@ class ApiClient {
   Future<PosSale> voidPosSale(String id) async =>
       PosSale.fromJson(await _post('/pos-sales/$id/void', {}) as Map<String, dynamic>);
 
+  Future<PosSale> identifyPosSaleItem(
+    String saleId,
+    String itemId, {
+    required String variantId,
+  }) async => PosSale.fromJson(
+    await _post('/pos-sales/$saleId/items/$itemId/identify', {'variant_id': variantId})
+        as Map<String, dynamic>,
+  );
+
   // ---------- reports ----------
 
   Future<List<DailySales>> dailySales({int days = 30}) async =>
