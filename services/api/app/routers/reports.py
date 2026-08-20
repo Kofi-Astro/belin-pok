@@ -183,6 +183,16 @@ async def dashboard(
         .where(ProductVariant.is_active.is_(True), ProductVariant.stock_quantity <= ProductVariant.low_stock_threshold)
     )
 
+    # "Quick logged" lines (see POSSaleItemCreate) still waiting for a
+    # real product attached -- an all-time backlog, not scoped to `days`,
+    # since it's a to-do count rather than a trend.
+    unidentified_item_count = await db.scalar(
+        select(func.count())
+        .select_from(POSSaleItem)
+        .join(POSSale, POSSale.id == POSSaleItem.sale_id)
+        .where(POSSaleItem.variant_id.is_(None), POSSale.status != "voided")
+    )
+
     # Aged debtors: for each customer still carrying a balance, how long
     # ago was the oldest charge that (on a simple first-in-first-out
     # assumption) hasn't been paid off yet. Approximate by design -- the
@@ -232,4 +242,5 @@ async def dashboard(
         low_stock_count=int(low_stock_count or 0),
         aged_debtors=aged_debtors,
         total_outstanding_credit=sum(d.outstanding_balance for d in aged_debtors),
+        unidentified_item_count=int(unidentified_item_count or 0),
     )

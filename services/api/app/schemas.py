@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models import (
     CreditLedgerEntryType,
@@ -266,12 +266,35 @@ class RebalanceResult(BaseModel):
 
 
 class POSSaleItemCreate(BaseModel):
-    variant_id: uuid.UUID
+    # Exactly one of variant_id or category_id is the norm: pick a
+    # cataloged SKU (price looked up server-side, never trusted from the
+    # client), or "quick log" a sale by product type when there's no time
+    # to hunt down the exact SKU by hand -- in which case unit_price is
+    # staff-entered (there's nothing else to price it from) and can be
+    # attached to a real variant later via POST .../identify.
+    variant_id: uuid.UUID | None = None
+    category_id: uuid.UUID | None = None
+    note: str | None = Field(default=None, max_length=500)
     price_tier: PriceTier = PriceTier.retail
     # For price_tier='pack', this counts *packs*, not individual units --
     # e.g. quantity=3 on a pack_size=6 variant removes 18 units of stock at
     # 3 x pack_price. For 'retail'/'wholesale', quantity is plain units.
     quantity: int = Field(gt=0)
+    # Only used (and required) for a quick-logged line (variant_id is
+    # None) -- ignored otherwise, since a cataloged variant's price is
+    # always looked up server-side.
+    unit_price: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _variant_or_category(self) -> "POSSaleItemCreate":
+        if self.variant_id is None and self.category_id is None:
+            raise ValueError("Each item needs either a variant_id or a category_id")
+        if self.variant_id is None:
+            if self.unit_price is None:
+                raise ValueError("A quick-logged item (no variant_id) needs a unit_price")
+            if self.price_tier == PriceTier.pack:
+                raise ValueError("Pack pricing requires a specific variant_id")
+        return self
 
 
 class POSSalePaymentCreate(BaseModel):
@@ -293,10 +316,14 @@ class POSSalePaymentRead(BaseModel):
 
 
 class POSSaleItemRead(BaseModel):
-    variant_id: uuid.UUID
-    product_name: str
-    variant_size: str
+    id: uuid.UUID
+    variant_id: uuid.UUID | None
+    product_name: str | None
+    variant_size: str | None
     variant_color: str | None
+    category_id: uuid.UUID | None
+    category_name: str | None
+    note: str | None
     price_tier: PriceTier
     # Stock units removed by this line (already packs * pack_size for a
     # 'pack' line -- see POSSaleItemCreate).
@@ -304,6 +331,10 @@ class POSSaleItemRead(BaseModel):
     unit_price: float
     line_total: float
     pack_size: int | None = None
+
+
+class POSSaleItemIdentify(BaseModel):
+    variant_id: uuid.UUID
 
 
 class POSSaleRead(BaseModel):
@@ -634,3 +665,7 @@ class DashboardRead(BaseModel):
     low_stock_count: int
     aged_debtors: list[AgedDebtorRead]
     total_outstanding_credit: float
+    # All-time, not scoped to period_days -- this is a to-do count (how
+    # many quick-logged sale lines still need a real product attached),
+    # not a trend.
+    unidentified_item_count: int

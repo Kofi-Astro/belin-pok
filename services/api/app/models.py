@@ -261,13 +261,24 @@ class POSSaleItem(Base):
     """Snapshot of what a POS sale line was actually billed at -- see
     supabase/migrations/20260817120010_pos_sale_items.sql for why this
     exists as its own table rather than being inferred from
-    stock_movements the way it used to be."""
+    stock_movements the way it used to be.
+
+    variant_id is nullable: a "quick log" line (see
+    supabase/migrations/20260820120001_pos_sale_items_quick_log.sql)
+    records category_id + a staff-entered unit_price for a sale rung up by
+    product type when there's no time to hunt down the exact SKU by hand.
+    No stock_movement exists for it until a variant is attached via the
+    identify endpoint in app/routers/pos_sales.py -- until then it counts
+    for revenue/audit purposes but not for stock.
+    """
 
     __tablename__ = "pos_sale_items"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     sale_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pos_sales.id", ondelete="CASCADE"))
-    variant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("product_variants.id", ondelete="RESTRICT"))
+    variant_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("product_variants.id", ondelete="RESTRICT"))
+    category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("categories.id", ondelete="RESTRICT"))
+    note: Mapped[str | None]
     price_tier: Mapped[PriceTier] = mapped_column(_pg_enum(PriceTier, "price_tier"), default=PriceTier.retail)
     quantity: Mapped[int]
     unit_price: Mapped[float] = mapped_column(Numeric(10, 2))

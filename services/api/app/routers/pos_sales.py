@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.db import get_db
 from app.deps import get_current_staff, require_role
 from app.models import (
+    Category,
     CreditLedgerEntryType,
     Customer,
     CustomerCreditLedger,
@@ -24,7 +25,13 @@ from app.models import (
     StockMovement,
     StockMovementType,
 )
-from app.schemas import POSSaleCreate, POSSaleItemRead, POSSalePaymentRead, POSSaleRead
+from app.schemas import (
+    POSSaleCreate,
+    POSSaleItemIdentify,
+    POSSaleItemRead,
+    POSSalePaymentRead,
+    POSSaleRead,
+)
 
 router = APIRouter(prefix="/pos-sales", tags=["pos-sales"])
 
@@ -33,15 +40,20 @@ _write_roles = require_role(StaffRole.owner, StaffRole.inventory_manager, StaffR
 
 @dataclass
 class _Line:
-    """One merged (variant_id, price_tier) line from the request, resolved
-    against the variant's actual prices. quantity is always in stock units
-    (a 'pack' line's request quantity, in packs, gets multiplied out here),
-    so it lines up 1:1 with what StockMovement/POSSaleItem expect."""
+    """One resolved line from the request, priced server-side. quantity is
+    always in stock units (a 'pack' line's request quantity, in packs,
+    gets multiplied out here), so it lines up 1:1 with what
+    StockMovement/POSSaleItem expect. variant_id is None for a "quick
+    log" line (see POSSaleItemCreate) -- category_id/note carry what's
+    known about it instead, and unit_price is whatever the client sent
+    rather than a server-computed price."""
 
-    variant_id: uuid.UUID
+    variant_id: uuid.UUID | None
     price_tier: PriceTier
     quantity: int = 0
     unit_price: float = 0.0
+    category_id: uuid.UUID | None = None
+    note: str | None = None
 
     @property
     def line_total(self) -> float:
@@ -65,18 +77,26 @@ async def _hydrate(db: AsyncSession, sale: POSSale) -> POSSaleRead:
             ProductVariant.size.label("variant_size"),
             ProductVariant.color.label("variant_color"),
             ProductVariant.pack_size.label("pack_size"),
+            Category.name.label("category_name"),
         )
-        .join(ProductVariant, ProductVariant.id == POSSaleItem.variant_id)
-        .join(Product, Product.id == ProductVariant.product_id)
+        # Outer joins: a "quick log" line (see POSSaleItemCreate) has no
+        # variant_id, only a category_id, and vice versa never both.
+        .outerjoin(ProductVariant, ProductVariant.id == POSSaleItem.variant_id)
+        .outerjoin(Product, Product.id == ProductVariant.product_id)
+        .outerjoin(Category, Category.id == POSSaleItem.category_id)
         .where(POSSaleItem.sale_id == sale.id)
     )
     rows = (await db.execute(stmt)).all()
     items = [
         POSSaleItemRead(
+            id=row.POSSaleItem.id,
             variant_id=row.POSSaleItem.variant_id,
             product_name=row.product_name,
             variant_size=row.variant_size,
             variant_color=row.variant_color,
+            category_id=row.POSSaleItem.category_id,
+            category_name=row.category_name,
+            note=row.POSSaleItem.note,
             price_tier=row.POSSaleItem.price_tier,
             quantity=row.POSSaleItem.quantity,
             unit_price=float(row.POSSaleItem.unit_price),
@@ -109,9 +129,20 @@ async def _resolve_lines(
     """Merges duplicate (variant_id, price_tier) request lines and prices
     each one server-side -- line prices are never trusted from the client,
     the same rule POST /stock-movements and checkout() already follow.
+
+    "Quick log" lines (no variant_id -- see POSSaleItemCreate) are the one
+    exception to server-side pricing, since there's nothing cataloged to
+    price them from yet -- unit_price is whatever the client sent,
+    unmerged (each is kept as its own line rather than combined with
+    others of the same category, since two quick-logged lines aren't
+    necessarily the same price), and contributes no stock movement.
     """
     merged: dict[tuple[uuid.UUID, PriceTier], int] = {}
+    quick_log_items = []
     for item in payload_items:
+        if item.variant_id is None:
+            quick_log_items.append(item)
+            continue
         key = (item.variant_id, item.price_tier)
         merged[key] = merged.get(key, 0) + item.quantity
 
@@ -142,6 +173,18 @@ async def _resolve_lines(
             _Line(variant_id=variant_id, price_tier=tier, quantity=stock_units, unit_price=unit_price)
         )
         resolved.units_by_variant[variant_id] = resolved.units_by_variant.get(variant_id, 0) + stock_units
+
+    for item in quick_log_items:
+        resolved.lines.append(
+            _Line(
+                variant_id=None,
+                price_tier=item.price_tier,
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                category_id=item.category_id,
+                note=item.note,
+            )
+        )
 
     return resolved
 
@@ -210,13 +253,18 @@ async def create_pos_sale(
     # Lock every distinct variant row up front in a fixed order -- same
     # race-safety pattern as storefront checkout(): two sales racing for
     # the last unit of something can't both succeed.
-    variant_ids = sorted({item.variant_id for item in payload.items})
+    variant_ids = sorted({item.variant_id for item in payload.items if item.variant_id is not None})
     variants: dict[uuid.UUID, ProductVariant] = {}
     for variant_id in variant_ids:
         variant = await db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id).with_for_update())
         if variant is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Variant {variant_id} not found")
         variants[variant_id] = variant
+
+    category_ids = {item.category_id for item in payload.items if item.category_id is not None}
+    for category_id in category_ids:
+        if await db.get(Category, category_id) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Category {category_id} not found")
 
     resolved = await _resolve_lines(db, payload.items, variants)
 
@@ -256,6 +304,8 @@ async def create_pos_sale(
             POSSaleItem(
                 sale_id=sale.id,
                 variant_id=line.variant_id,
+                category_id=line.category_id,
+                note=line.note,
                 price_tier=line.price_tier,
                 quantity=line.quantity,
                 unit_price=line.unit_price,
@@ -325,6 +375,73 @@ async def void_pos_sale(
             )
 
     sale.status = "voided"
+    await db.commit()
+
+    stmt = select(POSSale).where(POSSale.id == sale.id).options(selectinload(POSSale.payments))
+    sale = await db.scalar(stmt)
+    return await _hydrate(db, sale)
+
+
+@router.post("/{sale_id}/items/{item_id}/identify", response_model=POSSaleRead)
+async def identify_pos_sale_item(
+    sale_id: uuid.UUID,
+    item_id: uuid.UUID,
+    payload: POSSaleItemIdentify,
+    db: AsyncSession = Depends(get_db),
+    staff: Staff = Depends(_write_roles),
+) -> POSSaleRead:
+    """Attaches a real variant to a "quick log" line (see
+    POSSaleItemCreate) after the fact -- e.g. a wholesale sale rung up as
+    "5 caps at ₵15" gets pointed at the exact cap SKU once someone has a
+    moment to look it up. The price and quantity charged at the time of
+    sale are never touched, only which physical item they're attributed
+    to; that's also what decrementing stock now, rather than back at
+    checkout, is for -- the item didn't really leave the shelf until this
+    moment as far as the system knew.
+
+    One-way: once a line has a variant_id it can't be re-identified,
+    since doing so would mean reversing a stock movement that may no
+    longer be safe to reverse (the variant's stock could have moved for
+    other reasons since).
+    """
+    sale = await db.get(POSSale, sale_id)
+    if sale is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sale not found")
+    if sale.status == "voided":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This sale has been voided")
+
+    item = await db.get(POSSaleItem, item_id)
+    if item is None or item.sale_id != sale_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sale item not found")
+    if item.variant_id is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This line already has a product attached")
+
+    variant = await db.scalar(
+        select(ProductVariant).where(ProductVariant.id == payload.variant_id).with_for_update()
+    )
+    if variant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+    if variant.stock_quantity < item.quantity:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"SKU {variant.sku} only has {variant.stock_quantity} in stock, needs {item.quantity} -- "
+                "record a stock correction first if this SKU wasn't fully tracked yet"
+            ),
+        )
+
+    item.variant_id = variant.id
+    db.add(
+        StockMovement(
+            variant_id=variant.id,
+            movement_type=StockMovementType.sale,
+            quantity_change=-item.quantity,
+            reason="Identified from a quick-logged sale",
+            reference_type="pos_sale",
+            reference_id=sale.id,
+            performed_by=staff.id,
+        )
+    )
     await db.commit()
 
     stmt = select(POSSale).where(POSSale.id == sale.id).options(selectinload(POSSale.payments))
