@@ -10,6 +10,9 @@ import '../config.dart';
 import '../theme.dart';
 import '../widgets/storefront_scaffold.dart';
 
+/// A single product's page: size/color picker, quantity stepper, add to
+/// cart -- or, for an out-of-stock variant, a "notify me" subscription
+/// instead of an add-to-cart button.
 class ProductDetailScreen extends StatefulWidget {
   final String productId;
 

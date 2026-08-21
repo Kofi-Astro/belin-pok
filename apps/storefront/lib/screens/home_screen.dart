@@ -11,6 +11,12 @@ import '../widgets/product_card.dart';
 import '../widgets/product_filters.dart';
 import '../widgets/storefront_footer.dart';
 
+/// The Shop tab body: hero, category showcase, search/filters, product
+/// grid, footer -- a Shop/Cart/Account shell branch (see
+/// widgets/app_shell.dart), not a standalone screen, so it renders its
+/// content directly with no app bar/scaffold of its own. Category
+/// selection is in-page filter state (_selectCategory below), not a
+/// separate route -- there's no stable per-category URL to link to.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 

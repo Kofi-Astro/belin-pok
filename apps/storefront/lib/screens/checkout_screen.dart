@@ -9,6 +9,11 @@ import '../cart.dart';
 import '../theme.dart';
 import '../widgets/storefront_scaffold.dart';
 
+/// Delivery-or-pickup checkout for whatever's in CartController. Guests
+/// fill in name/email/phone inline; signed-in shoppers with a saved
+/// address skip straight to "confirm and place order" (see
+/// _maybeLoadAddresses below). No payment step yet -- orders land as
+/// pending, to be paid on delivery/pickup.
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
 

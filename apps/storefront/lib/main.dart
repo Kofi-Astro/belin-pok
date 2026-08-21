@@ -1,3 +1,9 @@
+/// Storefront app entry point: initializes Supabase Auth, then wires up
+/// the two app-wide ChangeNotifiers (AuthController, CartController --
+/// see those files) via Provider and hands the router (router.dart) to
+/// MaterialApp.router.
+library;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';

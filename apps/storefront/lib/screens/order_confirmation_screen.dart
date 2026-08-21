@@ -5,6 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../theme.dart';
 import '../widgets/storefront_scaffold.dart';
 
+/// Shown right after a successful checkout (order passed in as router
+/// `extra`, not re-fetched). See router.dart's redirect on this route for
+/// what happens on a hard refresh, where that extra is gone.
 class OrderConfirmationScreen extends StatelessWidget {
   final Order order;
 

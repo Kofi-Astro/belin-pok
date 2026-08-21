@@ -25,6 +25,8 @@ class StorefrontColors {
   static const inkMuted = Color(0xFF6E6478);
 }
 
+/// The storefront's Material 3 theme, built from StorefrontColors above --
+/// the storefront's counterpart to belpok_core's buildAppTheme().
 ThemeData buildStorefrontTheme() {
   final base = ThemeData(useMaterial3: true, brightness: Brightness.light);
   final textTheme = GoogleFonts.manropeTextTheme(

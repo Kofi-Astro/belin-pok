@@ -6,21 +6,14 @@ import '../auth_controller.dart';
 import '../cart.dart';
 import '../theme.dart';
 
-/// Shared top bar (brand, account, cart-with-badge) every top-level
-/// screen wraps itself in. A plain widget rather than a go_router
-/// ShellRoute -- simpler for a mostly-linear browse -> product ->
-/// cart -> checkout flow than nested-navigator state preservation would
-/// be worth here.
-///
-/// The account/cart icons here use context.go(), not push(): they're
-/// reachable from every screen this scaffold wraps, so pushing would
-/// pile up an arbitrarily deep, unpredictable stack (e.g. product ->
-/// cart -> account -> cart again). go() instead treats them as a jump to
-/// a top-level section, same as tapping the brand name to go home --
-/// there's always exactly one way back to a clean state. Genuine
-/// drill-downs that DO have one sensible "previous screen" (product
-/// detail from the grid, checkout from the cart) still push(), and keep
-/// their working back arrow.
+/// The app bar for the four screens that live outside the main
+/// StatefulShellRoute (product detail, checkout, order confirmation,
+/// auth) -- see widgets/app_shell.dart for the Shop/Cart/Account tabs'
+/// own chrome, which these deliberately don't share. Each of these four
+/// is a genuine drill-down with one sensible "previous screen" reached
+/// via context.push(), so it gets a real back arrow (showBackButton);
+/// the account/cart icons here still use context.go() to jump straight
+/// to a top-level tab, same as tapping the brand name to go home.
 class StorefrontScaffold extends StatelessWidget {
   final Widget body;
   final bool showBackButton;

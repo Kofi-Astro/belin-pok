@@ -7,6 +7,9 @@ import '../cart.dart';
 import '../config.dart';
 import '../theme.dart';
 
+/// The Cart tab body -- a Shop/Cart/Account shell branch (see
+/// widgets/app_shell.dart), not a standalone screen, so it renders its
+/// content directly with no app bar/scaffold of its own.
 class CartScreen extends StatelessWidget {
   const CartScreen({super.key});
 
