@@ -1,3 +1,10 @@
+"""Verifies Supabase Auth JWTs on incoming requests (fetching Supabase's
+public signing keys and checking signature/audience/issuer) without ever
+calling out to Supabase per-request. This only answers "is this a valid
+Supabase user, and who are they" -- app/deps.py builds on top of this to
+answer "are they staff, or a customer, and what can they do."
+"""
+
 from functools import lru_cache
 from typing import Any
 
@@ -18,6 +25,9 @@ def _jwks_client() -> jwt.PyJWKClient:
 
 
 def decode_supabase_jwt(token: str) -> dict[str, Any]:
+    """Verifies a Supabase Auth access token's signature (against
+    Supabase's published JWKS), audience, and issuer, and returns its
+    decoded claims (including "sub", the Supabase Auth user id)."""
     try:
         signing_key = _jwks_client().get_signing_key_from_jwt(token)
         return jwt.decode(
@@ -38,6 +48,9 @@ def decode_supabase_jwt(token: str) -> dict[str, Any]:
 async def get_current_auth_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> dict[str, Any]:
+    """FastAPI dependency for routes that require *some* authenticated
+    Supabase user -- 401s if there's no bearer token at all. Doesn't say
+    anything about staff vs. customer; see app/deps.py for that."""
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

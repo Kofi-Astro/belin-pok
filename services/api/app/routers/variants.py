@@ -1,3 +1,8 @@
+"""Product variants (size/color SKUs): staff-only CRUD plus the low-stock
+list, and one storefront-facing endpoint (back-in-stock subscriptions) at
+the bottom. See the module comment below on why stock_quantity has no
+setter here."""
+
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status

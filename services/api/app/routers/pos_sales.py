@@ -1,3 +1,10 @@
+"""In-person register sales (retail or wholesale, over the counter) --
+staff-only end to end. Distinct from app/routers/orders.py's storefront
+checkout: a POS sale can mix price tiers per line, split across multiple
+payment methods (including a wholesale customer's credit), and supports
+"quick log" lines for ringing something up by category before its exact
+SKU has been looked up."""
+
 import uuid
 from dataclasses import dataclass, field
 

@@ -1,3 +1,12 @@
+"""Customer accounts, addresses, and the wholesale credit ledger.
+
+Three access levels in one router: self-service endpoints (/register,
+/me, /me/addresses) any signed-in customer can call for their own
+account; staff-only reads/writes for managing customer records (approving
+wholesale sign-ups, editing credit limits); and the credit ledger, which
+is staff-only end to end since customers never see or post to it
+directly."""
+
 import uuid
 from datetime import UTC, datetime
 

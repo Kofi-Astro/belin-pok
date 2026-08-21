@@ -1,3 +1,8 @@
+"""The public storefront catalog API: unauthenticated category/product
+browsing, with search/price/sort/in-stock filtering. See the module-level
+comment below for the hard status='active'/is_active=true filtering that
+keeps this catalog customer-safe."""
+
 from enum import StrEnum
 from uuid import UUID
 

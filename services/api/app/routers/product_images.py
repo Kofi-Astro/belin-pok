@@ -1,3 +1,6 @@
+"""Product photo management (owner/inventory_manager only) -- see the note
+below on the actual upload flow, which happens outside this API."""
+
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status

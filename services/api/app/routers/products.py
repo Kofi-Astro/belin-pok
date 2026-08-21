@@ -1,3 +1,8 @@
+"""Staff-only product CRUD (create/update/delete/list, including drafts and
+archived products). Every write is mirrored into audit_log. The public,
+unauthenticated product catalog customers browse is a separate endpoint
+in app/routers/public.py that only ever shows status='active' products."""
+
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status

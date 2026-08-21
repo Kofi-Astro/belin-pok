@@ -1,3 +1,20 @@
+"""Pydantic request/response models, grouped by resource with a
+`# ---------- name ----------` header. Each resource generally follows the
+same four-class shape:
+
+- `*Base`: fields shared by Create and Read (validation rules live here).
+- `*Create`: the POST request body -- usually just `*Base`, occasionally
+  with extra fields that only make sense at creation time.
+- `*Update`: the PATCH request body -- every field optional, so a request
+  only needs to include what's actually changing.
+- `*Read`: the API response shape, with `model_config = ConfigDict(from_attributes=True)`
+  so it can be built directly from a SQLAlchemy model instance (see
+  app/models.py for the ORM side of each of these).
+
+Comments below call out only where a resource deviates from that pattern
+or has a non-obvious validation rule.
+"""
+
 import uuid
 from datetime import date, datetime
 

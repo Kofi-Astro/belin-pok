@@ -1,3 +1,7 @@
+"""Push-notification device token registration for signed-in storefront
+customers -- see app/push.py for how these tokens actually get used (order
+status updates, back-in-stock alerts)."""
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert

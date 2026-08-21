@@ -1,3 +1,7 @@
+"""Owner/inventory_manager only. Currently just one endpoint (rebalancing
+loose stock into packs); a place for future inventory-wide operations
+that don't belong on a single product/variant/movement."""
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

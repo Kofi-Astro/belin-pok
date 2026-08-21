@@ -1,3 +1,8 @@
+"""FastAPI app entry point: wires up CORS and registers every router. Run
+locally with `uvicorn app.main:app --reload`; in production this is what
+Railway points at. See each app/routers/*.py module for what each router
+actually does."""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

@@ -1,3 +1,8 @@
+"""Owner/inventory_manager-only reporting: daily sales history and the
+admin dashboard's aggregate figures (revenue by price tier, top sellers,
+low stock, wholesale debtors). Read-only -- everything here is derived
+from other tables' data, nothing is written here."""
+
 from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query

@@ -1,3 +1,7 @@
+"""Admin-app user management. GET /me is open to any signed-in staff
+member (so the app can show "who am I"); everything else -- listing staff,
+inviting new ones, changing roles -- is owner-only."""
+
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status

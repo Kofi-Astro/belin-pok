@@ -23,6 +23,8 @@ from app.db import Base
 
 
 class StaffRole(enum.StrEnum):
+    """Who can do what in the admin app -- see app/deps.py's require_role()."""
+
     owner = "owner"
     inventory_manager = "inventory_manager"
     order_fulfillment = "order_fulfillment"
@@ -30,28 +32,44 @@ class StaffRole(enum.StrEnum):
 
 
 class ProductStatus(enum.StrEnum):
+    """draft/archived products are hidden from the public storefront catalog
+    (see app/routers/public.py); only 'active' products are customer-facing."""
+
     draft = "draft"
     active = "active"
     archived = "archived"
 
 
 class CustomerType(enum.StrEnum):
+    """Wholesale customers get pack/wholesale pricing tiers and a credit
+    ledger; retail customers pay standard prices with no credit."""
+
     retail = "retail"
     wholesale = "wholesale"
 
 
 class CustomerStatus(enum.StrEnum):
+    """Only relevant for wholesale sign-ups, which need staff approval
+    before they're treated as verified (see Customer.is_wholesale_verified
+    below). Retail customers default straight to approved."""
+
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
 
 
 class OrderType(enum.StrEnum):
+    """Retail orders come from the public storefront or a retail POS sale;
+    wholesale orders get wholesale/pack pricing and can draw on credit."""
+
     retail = "retail"
     wholesale = "wholesale"
 
 
 class OrderStatus(enum.StrEnum):
+    """The order fulfillment lifecycle, tracked in order_status_history as
+    it progresses."""
+
     pending = "pending"
     paid = "paid"
     packed = "packed"
@@ -62,6 +80,10 @@ class OrderStatus(enum.StrEnum):
 
 
 class StockMovementType(enum.StrEnum):
+    """Every change to a variant's stock_quantity is recorded as one of
+    these -- stock_movements is the append-only ledger, never just an
+    in-place quantity update (see StockMovement below)."""
+
     restock = "restock"
     sale = "sale"
     adjustment = "adjustment"
@@ -70,16 +92,24 @@ class StockMovementType(enum.StrEnum):
 
 
 class DevicePlatform(enum.StrEnum):
+    """Which push-notification channel a CustomerDeviceToken belongs to."""
+
     ios = "ios"
     android = "android"
 
 
 class FulfillmentMethod(enum.StrEnum):
+    """How an order reaches the customer -- gates whether Order needs a
+    shipping_address_id (see Order below)."""
+
     delivery = "delivery"
     pickup = "pickup"
 
 
 class PaymentMethod(enum.StrEnum):
+    """How a POS sale was paid -- 'credit' draws down a wholesale
+    customer's credit_limit instead of being collected on the spot."""
+
     cash = "cash"
     mobile_money = "mobile_money"
     card = "card"
@@ -87,12 +117,18 @@ class PaymentMethod(enum.StrEnum):
 
 
 class PriceTier(enum.StrEnum):
+    """Which of a variant's several prices (base_price/wholesale_price/
+    pack_price) a POS sale line was actually billed at."""
+
     retail = "retail"
     wholesale = "wholesale"
     pack = "pack"
 
 
 class CreditLedgerEntryType(enum.StrEnum):
+    """charge increases a wholesale customer's outstanding_balance (a
+    credit sale), payment decreases it, adjustment is a manual correction."""
+
     charge = "charge"
     payment = "payment"
     adjustment = "adjustment"
@@ -103,6 +139,10 @@ def _pg_enum(pg_enum: enum.EnumMeta, name: str) -> PgEnum:
 
 
 class Staff(Base):
+    """An admin-app user -- the staff equivalent of Customer. Rows are
+    created by Supabase Auth invitation (see app/supabase_admin.py), not
+    self-registration."""
+
     __tablename__ = "staff"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
@@ -115,6 +155,10 @@ class Staff(Base):
 
 
 class Category(Base):
+    """A product category (Caps, T-Shirts, ...). Self-referential via
+    parent_id for optional sub-categories; name is only unique per-parent,
+    not globally."""
+
     __tablename__ = "categories"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -130,6 +174,9 @@ class Category(Base):
 
 
 class Supplier(Base):
+    """Who a product is sourced from -- purely informational (contact
+    details, notes); not involved in stock or pricing logic."""
+
     __tablename__ = "suppliers"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -145,6 +192,11 @@ class Supplier(Base):
 
 
 class Product(Base):
+    """A sellable item, e.g. "Classic Snapback Cap". base_price is the
+    default retail price; actual variants (size/color) can override it --
+    see ProductVariant below. Only 'active' status products are visible on
+    the public storefront."""
+
     __tablename__ = "products"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -172,6 +224,11 @@ class Product(Base):
 
 
 class ProductVariant(Base):
+    """One purchasable size/color combination of a Product -- this is what
+    actually carries stock_quantity and a SKU, not the Product itself.
+    price_override/wholesale_price/pack_price are optional per-variant
+    overrides of the product's base_price for each PriceTier."""
+
     __tablename__ = "product_variants"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -196,6 +253,10 @@ class ProductVariant(Base):
 
 
 class ProductImage(Base):
+    """A photo attached to a Product, optionally scoped to one specific
+    variant (e.g. a color-specific shot). storage_path points into Supabase
+    Storage, not a URL stored directly."""
+
     __tablename__ = "product_images"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -211,6 +272,11 @@ class ProductImage(Base):
 
 
 class StockMovement(Base):
+    """One append-only ledger entry for a change to a variant's stock --
+    never delete or edit a row here; corrections are a new offsetting
+    movement. quantity_change is signed (positive for restock/return,
+    negative for sale)."""
+
     __tablename__ = "stock_movements"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -247,6 +313,9 @@ class POSSale(Base):
 
 
 class POSSalePayment(Base):
+    """One payment applied to a POSSale -- a single sale can be split
+    across multiple methods (e.g. part cash, part mobile money)."""
+
     __tablename__ = "pos_sale_payments"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -289,6 +358,11 @@ class POSSaleItem(Base):
 
 
 class Customer(Base):
+    """A storefront/POS customer -- the customer equivalent of Staff.
+    auth_user_id links to a Supabase Auth user for customers who created an
+    online account; it's nullable because POS can also record a walk-in
+    customer with no login at all."""
+
     __tablename__ = "customers"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -314,10 +388,15 @@ class Customer(Base):
 
     @property
     def is_wholesale_verified(self) -> bool:
+        """True once a wholesale sign-up has been staff-approved -- gates
+        access to wholesale/pack pricing and credit sales."""
         return self.customer_type == CustomerType.wholesale and self.status == CustomerStatus.approved
 
 
 class Address(Base):
+    """A saved shipping/billing address for a Customer. A customer can have
+    several; is_default marks which one pre-fills checkout."""
+
     __tablename__ = "addresses"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -335,6 +414,11 @@ class Address(Base):
 
 
 class Order(Base):
+    """An order placed through the storefront (guest or signed-in
+    customer). The wholesale/retail POS instead records a POSSale --
+    orders and POS sales are separate flows that both draw down the same
+    ProductVariant.stock_quantity."""
+
     __tablename__ = "orders"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -371,6 +455,10 @@ class Order(Base):
 
 
 class OrderItem(Base):
+    """One line item of an Order -- a quantity of a specific
+    ProductVariant at the price it was sold for (unit_price is a snapshot,
+    independent of the variant's current price)."""
+
     __tablename__ = "order_items"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -390,6 +478,9 @@ class OrderItem(Base):
 
 
 class OrderStatusHistory(Base):
+    """Append-only audit trail of an Order's status changes -- one row per
+    transition, written alongside (not instead of) updating Order.status."""
+
     __tablename__ = "order_status_history"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -401,6 +492,10 @@ class OrderStatusHistory(Base):
 
 
 class CustomerDeviceToken(Base):
+    """A mobile push-notification token registered by a signed-in
+    customer's device -- see app/push.py for how these get used, and
+    app/routers/device_tokens.py for registration."""
+
     __tablename__ = "customer_device_tokens"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -411,6 +506,10 @@ class CustomerDeviceToken(Base):
 
 
 class StockNotificationRequest(Base):
+    """A customer's "notify me when this is back in stock" request for one
+    variant. notified_at is set once the notification has actually been
+    sent, so the same request isn't fired twice."""
+
     __tablename__ = "stock_notification_requests"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -421,6 +520,12 @@ class StockNotificationRequest(Base):
 
 
 class AuditLog(Base):
+    """Generic before/after audit trail for admin-app writes (who changed
+    what row in what table, and what it looked like before/after) --
+    broader and less structured than OrderStatusHistory or
+    CustomerCreditLedger, which are purpose-built ledgers for one thing
+    each."""
+
     __tablename__ = "audit_log"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

@@ -1,3 +1,8 @@
+"""Staff-only category CRUD. Reads need any signed-in staff member; writes
+(create/update/delete) are restricted to owner/inventory_manager. The
+public, unauthenticated category listing customers see is a separate,
+read-only endpoint in app/routers/public.py."""
+
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status

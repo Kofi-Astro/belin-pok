@@ -1,3 +1,9 @@
+"""Storefront orders: guest/signed-in checkout, a customer's own order
+history, and staff-side order management (listing, status updates, and
+flagging orders that are short on stock after the fact). See
+app/routers/pos_sales.py for the separate in-person register flow, which
+uses its own POSSale model rather than Order."""
+
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status

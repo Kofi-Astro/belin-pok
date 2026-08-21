@@ -1,3 +1,10 @@
+"""The append-only stock ledger: every restock, sale, correction, and
+return is a row here (see StockMovement in app/models.py), and
+stock_quantity on product_variants is a cache kept in sync by a DB
+trigger, not edited directly through this API. Also where back-in-stock
+push notifications get triggered, the moment a variant's stock crosses
+from zero to positive."""
+
 import uuid
 from datetime import UTC, datetime
 
