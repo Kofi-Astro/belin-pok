@@ -9,6 +9,10 @@ import '../theme.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/stock_movement_dialog.dart';
 
+/// Sales overview (owner/inventory_manager only), a running-low list with
+/// a one-tap restock action, and a recent-activity feed of every stock
+/// movement -- the operational counterpart to DashboardScreen's
+/// longer-range reporting view.
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
 
@@ -44,7 +48,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
       final results = await Future.wait([
         _api.lowStockVariants(),
         _api.listStockMovements(),
-        if (canViewSales) _api.dailySales(days: 14) else Future.value(<DailySales>[]),
+        if (canViewSales)
+          _api.dailySales(days: 14)
+        else
+          Future.value(<DailySales>[]),
       ]);
       setState(() {
         _lowStock = results[0] as List<LowStockVariant>;
@@ -85,9 +92,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 if (_dailySales.isNotEmpty) ...[
                   Text(
                     'Sales',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   _TodaySalesCard(sales: _dailySales),
@@ -269,8 +276,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
       '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 
   static const _monthNames = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   String _formatDay(DateTime day) {

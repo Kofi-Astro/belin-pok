@@ -15,6 +15,12 @@ import '../widgets/product_image_thumb.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/stock_movement_dialog.dart';
 
+/// The product catalog: search/filter grid, and the entry point into
+/// everything product-related -- creating a product (_ProductFormDialog),
+/// its full detail view with photos/variants (_ProductDetailDialog), its
+/// audit history (_ProductHistoryDialog), and per-variant size/color
+/// creation and wholesale/pack pricing (_VariantFormDialog /
+/// _VariantPricingDialog).
 class ProductsScreen extends StatefulWidget {
   const ProductsScreen({super.key});
 
@@ -186,6 +192,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 }
 
+/// One tile in the catalog grid -- tapping it opens _ProductDetailDialog.
 class _ProductCard extends StatelessWidget {
   final Product product;
   final String categoryName;
@@ -276,6 +283,9 @@ class _ProductCard extends StatelessWidget {
   }
 }
 
+/// New-product creation: name/slug/category/brand/price -- photos and
+/// variants are added afterward, from _ProductDetailDialog, once the
+/// product itself exists.
 class _ProductFormDialog extends StatefulWidget {
   final ApiClient api;
   final List<Category> categories;
@@ -523,6 +533,12 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
   }
 }
 
+/// A product's full working view: edit its fields, manage its photo
+/// gallery (ImageUploadZone/ProductImageThumb), add/edit variants, and
+/// publish/archive/delete it. Reloads itself from the API after any
+/// change rather than mutating the passed-in Product in place, and
+/// reports back via _changed whether the catalog list behind it needs
+/// refreshing once closed.
 class _ProductDetailDialog extends StatefulWidget {
   final ApiClient api;
   final Product product;
@@ -671,8 +687,10 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                             tooltip: 'Change history',
                             onPressed: () => showDialog(
                               context: context,
-                              builder: (_) =>
-                                  _ProductHistoryDialog(api: widget.api, product: product),
+                              builder: (_) => _ProductHistoryDialog(
+                                api: widget.api,
+                                product: product,
+                              ),
                             ),
                           ),
                         IconButton(
@@ -757,7 +775,9 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                                 title: Text(
                                   '${v.size}${v.color != null ? ' · ${v.color}' : ''}  (${v.sku})',
                                 ),
-                                subtitle: (v.wholesalePrice != null || v.hasPackPricing)
+                                subtitle:
+                                    (v.wholesalePrice != null ||
+                                        v.hasPackPricing)
                                     ? Text(
                                         [
                                           if (v.wholesalePrice != null)
@@ -765,7 +785,10 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                                           if (v.hasPackPricing)
                                             'Pack of ${v.packSize} · ₵${v.packPrice!.toStringAsFixed(2)}',
                                         ].join(' · '),
-                                        style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.inkMuted,
+                                        ),
                                       )
                                     : null,
                                 trailing: Row(
@@ -784,7 +807,10 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                                     ),
                                     if (canWrite)
                                       IconButton(
-                                        icon: const Icon(Icons.sell_outlined, size: 18),
+                                        icon: const Icon(
+                                          Icons.sell_outlined,
+                                          size: 18,
+                                        ),
                                         tooltip: 'Edit pricing',
                                         onPressed: () => _editPricing(v),
                                       ),
@@ -854,6 +880,9 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
   }
 }
 
+/// This product's audit_log entries (create/update/delete) -- see
+/// AuditLogEntry.changedFields in models.dart for how a before/after pair
+/// gets narrowed to just what actually changed.
 class _ProductHistoryDialog extends StatefulWidget {
   final ApiClient api;
   final Product product;
@@ -976,6 +1005,9 @@ class _ProductHistoryDialogState extends State<_ProductHistoryDialog> {
       '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 }
 
+/// Adds a new size/color variant to a product. SKU isn't a field here --
+/// the backend generates one from the product + size + color (see
+/// ApiClient.createVariant's comment).
 class _VariantFormDialog extends StatefulWidget {
   final ApiClient api;
   final String productId;
@@ -1070,6 +1102,9 @@ class _VariantFormDialogState extends State<_VariantFormDialog> {
 /// wholesale (blank falls back to the retail price at checkout), and a
 /// factory pack (price + how many units make up one pack; both or
 /// neither, same rule the backend enforces).
+/// Edits one variant's pricing: the retail override, wholesale unit
+/// price, and factory-pack price/size -- everything except stock, which
+/// only ever changes through a StockMovementDialog so it stays audited.
 class _VariantPricingDialog extends StatefulWidget {
   final ApiClient api;
   final ProductVariant variant;
@@ -1099,7 +1134,10 @@ class _VariantPricingDialogState extends State<_VariantPricingDialog> {
     final packPriceText = _packPriceController.text.trim();
     final packSizeText = _packSizeController.text.trim();
     if (packPriceText.isEmpty != packSizeText.isEmpty) {
-      setState(() => _error = 'Pack price and pack size must be set together, or both left blank');
+      setState(
+        () => _error =
+            'Pack price and pack size must be set together, or both left blank',
+      );
       return;
     }
     setState(() {
@@ -1143,7 +1181,10 @@ class _VariantPricingDialogState extends State<_VariantPricingDialog> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_error!, style: const TextStyle(color: AppColors.danger)),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: AppColors.danger),
+                ),
               ),
             TextField(
               controller: _retailController,
@@ -1152,7 +1193,9 @@ class _VariantPricingDialogState extends State<_VariantPricingDialog> {
                 labelText: 'Retail price override (₵)',
                 helperText: 'Leave blank to use the product\'s base price.',
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -1161,7 +1204,9 @@ class _VariantPricingDialogState extends State<_VariantPricingDialog> {
                 labelText: 'Wholesale price (₵)',
                 helperText: 'Leave blank to fall back to the retail price.',
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
             ),
             const SizedBox(height: 12),
             Row(
@@ -1169,15 +1214,21 @@ class _VariantPricingDialogState extends State<_VariantPricingDialog> {
                 Expanded(
                   child: TextField(
                     controller: _packPriceController,
-                    decoration: const InputDecoration(labelText: 'Pack price (₵)'),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Pack price (₵)',
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: _packSizeController,
-                    decoration: const InputDecoration(labelText: 'Units per pack'),
+                    decoration: const InputDecoration(
+                      labelText: 'Units per pack',
+                    ),
                     keyboardType: TextInputType.number,
                   ),
                 ),

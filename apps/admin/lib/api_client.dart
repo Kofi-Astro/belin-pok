@@ -281,15 +281,18 @@ class ApiClient {
         as Map<String, dynamic>,
   );
 
-  Future<PosSale> voidPosSale(String id) async =>
-      PosSale.fromJson(await _post('/pos-sales/$id/void', {}) as Map<String, dynamic>);
+  Future<PosSale> voidPosSale(String id) async => PosSale.fromJson(
+    await _post('/pos-sales/$id/void', {}) as Map<String, dynamic>,
+  );
 
   Future<PosSale> identifyPosSaleItem(
     String saleId,
     String itemId, {
     required String variantId,
   }) async => PosSale.fromJson(
-    await _post('/pos-sales/$saleId/items/$itemId/identify', {'variant_id': variantId})
+    await _post('/pos-sales/$saleId/items/$itemId/identify', {
+          'variant_id': variantId,
+        })
         as Map<String, dynamic>,
   );
 
@@ -354,16 +357,19 @@ class ApiClient {
           'email': email,
           if (phone != null && phone.isNotEmpty) 'phone': phone,
           'customer_type': customerType,
-          if (businessName != null && businessName.isNotEmpty) 'business_name': businessName,
+          if (businessName != null && businessName.isNotEmpty)
+            'business_name': businessName,
           'credit_limit': creditLimit,
         })
         as Map<String, dynamic>,
   );
 
-  Future<Customer> updateCustomer(String id, Map<String, dynamic> fields) async =>
-      Customer.fromJson(
-        await _patch('/customers/$id', fields) as Map<String, dynamic>,
-      );
+  Future<Customer> updateCustomer(
+    String id,
+    Map<String, dynamic> fields,
+  ) async => Customer.fromJson(
+    await _patch('/customers/$id', fields) as Map<String, dynamic>,
+  );
 
   Future<Customer> updateCustomerStatus(String id, String status) async =>
       Customer.fromJson(

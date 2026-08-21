@@ -217,7 +217,8 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
       _error = null;
     });
     try {
-      final displayOrder = int.tryParse(_displayOrderController.text.trim()) ?? 0;
+      final displayOrder =
+          int.tryParse(_displayOrderController.text.trim()) ?? 0;
       if (_isEditing) {
         await widget.api.updateCategory(widget.category!.id, {
           'name': name,

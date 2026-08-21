@@ -71,7 +71,9 @@ class _CartLine {
   int get maxQuantity {
     if (isQuickLog) return 999;
     final v = variant!;
-    return priceTier == 'pack' ? v.stockQuantity ~/ (v.packSize ?? 1) : v.stockQuantity;
+    return priceTier == 'pack'
+        ? v.stockQuantity ~/ (v.packSize ?? 1)
+        : v.stockQuantity;
   }
 
   double get lineTotal => unitPrice * quantity;
@@ -81,7 +83,11 @@ class _CartLine {
     final v = variant!;
     final p = product!;
     return '${p.name} (${v.size}${v.color != null ? ' · ${v.color}' : ''})'
-        '${priceTier == 'pack' ? ' · pack of ${v.packSize}' : priceTier == 'wholesale' ? ' · wholesale' : ''}';
+        '${priceTier == 'pack'
+            ? ' · pack of ${v.packSize}'
+            : priceTier == 'wholesale'
+            ? ' · wholesale'
+            : ''}';
   }
 }
 
@@ -261,7 +267,10 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
           .where((l) => l.variant?.id == variant.id && l.priceTier == _pickTier)
           .firstOrNull;
       if (existing != null) {
-        existing.quantity = (existing.quantity + _pickQuantity).clamp(1, existing.maxQuantity);
+        existing.quantity = (existing.quantity + _pickQuantity).clamp(
+          1,
+          existing.maxQuantity,
+        );
       } else {
         _cart.add(
           _CartLine.picked(
@@ -276,7 +285,12 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
     _cancelPicking();
   }
 
-  void _addQuickLogToCart(Category category, double unitPrice, int quantity, String? note) {
+  void _addQuickLogToCart(
+    Category category,
+    double unitPrice,
+    int quantity,
+    String? note,
+  ) {
     setState(() {
       _cart.add(
         _CartLine.quickLog(
@@ -401,11 +415,12 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
               ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
-            for (final line in _cart) _CartTile(
-              line: line,
-              onRemove: () => setState(() => _cart.remove(line)),
-              onQuantityChanged: (q) => setState(() => line.quantity = q),
-            ),
+            for (final line in _cart)
+              _CartTile(
+                line: line,
+                onRemove: () => setState(() => _cart.remove(line)),
+                onQuantityChanged: (q) => setState(() => line.quantity = q),
+              ),
             const SizedBox(height: 20),
           ],
 
@@ -414,20 +429,26 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
               padding: const EdgeInsets.only(bottom: 16),
               child: SegmentedButton<bool>(
                 segments: const [
-                  ButtonSegment(value: false, label: Text('Pick from Products'), icon: Icon(Icons.checkroom)),
-                  ButtonSegment(value: true, label: Text('Log by Type'), icon: Icon(Icons.edit_note)),
+                  ButtonSegment(
+                    value: false,
+                    label: Text('Pick from Products'),
+                    icon: Icon(Icons.checkroom),
+                  ),
+                  ButtonSegment(
+                    value: true,
+                    label: Text('Log by Type'),
+                    icon: Icon(Icons.edit_note),
+                  ),
                 ],
                 selected: {_quickLogMode},
-                onSelectionChanged: (s) => setState(() => _quickLogMode = s.first),
+                onSelectionChanged: (s) =>
+                    setState(() => _quickLogMode = s.first),
               ),
             ),
           ],
 
           if (_quickLogMode && _picking == null)
-            _QuickLogForm(
-              categories: _categories,
-              onAdd: _addQuickLogToCart,
-            )
+            _QuickLogForm(categories: _categories, onAdd: _addQuickLogToCart)
           else if (_picking == null) ...[
             if (_quickPick.isNotEmpty) ...[
               Text(
@@ -470,7 +491,8 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
               onChanged: _search,
             ),
             const SizedBox(height: 12),
-            if (_loadingProduct) const Center(child: CircularProgressIndicator()),
+            if (_loadingProduct)
+              const Center(child: CircularProgressIndicator()),
             for (final product in _results)
               Card(
                 margin: const EdgeInsets.only(bottom: 8),
@@ -491,7 +513,9 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
               onVariantChanged: (v) => setState(() {
                 _pickVariant = v;
                 _pickQuantity = 1;
-                _pickTier = _mode == SaleMode.wholesale ? 'wholesale' : 'retail';
+                _pickTier = _mode == SaleMode.wholesale
+                    ? 'wholesale'
+                    : 'retail';
               }),
               onTierChanged: (t) => setState(() {
                 _pickTier = t;
@@ -541,6 +565,8 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
   }
 }
 
+/// A product's cover photo (or a placeholder icon), used by both
+/// _QuickPickCard and the variant-pick flow.
 class _Thumb extends StatelessWidget {
   final Product product;
   const _Thumb({required this.product});
@@ -571,6 +597,8 @@ class _Thumb extends StatelessWidget {
   }
 }
 
+/// One tile in the product grid -- tapping it opens _VariantPickForm to
+/// choose a size/color and quantity before adding to the cart.
 class _QuickPickCard extends StatelessWidget {
   final Product product;
   final VoidCallback onTap;
@@ -605,9 +633,7 @@ class _QuickPickCard extends StatelessWidget {
                         ),
                       )
                     : Image.network(
-                        product.primaryImage!.publicUrl(
-                          AppConfig.supabaseUrl,
-                        ),
+                        product.primaryImage!.publicUrl(AppConfig.supabaseUrl),
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stack) =>
                             const Icon(Icons.broken_image_outlined),
@@ -632,6 +658,8 @@ class _QuickPickCard extends StatelessWidget {
   }
 }
 
+/// One line in the running cart sidebar, with a quantity stepper and a
+/// remove button.
 class _CartTile extends StatelessWidget {
   final _CartLine line;
   final VoidCallback onRemove;
@@ -648,7 +676,10 @@ class _CartTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        title: Text(line.label, style: const TextStyle(fontWeight: FontWeight.w700)),
+        title: Text(
+          line.label,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
         subtitle: Text(
           '₵${line.unitPrice.toStringAsFixed(2)} ${line.priceTier == 'pack' ? 'per pack' : 'each'}',
         ),
@@ -661,7 +692,10 @@ class _CartTile extends StatelessWidget {
                   ? () => onQuantityChanged(line.quantity - 1)
                   : null,
             ),
-            Text('${line.quantity}', style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(
+              '${line.quantity}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
             IconButton(
               icon: const Icon(Icons.add_circle_outline, size: 20),
               onPressed: line.quantity < line.maxQuantity
@@ -674,7 +708,11 @@ class _CartTile extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             IconButton(
-              icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
+              icon: const Icon(
+                Icons.delete_outline,
+                size: 20,
+                color: AppColors.danger,
+              ),
               onPressed: onRemove,
             ),
           ],
@@ -707,10 +745,14 @@ class _ModeBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isWholesale ? AppColors.amber.withValues(alpha: 0.12) : AppColors.navy.withValues(alpha: 0.06),
+        color: isWholesale
+            ? AppColors.amber.withValues(alpha: 0.12)
+            : AppColors.navy.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isWholesale ? AppColors.amber : AppColors.navy.withValues(alpha: 0.15),
+          color: isWholesale
+              ? AppColors.amber
+              : AppColors.navy.withValues(alpha: 0.15),
         ),
       ),
       child: Wrap(
@@ -720,8 +762,16 @@ class _ModeBanner extends StatelessWidget {
         children: [
           SegmentedButton<SaleMode>(
             segments: const [
-              ButtonSegment(value: SaleMode.retail, label: Text('Retail Mode'), icon: Icon(Icons.storefront)),
-              ButtonSegment(value: SaleMode.wholesale, label: Text('Wholesale Mode'), icon: Icon(Icons.inventory)),
+              ButtonSegment(
+                value: SaleMode.retail,
+                label: Text('Retail Mode'),
+                icon: Icon(Icons.storefront),
+              ),
+              ButtonSegment(
+                value: SaleMode.wholesale,
+                label: Text('Wholesale Mode'),
+                icon: Icon(Icons.inventory),
+              ),
             ],
             selected: {mode},
             onSelectionChanged: (s) => onModeChanged(s.first),
@@ -737,7 +787,11 @@ class _ModeBanner extends StatelessWidget {
             ),
           if (isWholesale && customer != null && !customer!.isWholesaleVerified)
             const Chip(
-              avatar: Icon(Icons.warning_amber, size: 18, color: AppColors.warning),
+              avatar: Icon(
+                Icons.warning_amber,
+                size: 18,
+                color: AppColors.warning,
+              ),
               label: Text('Not yet approved -- credit sales blocked'),
               backgroundColor: Color(0x1AFFA000),
             ),
@@ -747,6 +801,8 @@ class _ModeBanner extends StatelessWidget {
   }
 }
 
+/// Search-and-pick a wholesale customer -- opened from _ModeBanner when
+/// switching into Wholesale Mode with no customer already selected.
 class _CustomerPickerDialog extends StatefulWidget {
   final List<Customer> customers;
   const _CustomerPickerDialog({required this.customers});
@@ -761,8 +817,12 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
   @override
   Widget build(BuildContext context) {
     final filtered = widget.customers
-        .where((c) => c.fullName.toLowerCase().contains(_query.toLowerCase()) ||
-            (c.businessName?.toLowerCase().contains(_query.toLowerCase()) ?? false))
+        .where(
+          (c) =>
+              c.fullName.toLowerCase().contains(_query.toLowerCase()) ||
+              (c.businessName?.toLowerCase().contains(_query.toLowerCase()) ??
+                  false),
+        )
         .toList();
     return AlertDialog(
       title: const Text('Select wholesale customer'),
@@ -783,14 +843,21 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
             Expanded(
               child: filtered.isEmpty
                   ? const Center(
-                      child: Text('No wholesale customers found.', style: TextStyle(color: AppColors.inkMuted)),
+                      child: Text(
+                        'No wholesale customers found.',
+                        style: TextStyle(color: AppColors.inkMuted),
+                      ),
                     )
                   : ListView.builder(
                       itemCount: filtered.length,
                       itemBuilder: (context, i) {
                         final c = filtered[i];
                         return ListTile(
-                          title: Text(c.businessName?.isNotEmpty == true ? c.businessName! : c.fullName),
+                          title: Text(
+                            c.businessName?.isNotEmpty == true
+                                ? c.businessName!
+                                : c.fullName,
+                          ),
                           subtitle: Text(
                             c.isWholesaleVerified
                                 ? 'Approved · ₵${c.availableCredit.toStringAsFixed(2)} credit available'
@@ -805,7 +872,10 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
       ],
     );
   }
@@ -820,7 +890,13 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
 /// entirely at the owner's pace.
 class _QuickLogForm extends StatefulWidget {
   final List<Category> categories;
-  final void Function(Category category, double unitPrice, int quantity, String? note) onAdd;
+  final void Function(
+    Category category,
+    double unitPrice,
+    int quantity,
+    String? note,
+  )
+  onAdd;
 
   const _QuickLogForm({required this.categories, required this.onAdd});
 
@@ -880,7 +956,10 @@ class _QuickLogFormState extends State<_QuickLogForm> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Text(_error!, style: const TextStyle(color: AppColors.danger)),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: AppColors.danger),
+                ),
               ),
             DropdownButtonFormField<Category>(
               initialValue: _category,
@@ -894,7 +973,9 @@ class _QuickLogFormState extends State<_QuickLogForm> {
             TextField(
               controller: _priceController,
               decoration: const InputDecoration(labelText: 'Price sold at (₵)'),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
             ),
             const SizedBox(height: 12),
             Row(
@@ -903,11 +984,19 @@ class _QuickLogFormState extends State<_QuickLogForm> {
                 const Spacer(),
                 IconButton.filledTonal(
                   icon: const Icon(Icons.remove),
-                  onPressed: _quantity > 1 ? () => setState(() => _quantity--) : null,
+                  onPressed: _quantity > 1
+                      ? () => setState(() => _quantity--)
+                      : null,
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text('$_quantity', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  child: Text(
+                    '$_quantity',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
                 IconButton.filledTonal(
                   icon: const Icon(Icons.add),
@@ -920,7 +1009,8 @@ class _QuickLogFormState extends State<_QuickLogForm> {
               controller: _noteController,
               decoration: const InputDecoration(
                 labelText: 'Note (optional)',
-                hintText: 'e.g. blue, medium -- helps whoever identifies it later',
+                hintText:
+                    'e.g. blue, medium -- helps whoever identifies it later',
               ),
             ),
             const SizedBox(height: 16),
@@ -936,6 +1026,9 @@ class _QuickLogFormState extends State<_QuickLogForm> {
   }
 }
 
+/// Size/color/quantity picker shown after tapping a product, priced live
+/// for whichever SaleMode (retail/wholesale) is currently active before
+/// the line gets added to the cart.
 class _VariantPickForm extends StatelessWidget {
   final Product product;
   final ProductVariant? variant;
@@ -962,7 +1055,8 @@ class _VariantPickForm extends StatelessWidget {
   });
 
   double _unitPriceFor(String tier) => switch (tier) {
-    'wholesale' => variant?.wholesalePrice ?? (variant?.priceOverride ?? product.basePrice),
+    'wholesale' =>
+      variant?.wholesalePrice ?? (variant?.priceOverride ?? product.basePrice),
     'pack' => (variant?.packPrice ?? 0) / (variant?.packSize ?? 1),
     _ => variant?.priceOverride ?? product.basePrice,
   };
@@ -970,7 +1064,9 @@ class _VariantPickForm extends StatelessWidget {
   int get _maxQuantity {
     final v = variant;
     if (v == null) return 0;
-    return priceTier == 'pack' ? v.stockQuantity ~/ (v.packSize ?? 1) : v.stockQuantity;
+    return priceTier == 'pack'
+        ? v.stockQuantity ~/ (v.packSize ?? 1)
+        : v.stockQuantity;
   }
 
   @override
@@ -1000,10 +1096,7 @@ class _VariantPickForm extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            Text(
-              'Size / color',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
+            Text('Size / color', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             if (product.variants.isEmpty)
               const Text(
@@ -1035,7 +1128,9 @@ class _VariantPickForm extends StatelessWidget {
                 spacing: 8,
                 children: [
                   ChoiceChip(
-                    label: Text('Wholesale · ₵${_unitPriceFor('wholesale').toStringAsFixed(2)}'),
+                    label: Text(
+                      'Wholesale · ₵${_unitPriceFor('wholesale').toStringAsFixed(2)}',
+                    ),
                     selected: priceTier == 'wholesale',
                     onSelected: (_) => onTierChanged('wholesale'),
                   ),
@@ -1110,6 +1205,9 @@ class _VariantPickForm extends StatelessWidget {
   }
 }
 
+/// One completed sale in the "Today's Sales" list -- expands to show its
+/// line items and payments, with a void action and, for any quick-logged
+/// line, an "Identify" action that opens _IdentifyProductDialog.
 class _SaleCard extends StatelessWidget {
   final ApiClient api;
   final PosSale sale;
@@ -1134,7 +1232,9 @@ class _SaleCard extends StatelessWidget {
       onChanged();
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
       }
     }
   }
@@ -1169,10 +1269,14 @@ class _SaleCard extends StatelessWidget {
             if (sale.customerName != null) sale.customerName!,
             timeLabel,
             if (sale.isVoided) 'Voided',
-            if (!sale.isVoided && unidentifiedCount > 0) '$unidentifiedCount need product details',
+            if (!sale.isVoided && unidentifiedCount > 0)
+              '$unidentifiedCount need product details',
           ].join(' · '),
           style: unidentifiedCount > 0 && !sale.isVoided
-              ? const TextStyle(color: AppColors.warning, fontWeight: FontWeight.w600)
+              ? const TextStyle(
+                  color: AppColors.warning,
+                  fontWeight: FontWeight.w600,
+                )
               : null,
         ),
         trailing: sale.isVoided
@@ -1196,7 +1300,10 @@ class _SaleCard extends StatelessWidget {
                         if (item.note?.isNotEmpty == true)
                           Text(
                             item.note!,
-                            style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.inkMuted,
+                            ),
                           ),
                       ],
                     ),
@@ -1275,7 +1382,9 @@ class _IdentifyProductDialogState extends State<_IdentifyProductDialog> {
                               child: SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               ),
                             )
                           : null,
@@ -1288,7 +1397,9 @@ class _IdentifyProductDialogState extends State<_IdentifyProductDialog> {
                       itemCount: _results.length,
                       itemBuilder: (context, i) => ListTile(
                         title: Text(_results[i].name),
-                        subtitle: Text('₵${_results[i].basePrice.toStringAsFixed(2)}'),
+                        subtitle: Text(
+                          '₵${_results[i].basePrice.toStringAsFixed(2)}',
+                        ),
                         onTap: () => _selectProduct(_results[i]),
                       ),
                     ),
@@ -1320,7 +1431,9 @@ class _IdentifyProductDialogState extends State<_IdentifyProductDialog> {
                     children: [
                       for (final v in _picking!.variants)
                         ActionChip(
-                          label: Text('${v.size}${v.color != null ? ' · ${v.color}' : ''} (${v.stockQuantity})'),
+                          label: Text(
+                            '${v.size}${v.color != null ? ' · ${v.color}' : ''} (${v.stockQuantity})',
+                          ),
                           onPressed: () => Navigator.of(context).pop(v),
                         ),
                     ],
@@ -1329,12 +1442,19 @@ class _IdentifyProductDialogState extends State<_IdentifyProductDialog> {
               ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
       ],
     );
   }
 }
 
+/// Collects one or more payments (see _Payment) covering the cart total
+/// -- a wholesale sale can include a 'credit' payment charged to the
+/// selected customer's account, everything else is collected on the
+/// spot. Submits the whole cart as one POST /pos-sales transaction.
 class _CheckoutDialog extends StatefulWidget {
   final ApiClient api;
   final List<_CartLine> cart;
@@ -1352,6 +1472,8 @@ class _CheckoutDialog extends StatefulWidget {
   State<_CheckoutDialog> createState() => _CheckoutDialogState();
 }
 
+/// One payment line within _CheckoutDialog -- a sale can split its total
+/// across several of these (e.g. part cash, part credit).
 class _Payment {
   String method;
   final TextEditingController controller;
@@ -1382,12 +1504,16 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
       .fold(0.0, (sum, p) => sum + (double.tryParse(p.controller.text) ?? 0));
 
   bool get _exceedsCreditLimit =>
-      widget.customer != null && _creditRequested > widget.customer!.availableCredit;
+      widget.customer != null &&
+      _creditRequested > widget.customer!.availableCredit;
 
-  bool get _canSubmit => !_submitting && _remaining.abs() < 0.01 && !_exceedsCreditLimit;
+  bool get _canSubmit =>
+      !_submitting && _remaining.abs() < 0.01 && !_exceedsCreditLimit;
 
   void _addPaymentLine() {
-    setState(() => _payments.add(_Payment('cash', _remaining.clamp(0, widget.total))));
+    setState(
+      () => _payments.add(_Payment('cash', _remaining.clamp(0, widget.total))),
+    );
   }
 
   Future<void> _submit() async {
@@ -1404,7 +1530,8 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
             if (line.isQuickLog)
               {
                 'category_id': line.category!.id,
-                if (line.note != null && line.note!.isNotEmpty) 'note': line.note,
+                if (line.note != null && line.note!.isNotEmpty)
+                  'note': line.note,
                 'price_tier': line.priceTier,
                 'quantity': line.quantity,
                 'unit_price': line.unitPrice,
@@ -1418,7 +1545,10 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
         ],
         payments: [
           for (final p in _payments)
-            {'method': p.method, 'amount': double.tryParse(p.controller.text) ?? 0},
+            {
+              'method': p.method,
+              'amount': double.tryParse(p.controller.text) ?? 0,
+            },
         ],
       );
       if (mounted) Navigator.of(context).pop(true);
@@ -1467,7 +1597,9 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
                     : '${widget.customer!.fullName} is not an approved wholesale account -- credit unavailable',
                 style: TextStyle(
                   fontSize: 12,
-                  color: _creditAvailable ? AppColors.inkMuted : AppColors.warning,
+                  color: _creditAvailable
+                      ? AppColors.inkMuted
+                      : AppColors.warning,
                 ),
               ),
               const SizedBox(height: 8),
@@ -1497,7 +1629,9 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
                     Expanded(
                       child: TextField(
                         controller: p.controller,
-                        decoration: const InputDecoration(labelText: 'Amount (₵)'),
+                        decoration: const InputDecoration(
+                          labelText: 'Amount (₵)',
+                        ),
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
@@ -1535,7 +1669,10 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.danger.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
@@ -1543,12 +1680,19 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline, size: 16, color: AppColors.danger),
+                      const Icon(
+                        Icons.error_outline,
+                        size: 16,
+                        color: AppColors.danger,
+                      ),
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
                           'Exceeds available credit of ₵${widget.customer!.availableCredit.toStringAsFixed(2)}',
-                          style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.danger),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.danger,
+                          ),
                         ),
                       ),
                     ],
@@ -1571,7 +1715,11 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : Text(_creditRequested > 0 ? 'Complete Credit Sale' : 'Complete Sale'),
+              : Text(
+                  _creditRequested > 0
+                      ? 'Complete Credit Sale'
+                      : 'Complete Sale',
+                ),
         ),
       ],
     );

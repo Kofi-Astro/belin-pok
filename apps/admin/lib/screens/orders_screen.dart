@@ -8,6 +8,12 @@ import '../theme.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/status_pill.dart';
 
+/// Storefront orders (not POS sales -- see LogSaleScreen for those): a
+/// "Needs Attention" section up top for orders the database can no
+/// longer fully cover (see GET /orders/needs-attention's doc comment in
+/// the backend for why that gap opens up), then every order, filterable
+/// by status. Tapping one opens _OrderStatusDialog to advance it through
+/// the fulfillment pipeline.
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
 
@@ -125,15 +131,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 if (_needsAttention.isNotEmpty) ...[
                   Row(
                     children: [
-                      const Icon(
-                        Icons.error_outline,
-                        color: AppColors.danger,
-                      ),
+                      const Icon(Icons.error_outline, color: AppColors.danger),
                       const SizedBox(width: 8),
                       Text(
                         'Needs Attention (${_needsAttention.length})',
-                        style: Theme.of(context).textTheme.titleLarge
-                            ?.copyWith(fontWeight: FontWeight.w800),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ],
                   ),
@@ -161,10 +165,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       color: highlighted ? AppColors.danger.withValues(alpha: 0.08) : null,
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 6,
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         title: Text(
           '${order.orderNumber} · ${_customerName(order.customerId)}',
           style: const TextStyle(fontWeight: FontWeight.w700),

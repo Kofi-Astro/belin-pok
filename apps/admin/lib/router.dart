@@ -1,3 +1,10 @@
+/// The admin app's routes: /login and /set-password stand alone (a staff
+/// member needs to reach these before -- or instead of -- the main app),
+/// everything else sits behind one ShellRoute (persistent nav via
+/// AppShell) and is gated by the redirect below on being signed in as
+/// staff, not mid-password-recovery.
+library;
+
 import 'package:go_router/go_router.dart';
 
 import 'auth_controller.dart';

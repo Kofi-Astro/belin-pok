@@ -70,7 +70,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final canWrite = context.watch<AuthController>().profile?.canManageOrders ?? false;
+    final canWrite =
+        context.watch<AuthController>().profile?.canManageOrders ?? false;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Customers')),
@@ -118,7 +119,9 @@ class _CustomersScreenState extends State<CustomersScreen> {
                   label: 'Pending approval',
                   selected: _statusFilter == 'pending',
                   onTap: () => setState(() {
-                    _statusFilter = _statusFilter == 'pending' ? null : 'pending';
+                    _statusFilter = _statusFilter == 'pending'
+                        ? null
+                        : 'pending';
                     _load();
                   }),
                 ),
@@ -134,7 +137,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 ? const EmptyState(
                     icon: Icons.people_outline,
                     title: 'No customers yet',
-                    message: 'Add a retail or wholesale customer to get started.',
+                    message:
+                        'Add a retail or wholesale customer to get started.',
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -155,7 +159,11 @@ class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _FilterChip({required this.label, required this.selected, required this.onTap});
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) => ChoiceChip(
@@ -177,7 +185,9 @@ class _CustomerCard extends StatelessWidget {
       child: ListTile(
         onTap: onTap,
         leading: CircleAvatar(
-          backgroundColor: customer.isWholesale ? AppColors.amber : AppColors.navy,
+          backgroundColor: customer.isWholesale
+              ? AppColors.amber
+              : AppColors.navy,
           child: Icon(
             customer.isWholesale ? Icons.storefront : Icons.person,
             color: Colors.white,
@@ -203,7 +213,9 @@ class _CustomerCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: customer.outstandingBalance > 0 ? AppColors.danger : AppColors.inkMuted,
+                  color: customer.outstandingBalance > 0
+                      ? AppColors.danger
+                      : AppColors.inkMuted,
                 ),
               ),
             ],
@@ -214,6 +226,9 @@ class _CustomerCard extends StatelessWidget {
   }
 }
 
+/// New-customer creation, retail or wholesale. A wholesale account
+/// created here still needs approval (see CustomerStatus in the backend)
+/// before it can actually buy on credit.
 class _CustomerFormDialog extends StatefulWidget {
   final ApiClient api;
   const _CustomerFormDialog({required this.api});
@@ -233,7 +248,8 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
   String? _error;
 
   Future<void> _submit() async {
-    if (_nameController.text.trim().isEmpty || _emailController.text.trim().isEmpty) {
+    if (_nameController.text.trim().isEmpty ||
+        _emailController.text.trim().isEmpty) {
       setState(() => _error = 'Name and email are required');
       return;
     }
@@ -281,7 +297,10 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_error!, style: const TextStyle(color: AppColors.danger)),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: AppColors.danger),
+                ),
               ),
             SegmentedButton<String>(
               segments: const [
@@ -319,9 +338,12 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
                 controller: _creditLimitController,
                 decoration: const InputDecoration(
                   labelText: 'Credit limit (₵)',
-                  helperText: 'How much this account may owe before sales on credit are blocked.',
+                  helperText:
+                      'How much this account may owe before sales on credit are blocked.',
                 ),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
               ),
               const Padding(
                 padding: EdgeInsets.only(top: 8),
@@ -355,6 +377,10 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
   }
 }
 
+/// A customer's full record: edit their details, approve/reject a
+/// pending wholesale signup, and -- for a wholesale account -- their
+/// full credit ledger (every charge, payment, and manual adjustment)
+/// plus a shortcut into _CreditPaymentDialog for recording a paydown.
 class _CustomerDetailDialog extends StatefulWidget {
   final ApiClient api;
   final Customer customer;
@@ -401,13 +427,17 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
       await _reloadCustomer();
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
       }
     }
   }
 
   Future<void> _editCreditLimit() async {
-    final controller = TextEditingController(text: _customer.creditLimit.toStringAsFixed(2));
+    final controller = TextEditingController(
+      text: _customer.creditLimit.toStringAsFixed(2),
+    );
     final newLimit = await showDialog<double>(
       context: context,
       builder: (_) => AlertDialog(
@@ -424,7 +454,9 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(double.tryParse(controller.text.trim())),
+            onPressed: () => Navigator.of(
+              context,
+            ).pop(double.tryParse(controller.text.trim())),
             child: const Text('Save'),
           ),
         ],
@@ -437,7 +469,9 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
       await _reloadCustomer();
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
       }
     }
   }
@@ -445,7 +479,8 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
   Future<void> _recordPayment() async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (_) => _CreditPaymentDialog(api: widget.api, customer: _customer),
+      builder: (_) =>
+          _CreditPaymentDialog(api: widget.api, customer: _customer),
     );
     if (result == true) {
       _changed = true;
@@ -473,7 +508,9 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
                   Expanded(
                     child: Text(
                       c.fullName,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                   IconButton(
@@ -491,10 +528,17 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
               ),
               const SizedBox(height: 4),
               Text(c.email, style: const TextStyle(color: AppColors.inkMuted)),
-              if (c.phone?.isNotEmpty == true) Text(c.phone!, style: const TextStyle(color: AppColors.inkMuted)),
+              if (c.phone?.isNotEmpty == true)
+                Text(
+                  c.phone!,
+                  style: const TextStyle(color: AppColors.inkMuted),
+                ),
               if (c.businessName?.isNotEmpty == true) ...[
                 const SizedBox(height: 4),
-                Text(c.businessName!, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  c.businessName!,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ],
               if (canWrite && c.status == 'pending') ...[
                 const SizedBox(height: 16),
@@ -519,22 +563,40 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Wholesale credit', style: Theme.of(context).textTheme.titleSmall),
+                    Text(
+                      'Wholesale credit',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
                     if (canWrite)
-                      TextButton(onPressed: _editCreditLimit, child: const Text('Edit limit')),
+                      TextButton(
+                        onPressed: _editCreditLimit,
+                        child: const Text('Edit limit'),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Row(
                   children: [
                     Expanded(
-                      child: _CreditStat(label: 'Owed', value: c.outstandingBalance, color: AppColors.danger),
+                      child: _CreditStat(
+                        label: 'Owed',
+                        value: c.outstandingBalance,
+                        color: AppColors.danger,
+                      ),
                     ),
                     Expanded(
-                      child: _CreditStat(label: 'Limit', value: c.creditLimit, color: AppColors.navy),
+                      child: _CreditStat(
+                        label: 'Limit',
+                        value: c.creditLimit,
+                        color: AppColors.navy,
+                      ),
                     ),
                     Expanded(
-                      child: _CreditStat(label: 'Available', value: c.availableCredit, color: AppColors.success),
+                      child: _CreditStat(
+                        label: 'Available',
+                        value: c.availableCredit,
+                        color: AppColors.success,
+                      ),
                     ),
                   ],
                 ),
@@ -553,10 +615,14 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
                   child: _loadingLedger
                       ? const Center(child: CircularProgressIndicator())
                       : _ledger.isEmpty
-                      ? const Text('No credit activity yet.', style: TextStyle(color: AppColors.inkMuted))
+                      ? const Text(
+                          'No credit activity yet.',
+                          style: TextStyle(color: AppColors.inkMuted),
+                        )
                       : ListView.builder(
                           itemCount: _ledger.length,
-                          itemBuilder: (context, i) => _LedgerRow(entry: _ledger[i]),
+                          itemBuilder: (context, i) =>
+                              _LedgerRow(entry: _ledger[i]),
                         ),
                 ),
               ] else
@@ -573,13 +639,20 @@ class _CreditStat extends StatelessWidget {
   final String label;
   final double value;
   final Color color;
-  const _CreditStat({required this.label, required this.value, required this.color});
+  const _CreditStat({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(label, style: const TextStyle(fontSize: 11, color: AppColors.inkMuted)),
+      Text(
+        label,
+        style: const TextStyle(fontSize: 11, color: AppColors.inkMuted),
+      ),
       Text(
         '₵${value.toStringAsFixed(2)}',
         style: TextStyle(fontWeight: FontWeight.w800, color: color),
@@ -610,11 +683,21 @@ class _LedgerRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  entry.entryType[0].toUpperCase() + entry.entryType.substring(1),
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  entry.entryType[0].toUpperCase() +
+                      entry.entryType.substring(1),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
                 ),
                 if (entry.reason?.isNotEmpty == true)
-                  Text(entry.reason!, style: const TextStyle(fontSize: 11, color: AppColors.inkMuted)),
+                  Text(
+                    entry.reason!,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.inkMuted,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -631,6 +714,8 @@ class _LedgerRow extends StatelessWidget {
   }
 }
 
+/// Records a wholesale customer paying down what they owe -- pre-filled
+/// with the full outstanding balance, editable down to a partial payment.
 class _CreditPaymentDialog extends StatefulWidget {
   final ApiClient api;
   final Customer customer;
@@ -684,9 +769,14 @@ class _CreditPaymentDialogState extends State<_CreditPaymentDialog> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text(_error!, style: const TextStyle(color: AppColors.danger)),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: AppColors.danger),
+              ),
             ),
-          Text('Owed: ₵${widget.customer.outstandingBalance.toStringAsFixed(2)}'),
+          Text(
+            'Owed: ₵${widget.customer.outstandingBalance.toStringAsFixed(2)}',
+          ),
           const SizedBox(height: 8),
           TextField(
             controller: _amountController,

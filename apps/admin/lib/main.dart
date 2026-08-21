@@ -1,3 +1,9 @@
+/// Admin app entry point: initializes Supabase Auth, then wires up
+/// AuthController via Provider and hands the router (router.dart) to
+/// MaterialApp.router. See apps/storefront/lib/main.dart for the
+/// customer-facing counterpart of this same shape.
+library;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';

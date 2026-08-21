@@ -106,23 +106,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         label: 'Low stock',
                         value: '${d.lowStockCount}',
                         icon: Icons.warning_amber,
-                        color: d.lowStockCount > 0 ? AppColors.warning : AppColors.inkMuted,
+                        color: d.lowStockCount > 0
+                            ? AppColors.warning
+                            : AppColors.inkMuted,
                       ),
                       _StatTile(
                         label: 'Outstanding credit',
-                        value: '₵${d.totalOutstandingCredit.toStringAsFixed(2)}',
+                        value:
+                            '₵${d.totalOutstandingCredit.toStringAsFixed(2)}',
                         icon: Icons.account_balance_wallet_outlined,
-                        color: d.totalOutstandingCredit > 0 ? AppColors.danger : AppColors.inkMuted,
+                        color: d.totalOutstandingCredit > 0
+                            ? AppColors.danger
+                            : AppColors.inkMuted,
                       ),
                       _StatTile(
                         label: 'Needs product details',
                         value: '${d.unidentifiedItemCount}',
                         icon: Icons.edit_note,
-                        color: d.unidentifiedItemCount > 0 ? AppColors.warning : AppColors.inkMuted,
+                        color: d.unidentifiedItemCount > 0
+                            ? AppColors.warning
+                            : AppColors.inkMuted,
                       ),
                     ];
                     return wide
-                        ? Row(children: [for (final t in tiles) Expanded(child: t)])
+                        ? Row(
+                            children: [
+                              for (final t in tiles) Expanded(child: t),
+                            ],
+                          )
                         : Column(children: tiles);
                   },
                 ),
@@ -130,20 +141,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.warning.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.info_outline, size: 18, color: AppColors.warning),
+                          const Icon(
+                            Icons.info_outline,
+                            size: 18,
+                            color: AppColors.warning,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               '${d.unidentifiedItemCount} quick-logged sale line(s) still need a product '
                               'attached -- open Log Sale, expand a sale, and tap "Identify".',
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
@@ -151,12 +172,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                 const SizedBox(height: 28),
-                Text('Revenue by sale type', style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Revenue by sale type',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 10),
                 if (d.revenueByTier.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text('No sales in this period.', style: TextStyle(color: AppColors.inkMuted)),
+                    child: Text(
+                      'No sales in this period.',
+                      style: TextStyle(color: AppColors.inkMuted),
+                    ),
                   )
                 else
                   Card(
@@ -169,19 +196,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             subtitle: Text('${t.itemsSold} item(s)'),
                             trailing: Text(
                               '₵${t.revenue.toStringAsFixed(2)}',
-                              style: const TextStyle(fontWeight: FontWeight.w800),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ),
                       ],
                     ),
                   ),
                 const SizedBox(height: 28),
-                Text('Top sellers', style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Top sellers',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 10),
                 if (d.topVariants.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text('No POS sales in this period.', style: TextStyle(color: AppColors.inkMuted)),
+                    child: Text(
+                      'No POS sales in this period.',
+                      style: TextStyle(color: AppColors.inkMuted),
+                    ),
                   )
                 else
                   Card(
@@ -196,14 +231,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             subtitle: Text('${v.unitsSold} unit(s)'),
                             trailing: Text(
                               '₵${v.revenue.toStringAsFixed(2)}',
-                              style: const TextStyle(fontWeight: FontWeight.w800),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ),
                       ],
                     ),
                   ),
                 const SizedBox(height: 28),
-                Text('Aged debtors', style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Aged debtors',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 10),
                 if (d.agedDebtors.isEmpty)
                   const EmptyState(
@@ -218,7 +258,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         for (final debtor in d.agedDebtors)
                           ListTile(
                             dense: true,
-                            title: Text(debtor.businessName?.isNotEmpty == true ? debtor.businessName! : debtor.customerName),
+                            title: Text(
+                              debtor.businessName?.isNotEmpty == true
+                                  ? debtor.businessName!
+                                  : debtor.customerName,
+                            ),
                             subtitle: Text(
                               debtor.daysOutstanding != null
                                   ? 'Outstanding ${debtor.daysOutstanding} day(s) · limit ₵${debtor.creditLimit.toStringAsFixed(2)}'
@@ -226,7 +270,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                             trailing: Text(
                               '₵${debtor.outstandingBalance.toStringAsFixed(2)}',
-                              style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.danger),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.danger,
+                              ),
                             ),
                           ),
                       ],
@@ -243,7 +290,12 @@ class _StatTile extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color color;
-  const _StatTile({required this.label, required this.value, required this.icon, required this.color});
+  const _StatTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -256,8 +308,18 @@ class _StatTile extends StatelessWidget {
           children: [
             Icon(icon, color: color),
             const SizedBox(height: 10),
-            Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: color)),
-            Text(label, style: const TextStyle(color: AppColors.inkMuted, fontSize: 12)),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+            Text(
+              label,
+              style: const TextStyle(color: AppColors.inkMuted, fontSize: 12),
+            ),
           ],
         ),
       ),

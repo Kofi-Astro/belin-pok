@@ -10,6 +10,10 @@ import '../widgets/empty_state.dart';
 String _roleLabel(String role) =>
     role.split('_').map((w) => w[0].toUpperCase() + w.substring(1)).join(' ');
 
+/// Owner-only (see router.dart/shell_screen.dart's nav gating): invite
+/// new staff by email, change an existing one's role, or deactivate them.
+/// Nobody can change their own role or deactivate themselves (isSelf
+/// below) -- that would risk an owner locking themselves out.
 class StaffScreen extends StatefulWidget {
   const StaffScreen({super.key});
 
@@ -151,10 +155,7 @@ class _StaffCard extends StatelessWidget {
               Text(
                 staff.email,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.inkMuted,
-                  fontSize: 12,
-                ),
+                style: const TextStyle(color: AppColors.inkMuted, fontSize: 12),
               ),
             ],
           ),
@@ -206,11 +207,7 @@ class _StaffCard extends StatelessWidget {
             }
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                identity,
-                const SizedBox(height: 8),
-                controls,
-              ],
+              children: [identity, const SizedBox(height: 8), controls],
             );
           },
         ),

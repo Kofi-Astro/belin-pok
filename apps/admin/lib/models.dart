@@ -45,8 +45,7 @@ class StaffProfile {
   /// Narrower than [canManageInventory]: lets front-of-shop staff log a
   /// stock movement (e.g. a walk-in sale) without granting product
   /// management (creating, editing, publishing, archiving).
-  bool get canAdjustStock =>
-      canManageInventory || role == 'order_fulfillment';
+  bool get canAdjustStock => canManageInventory || role == 'order_fulfillment';
   bool get canManageOrders => role == 'owner' || role == 'order_fulfillment';
 }
 
@@ -231,11 +230,10 @@ class PosSalePayment {
 
   PosSalePayment({required this.method, required this.amount});
 
-  factory PosSalePayment.fromJson(Map<String, dynamic> json) =>
-      PosSalePayment(
-        method: json['method'] as String,
-        amount: (json['amount'] as num).toDouble(),
-      );
+  factory PosSalePayment.fromJson(Map<String, dynamic> json) => PosSalePayment(
+    method: json['method'] as String,
+    amount: (json['amount'] as num).toDouble(),
+  );
 }
 
 class PosSale {
@@ -307,9 +305,10 @@ class AuditLogEntry {
   List<String> get changedFields {
     final old = oldValues ?? const {};
     final fresh = newValues ?? const {};
-    return {...old.keys, ...fresh.keys}
-        .where((k) => old[k] != fresh[k])
-        .toList();
+    return {
+      ...old.keys,
+      ...fresh.keys,
+    }.where((k) => old[k] != fresh[k]).toList();
   }
 
   factory AuditLogEntry.fromJson(Map<String, dynamic> json) => AuditLogEntry(
@@ -350,7 +349,8 @@ class Customer {
   });
 
   bool get isWholesale => customerType == 'wholesale';
-  double get availableCredit => (creditLimit - outstandingBalance).clamp(0, creditLimit);
+  double get availableCredit =>
+      (creditLimit - outstandingBalance).clamp(0, creditLimit);
 
   factory Customer.fromJson(Map<String, dynamic> json) => Customer(
     id: json['id'] as String,
@@ -386,15 +386,16 @@ class CreditLedgerEntry {
     required this.performedByName,
   });
 
-  factory CreditLedgerEntry.fromJson(Map<String, dynamic> json) => CreditLedgerEntry(
-    id: json['id'] as String,
-    entryType: json['entry_type'] as String,
-    amount: (json['amount'] as num).toDouble(),
-    reason: json['reason'] as String?,
-    referenceType: json['reference_type'] as String?,
-    createdAt: DateTime.parse(json['created_at'] as String),
-    performedByName: json['performed_by_name'] as String?,
-  );
+  factory CreditLedgerEntry.fromJson(Map<String, dynamic> json) =>
+      CreditLedgerEntry(
+        id: json['id'] as String,
+        entryType: json['entry_type'] as String,
+        amount: (json['amount'] as num).toDouble(),
+        reason: json['reason'] as String?,
+        referenceType: json['reference_type'] as String?,
+        createdAt: DateTime.parse(json['created_at'] as String),
+        performedByName: json['performed_by_name'] as String?,
+      );
 }
 
 class TierRevenue {
@@ -402,7 +403,11 @@ class TierRevenue {
   final int itemsSold;
   final double revenue;
 
-  TierRevenue({required this.priceTier, required this.itemsSold, required this.revenue});
+  TierRevenue({
+    required this.priceTier,
+    required this.itemsSold,
+    required this.revenue,
+  });
 
   factory TierRevenue.fromJson(Map<String, dynamic> json) => TierRevenue(
     priceTier: json['price_tier'] as String,
@@ -502,7 +507,8 @@ class Dashboard {
     agedDebtors: (json['aged_debtors'] as List)
         .map((e) => AgedDebtor.fromJson(e as Map<String, dynamic>))
         .toList(),
-    totalOutstandingCredit: (json['total_outstanding_credit'] as num).toDouble(),
+    totalOutstandingCredit: (json['total_outstanding_credit'] as num)
+        .toDouble(),
     unidentifiedItemCount: json['unidentified_item_count'] as int,
   );
 }

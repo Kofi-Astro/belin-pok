@@ -6,6 +6,11 @@ import '../auth_controller.dart';
 import '../theme.dart';
 import '../widgets/change_password_dialog.dart';
 
+/// One entry in the side nav rail. `visible` gates it by the signed-in
+/// staff member's role (see StaffProfile in models.dart for
+/// canManageInventory/canAdjustStock/isOwner) -- Products/Inventory/
+/// Orders/Customers stay visible to everyone since even a viewer needs
+/// to see them, just not edit.
 class _NavItem {
   final String location;
   final IconData icon;
@@ -45,20 +50,26 @@ final _navItems = <_NavItem>[
   ),
 ];
 
+/// The persistent chrome around every route inside router.dart's
+/// ShellRoute: a side nav rail (icon-only under 900px, labeled above it)
+/// plus the signed-in staff member's name/change-password/sign-out.
 class AppShell extends StatelessWidget {
   final Widget child;
   final String location;
   const AppShell({super.key, required this.child, required this.location});
 
-  Future<void> _changePassword(BuildContext context, AuthController auth) async {
+  Future<void> _changePassword(
+    BuildContext context,
+    AuthController auth,
+  ) async {
     final changed = await showDialog<bool>(
       context: context,
       builder: (_) => ChangePasswordDialog(auth: auth),
     );
     if (changed == true && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password updated')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Password updated')));
     }
   }
 

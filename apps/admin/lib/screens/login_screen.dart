@@ -5,6 +5,9 @@ import '../auth_controller.dart';
 import '../theme.dart';
 import '../widgets/forgot_password_dialog.dart';
 
+/// Email/password sign-in for staff. A valid Supabase login with no
+/// matching `staff` row shows an explanatory message (AuthStatus.notStaff)
+/// rather than a generic error -- see AuthController's class doc comment.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
