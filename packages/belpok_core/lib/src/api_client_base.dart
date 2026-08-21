@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+/// Thrown by ApiHttp for any non-2xx response. `message` is the FastAPI
+/// error's `detail` field when the body is JSON, or the raw response body
+/// otherwise -- always something safe to show directly in a SnackBar.
 class ApiException implements Exception {
   final int statusCode;
   final String message;

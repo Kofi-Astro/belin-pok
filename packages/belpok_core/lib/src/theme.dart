@@ -22,6 +22,10 @@ class AppColors {
   static const inkMuted = Color(0xFF6B6B6B);
 }
 
+/// The admin app's Material 3 theme, built from AppColors above. The
+/// storefront intentionally has its own, different theme (see
+/// apps/storefront/lib/theme.dart's StorefrontColors) rather than reusing
+/// this one -- see that file's comment for why.
 ThemeData buildAppTheme() {
   final base = ThemeData(useMaterial3: true, brightness: Brightness.light);
   final textTheme = GoogleFonts.manropeTextTheme(
