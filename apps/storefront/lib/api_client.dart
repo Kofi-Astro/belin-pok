@@ -116,7 +116,8 @@ class StorefrontApiClient {
               .toList(),
           'fulfillment_method': pickup ? 'pickup' : 'delivery',
           if (guestFullName != null) 'guest_full_name': guestFullName,
-          if (guestEmail != null) 'guest_email': guestEmail,
+          if (guestEmail != null && guestEmail.isNotEmpty)
+            'guest_email': guestEmail,
           if (guestPhone != null && guestPhone.isNotEmpty)
             'guest_phone': guestPhone,
           if (addressId != null) 'address_id': addressId,

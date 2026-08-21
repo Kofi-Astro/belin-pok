@@ -34,6 +34,42 @@ async def test_guest_checkout_creates_order_and_decrements_stock(client, fresh_c
     assert variant["stock_quantity"] == 1
 
 
+async def test_guest_checkout_with_only_a_name_succeeds(client, fresh_client, create_product_with_stock):
+    """Not every buyer needs an account or even an email -- a name (plus
+    an address for delivery, or nothing extra for pickup) is enough."""
+    unique = uuid.uuid4().hex[:8]
+    async with client as ac:
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=3)
+
+    async with fresh_client() as ac:
+        res = await ac.post(
+            "/orders/checkout",
+            json={
+                "items": [{"variant_id": variant_id, "quantity": 1}],
+                "guest_full_name": "Just A Name",
+                "fulfillment_method": "pickup",
+            },
+        )
+    assert res.status_code == 201, res.text
+    assert res.json()["status"] == "pending"
+
+
+async def test_guest_checkout_without_full_name_returns_400(client, fresh_client, create_product_with_stock):
+    unique = uuid.uuid4().hex[:8]
+    async with client as ac:
+        _product_id, variant_id = await create_product_with_stock(ac, unique, stock=3)
+
+    async with fresh_client() as ac:
+        res = await ac.post(
+            "/orders/checkout",
+            json={
+                "items": [{"variant_id": variant_id, "quantity": 1}],
+                "fulfillment_method": "pickup",
+            },
+        )
+    assert res.status_code == 400
+
+
 async def test_repeat_guest_checkout_with_same_email_reuses_existing_guest_customer(
     client, fresh_client, create_product_with_stock
 ):

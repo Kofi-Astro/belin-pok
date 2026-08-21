@@ -200,7 +200,7 @@ class _CustomerCard extends StatelessWidget {
               : customer.fullName,
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
-        subtitle: Text(customer.email),
+        subtitle: Text(customer.email ?? customer.phone ?? 'No contact info'),
         trailing: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -527,7 +527,11 @@ class _CustomerDetailDialogState extends State<_CustomerDetailDialog> {
                 ],
               ),
               const SizedBox(height: 4),
-              Text(c.email, style: const TextStyle(color: AppColors.inkMuted)),
+              if (c.email != null)
+                Text(
+                  c.email!,
+                  style: const TextStyle(color: AppColors.inkMuted),
+                ),
               if (c.phone?.isNotEmpty == true)
                 Text(
                   c.phone!,

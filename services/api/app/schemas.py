@@ -402,7 +402,11 @@ class StaffUpdate(BaseModel):
 
 class CustomerBase(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
-    email: str = Field(min_length=3, max_length=320)
+    # Optional: a guest checkout only requires a name (see
+    # app/routers/orders.py's checkout()) -- there's no account to need an
+    # email for. Always present for a registered account, whose email
+    # comes from Supabase Auth at registration.
+    email: str | None = Field(default=None, min_length=3, max_length=320)
     phone: str | None = None
     customer_type: CustomerType = CustomerType.retail
     business_name: str | None = None

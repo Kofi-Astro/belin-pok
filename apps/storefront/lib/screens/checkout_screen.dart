@@ -99,7 +99,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         itemsByVariantId: cart.quantitiesByVariantId,
         pickup: _pickup,
         guestFullName: _signedIn ? null : _fullNameController.text.trim(),
-        guestEmail: _signedIn ? null : _emailController.text.trim(),
+        guestEmail: _signedIn || _emailController.text.trim().isEmpty
+            ? null
+            : _emailController.text.trim(),
         guestPhone: _signedIn ? null : _phoneController.text.trim(),
         addressId: !_pickup && _signedIn && _selectedAddressId != null
             ? _selectedAddressId
@@ -270,10 +272,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       const SizedBox(height: 12),
       TextFormField(
         controller: _emailController,
-        decoration: const InputDecoration(labelText: 'Email'),
+        decoration: const InputDecoration(labelText: 'Email (optional)'),
         keyboardType: TextInputType.emailAddress,
-        validator: (v) =>
-            (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
+        // Only checked if something was actually entered -- a guest
+        // checking out with just their name shouldn't be blocked here.
+        validator: (v) => (v != null && v.trim().isNotEmpty && !v.contains('@'))
+            ? 'Enter a valid email'
+            : null,
       ),
       const SizedBox(height: 12),
       TextFormField(

@@ -65,18 +65,26 @@ async def checkout(
     both succeed). No payment yet -- the order lands as status='pending'.
     """
     if customer is None:
-        if not payload.guest_full_name or not payload.guest_email:
+        if not payload.guest_full_name:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="guest_full_name and guest_email are required for guest checkout",
+                detail="guest_full_name is required for guest checkout",
             )
         # A repeat guest checkout with the same email is normal -- most
         # repeat customers never create an account. Reuse the existing
         # customers row for that email as long as it's still a guest
         # (auth_user_id IS NULL); only a genuine registered account under
         # that email is a real conflict, since there's nothing to "sign in
-        # instead" to for a guest who has no password.
-        existing_customer = await db.scalar(select(Customer).where(Customer.email == payload.guest_email))
+        # instead" to for a guest who has no password. Skipped entirely
+        # when no email was given -- there's nothing to look up by, and
+        # each such guest just gets their own new row (see the nullable,
+        # still-unique email column: Postgres treats multiple NULLs as
+        # distinct, so this never collides).
+        existing_customer = (
+            await db.scalar(select(Customer).where(Customer.email == payload.guest_email))
+            if payload.guest_email is not None
+            else None
+        )
         if existing_customer is not None:
             if existing_customer.auth_user_id is not None:
                 raise HTTPException(

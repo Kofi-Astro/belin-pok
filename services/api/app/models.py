@@ -368,7 +368,11 @@ class Customer(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     auth_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), unique=True)
     full_name: Mapped[str]
-    email: Mapped[str] = mapped_column(unique=True)
+    # Nullable: a guest checkout only requires a name (see
+    # app/routers/orders.py's checkout()) -- an email is never required to
+    # place an order without an account. Always non-null for a registered
+    # account, whose email comes from Supabase Auth at registration.
+    email: Mapped[str | None] = mapped_column(unique=True)
     phone: Mapped[str | None]
     customer_type: Mapped[CustomerType] = mapped_column(
         _pg_enum(CustomerType, "customer_type"), default=CustomerType.retail
