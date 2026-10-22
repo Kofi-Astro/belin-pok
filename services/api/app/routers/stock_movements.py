@@ -123,12 +123,12 @@ async def create_stock_movement(
     # arithmetic the trigger does), so there's nothing to duplicate in
     # PL/pgSQL just to hand back out through some side channel.
     if old_quantity == 0 and new_quantity > 0:
-        await _notify_back_in_stock_subscribers(db, payload.variant_id, background_tasks)
+        await notify_back_in_stock_subscribers(db, payload.variant_id, background_tasks)
 
     return movement
 
 
-async def _notify_back_in_stock_subscribers(
+async def notify_back_in_stock_subscribers(
     db: AsyncSession, variant_id: uuid.UUID, background_tasks: BackgroundTasks
 ) -> None:
     pending = list(

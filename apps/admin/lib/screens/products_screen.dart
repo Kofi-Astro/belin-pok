@@ -17,8 +17,9 @@ import '../widgets/stock_movement_dialog.dart';
 
 /// The product catalog: search/filter grid, and the entry point into
 /// everything product-related -- creating a product (_ProductFormDialog),
-/// its full detail view with photos/variants (_ProductDetailDialog), its
-/// audit history (_ProductHistoryDialog), and per-variant size/color
+/// its full detail view with photos/variants (_ProductDetailDialog),
+/// editing its name/category/price (_ProductEditDialog), its audit
+/// history (_ProductHistoryDialog), and per-variant size/color
 /// creation and wholesale/pack pricing (_VariantFormDialog /
 /// _VariantPricingDialog).
 class ProductsScreen extends StatefulWidget {
@@ -85,7 +86,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
   Future<void> _openDetail(Product product) async {
     final changed = await showDialog<bool>(
       context: context,
-      builder: (_) => _ProductDetailDialog(api: _api, product: product),
+      builder: (_) => _ProductDetailDialog(
+        api: _api,
+        product: product,
+        categories: _categories,
+      ),
     );
     if (changed == true) _load();
   }
@@ -192,6 +197,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 }
 
+/// A fast-received item (Inventory → Receive Stock) starts as a ₵0
+/// draft until someone prices it -- show that as missing, not as free.
+String _priceLabel(Product product) =>
+    product.basePrice == 0 && product.status == 'draft'
+    ? 'No price yet'
+    : '₵${product.basePrice.toStringAsFixed(2)}';
+
 /// One tile in the catalog grid -- tapping it opens _ProductDetailDialog.
 class _ProductCard extends StatelessWidget {
   final Product product;
@@ -267,7 +279,7 @@ class _ProductCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '₵${product.basePrice.toStringAsFixed(2)}',
+                        _priceLabel(product),
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                       StatusPill(status: product.status),
@@ -542,7 +554,12 @@ class _ProductFormDialogState extends State<_ProductFormDialog> {
 class _ProductDetailDialog extends StatefulWidget {
   final ApiClient api;
   final Product product;
-  const _ProductDetailDialog({required this.api, required this.product});
+  final List<Category> categories;
+  const _ProductDetailDialog({
+    required this.api,
+    required this.product,
+    required this.categories,
+  });
 
   @override
   State<_ProductDetailDialog> createState() => _ProductDetailDialogState();
@@ -587,9 +604,35 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
   }
 
   Future<void> _publish() async {
-    await widget.api.activateProduct(widget.product.id);
-    _changed = true;
-    _reload();
+    // The API refuses to publish a product still at a placeholder ₵0
+    // price or "Uncategorized" (see _check_publishable in products.py) --
+    // surface its message rather than failing silently.
+    try {
+      await widget.api.activateProduct(widget.product.id);
+      _changed = true;
+      _reload();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
+  Future<void> _editDetails(Product product) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => _ProductEditDialog(
+        api: widget.api,
+        product: product,
+        categories: widget.categories,
+      ),
+    );
+    if (saved == true) {
+      _changed = true;
+      _reload();
+    }
   }
 
   Future<void> _confirmDelete() async {
@@ -681,6 +724,12 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                                 ?.copyWith(fontWeight: FontWeight.w800),
                           ),
                         ),
+                        if (canWrite)
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined),
+                            tooltip: 'Edit name, category & price',
+                            onPressed: () => _editDetails(product),
+                          ),
                         if (profile?.isOwner ?? false)
                           IconButton(
                             icon: const Icon(Icons.history),
@@ -707,12 +756,28 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                         StatusPill(status: product.status),
                         const SizedBox(width: 10),
                         Text(
-                          '₵${product.basePrice.toStringAsFixed(2)}',
+                          _priceLabel(product),
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ],
                     ),
                   ),
+                  if (product.status == 'draft' && product.basePrice == 0)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+                      child: Text(
+                        canWrite
+                            ? 'Set a price and category (pencil icon above), '
+                                  'then publish it to start selling.'
+                            : 'Needs a price and category before it can be '
+                                  'sold.',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.warning,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
@@ -736,9 +801,13 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                                 ),
                               if (canWrite)
                                 ImageUploadZone(
-                                  productId: product.id,
-                                  api: widget.api,
-                                  isFirstImage: product.images.isEmpty,
+                                  upload: (bytes, extension) =>
+                                      widget.api.uploadProductImage(
+                                        productId: product.id,
+                                        bytes: bytes,
+                                        fileExtension: extension,
+                                        isPrimary: product.images.isEmpty,
+                                      ),
                                   onUploaded: _onGalleryChanged,
                                 ),
                             ],
@@ -876,6 +945,154 @@ class _ProductDetailDialogState extends State<_ProductDetailDialog> {
                 ],
               ),
       ),
+    );
+  }
+}
+
+/// Edits the product's own fields -- name, category, brand, base price.
+/// Mostly for finishing off an item logged in a hurry via Receive Stock
+/// (which lands as "Uncategorized" at ₵0), but works for any product.
+/// Only changed fields are sent, so the audit history shows just those.
+class _ProductEditDialog extends StatefulWidget {
+  final ApiClient api;
+  final Product product;
+  final List<Category> categories;
+  const _ProductEditDialog({
+    required this.api,
+    required this.product,
+    required this.categories,
+  });
+
+  @override
+  State<_ProductEditDialog> createState() => _ProductEditDialogState();
+}
+
+class _ProductEditDialogState extends State<_ProductEditDialog> {
+  late final _nameController = TextEditingController(
+    text: widget.product.name,
+  );
+  late final _brandController = TextEditingController(
+    text: widget.product.brand ?? '',
+  );
+  late final _priceController = TextEditingController(
+    text: widget.product.basePrice == 0
+        ? ''
+        : widget.product.basePrice.toStringAsFixed(2),
+  );
+  late String _categoryId = widget.product.categoryId;
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _brandController.dispose();
+    _priceController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final name = _nameController.text.trim();
+    final brand = _brandController.text.trim();
+    final priceText = _priceController.text.trim();
+    final price = priceText.isEmpty ? 0.0 : double.tryParse(priceText);
+    if (name.isEmpty) {
+      setState(() => _error = 'Name is required');
+      return;
+    }
+    if (price == null) {
+      setState(() => _error = 'Price must be a number');
+      return;
+    }
+
+    final p = widget.product;
+    final fields = <String, dynamic>{
+      if (name != p.name) 'name': name,
+      if (brand != (p.brand ?? '')) 'brand': brand.isEmpty ? null : brand,
+      if (price != p.basePrice) 'base_price': price,
+      if (_categoryId != p.categoryId) 'category_id': _categoryId,
+    };
+    if (fields.isEmpty) {
+      Navigator.of(context).pop(false);
+      return;
+    }
+
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await widget.api.updateProduct(p.id, fields);
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit details'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: AppColors.danger),
+                ),
+              ),
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(labelText: 'Product name'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _categoryId,
+              decoration: const InputDecoration(labelText: 'Category'),
+              items: widget.categories
+                  .map(
+                    (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
+                  )
+                  .toList(),
+              onChanged: (v) => setState(() => _categoryId = v!),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _brandController,
+              decoration: const InputDecoration(labelText: 'Brand (optional)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _priceController,
+              decoration: const InputDecoration(
+                labelText: 'Price',
+                prefixText: '₵ ',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submitting ? null : _submit,
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

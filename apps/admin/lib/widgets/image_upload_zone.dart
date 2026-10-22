@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -8,18 +10,33 @@ import '../theme.dart';
 /// separate "save" step to forget), with its own progress/error state.
 /// Deliberately upload-on-pick rather than stage-then-save -- one fewer
 /// step for someone who isn't comfortable with software.
+///
+/// [upload] does the actual work, so the same tile serves both a
+/// product's gallery (ApiClient.uploadProductImage) and the receive-stock
+/// form, where there's no product yet (ApiClient.uploadIntakePhoto).
+/// [previewBytes], when set, fills the tile with that photo -- tapping
+/// again replaces it.
 class ImageUploadZone extends StatefulWidget {
-  final String productId;
-  final ApiClient api;
-  final bool isFirstImage;
-  final VoidCallback onUploaded;
+  final Future<void> Function(Uint8List bytes, String fileExtension) upload;
+  final VoidCallback? onUploaded;
+  final Uint8List? previewBytes;
+
+  /// Falls back to the gallery/file picker wherever this source isn't
+  /// supported (e.g. camera on a desktop build).
+  final ImageSource source;
+  final String label;
+  final double width;
+  final double height;
 
   const ImageUploadZone({
     super.key,
-    required this.productId,
-    required this.api,
-    required this.isFirstImage,
-    required this.onUploaded,
+    required this.upload,
+    this.onUploaded,
+    this.previewBytes,
+    this.source = ImageSource.gallery,
+    this.label = 'Add Photo',
+    this.width = 120,
+    this.height = 120,
   });
 
   @override
@@ -32,8 +49,11 @@ class _ImageUploadZoneState extends State<ImageUploadZone> {
 
   Future<void> _pickAndUpload() async {
     setState(() => _error = null);
-    final picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: picker.supportsImageSource(widget.source)
+          ? widget.source
+          : ImageSource.gallery,
       imageQuality: 88,
     );
     if (picked == null) return;
@@ -44,13 +64,8 @@ class _ImageUploadZoneState extends State<ImageUploadZone> {
       final extension = picked.name.contains('.')
           ? picked.name.split('.').last.toLowerCase()
           : 'jpg';
-      await widget.api.uploadProductImage(
-        productId: widget.productId,
-        bytes: bytes,
-        fileExtension: extension,
-        isPrimary: widget.isFirstImage,
-      );
-      widget.onUploaded();
+      await widget.upload(bytes, extension);
+      widget.onUploaded?.call();
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } catch (e) {
@@ -62,25 +77,32 @@ class _ImageUploadZoneState extends State<ImageUploadZone> {
 
   @override
   Widget build(BuildContext context) {
+    final preview = widget.previewBytes;
     return InkWell(
       onTap: _uploading ? null : _pickAndUpload,
       borderRadius: BorderRadius.circular(14),
       child: DottedBorderBox(
         child: SizedBox(
-          width: 120,
-          height: 120,
-          child: Center(
-            child: _uploading
-                ? const SizedBox(
+          width: widget.width,
+          height: widget.height,
+          child: _uploading
+              ? const Center(
+                  child: SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(strokeWidth: 2.5),
-                  )
-                : Column(
+                  ),
+                )
+              : preview != null
+              ? Image.memory(preview, fit: BoxFit.cover)
+              : Center(
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        Icons.add_photo_alternate_outlined,
+                        widget.source == ImageSource.camera
+                            ? Icons.photo_camera_outlined
+                            : Icons.add_photo_alternate_outlined,
                         color: _error != null
                             ? AppColors.danger
                             : AppColors.navy.withValues(alpha: 0.55),
@@ -88,7 +110,7 @@ class _ImageUploadZoneState extends State<ImageUploadZone> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        _error ?? 'Add Photo',
+                        _error ?? widget.label,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 11,
@@ -100,7 +122,7 @@ class _ImageUploadZoneState extends State<ImageUploadZone> {
                       ),
                     ],
                   ),
-          ),
+                ),
         ),
       ),
     );

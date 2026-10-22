@@ -26,6 +26,7 @@ from app.models import (
     POSSalePayment,
     PriceTier,
     Product,
+    ProductStatus,
     ProductVariant,
     Staff,
     StaffRole,
@@ -159,6 +160,17 @@ async def _resolve_lines(
     for (variant_id, tier), request_quantity in merged.items():
         variant = variants[variant_id]
         product = products[variant.product_id]
+        # The storefront hides drafts entirely (see public.py); the till
+        # has to refuse them too, since a fast-received item (see
+        # products.py's receive_stock) sits at a placeholder ₵0 price
+        # until someone reviews and publishes it. Archived is still
+        # sellable here on purpose -- clearing out leftover stock of a
+        # discontinued line over the counter is normal.
+        if product.status == ProductStatus.draft:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{product.name} is still a draft -- publish it before selling it",
+            )
         retail_price = variant.price_override if variant.price_override is not None else float(product.base_price)
 
         if tier == PriceTier.retail:

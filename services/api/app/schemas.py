@@ -205,6 +205,53 @@ class ProductWithVariants(ProductRead):
     variants: list[ProductVariantRead] = []
 
 
+class StockIntakeCreate(BaseModel):
+    """POST /products/receive -- goods arriving at the counter, in one
+    request. Without product_id it's a brand-new item: only name, photo
+    and quantity are required, and everything else gets a placeholder
+    (see receive_stock in app/routers/products.py) that's filled in later
+    before publishing. With product_id it's more stock of an existing
+    item, so the new-item fields don't apply and are rejected rather than
+    silently ignored."""
+
+    product_id: uuid.UUID | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=300)
+    # Already uploaded by the client, same as ProductImageCreate.storage_path.
+    image_storage_path: str | None = Field(default=None, min_length=1, max_length=500)
+    quantity: int = Field(gt=0)
+    category_id: uuid.UUID | None = None
+    base_price: float | None = Field(default=None, ge=0)
+    size: str | None = Field(default=None, max_length=50)
+    color: str | None = Field(default=None, max_length=50)
+    reason: str | None = None
+
+    @field_validator("name", "size", "color", "reason", mode="before")
+    @classmethod
+    def _blank_to_none(cls, value):
+        # The admin form sends "" for an untouched optional field -- that
+        # should mean "use the default", not a size/color literally named "".
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
+
+    @model_validator(mode="after")
+    def _new_item_or_restock(self) -> "StockIntakeCreate":
+        if self.product_id is None:
+            if self.name is None or self.image_storage_path is None:
+                raise ValueError("A new item needs a name and a photo")
+        elif any(v is not None for v in (self.name, self.image_storage_path, self.category_id, self.base_price)):
+            raise ValueError("name, photo, category and price only apply to a new item, not a restock")
+        return self
+
+
+class StockIntakeRead(BaseModel):
+    product: ProductWithVariants
+    variant: ProductVariantRead
+    created_product: bool
+    created_variant: bool
+
+
 # ---------- stock movements ----------
 
 

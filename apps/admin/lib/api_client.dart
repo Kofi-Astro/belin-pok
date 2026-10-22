@@ -140,12 +140,69 @@ class ApiClient {
 
   Future<void> deleteProduct(String id) => _delete('/products/$id');
 
+  // Goods arriving at the counter, in one request -- see receive_stock in
+  // services/api/app/routers/products.py. Without productId this creates
+  // a brand-new draft item (imageStoragePath from uploadIntakePhoto
+  // below); with it, it adds stock to that existing product's matching
+  // size/color, creating that variant if it's new.
+  Future<({Product product, ProductVariant variant})> receiveStock({
+    String? productId,
+    String? name,
+    String? imageStoragePath,
+    required int quantity,
+    String? categoryId,
+    double? basePrice,
+    String? size,
+    String? color,
+  }) async {
+    final json =
+        await _post('/products/receive', {
+              if (productId != null) 'product_id': productId,
+              if (name != null) 'name': name,
+              if (imageStoragePath != null)
+                'image_storage_path': imageStoragePath,
+              'quantity': quantity,
+              if (categoryId != null) 'category_id': categoryId,
+              if (basePrice != null) 'base_price': basePrice,
+              if (size != null && size.isNotEmpty) 'size': size,
+              if (color != null && color.isNotEmpty) 'color': color,
+            })
+            as Map<String, dynamic>;
+    return (
+      product: Product.fromJson(json['product'] as Map<String, dynamic>),
+      variant: ProductVariant.fromJson(json['variant'] as Map<String, dynamic>),
+    );
+  }
+
   // ---------- product images ----------
   //
   // The file bytes go straight to Supabase Storage using the signed-in
   // staff member's own session (respects the storage.objects RLS policies
   // in supabase/migrations); only the resulting path is registered with
   // the API, which is what every other admin/tablet actually reads back.
+  // _uploadToStorage is the only place that talks to storage directly.
+
+  Future<void> _uploadToStorage(String path, Uint8List bytes) =>
+      Supabase.instance.client.storage
+          .from('product-images')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: const FileOptions(upsert: false),
+          );
+
+  /// For receiveStock: the photo is taken before the product exists, so
+  /// it can't go under `products/<id>/` yet. Uploaded the moment it's
+  /// picked, so saving the item is a single quick request afterward.
+  Future<String> uploadIntakePhoto({
+    required Uint8List bytes,
+    required String fileExtension,
+  }) async {
+    final path =
+        'products/intake/${DateTime.now().microsecondsSinceEpoch}.$fileExtension';
+    await _uploadToStorage(path, bytes);
+    return path;
+  }
 
   Future<ProductImage> uploadProductImage({
     required String productId,
@@ -155,13 +212,7 @@ class ApiClient {
   }) async {
     final path =
         'products/$productId/${DateTime.now().microsecondsSinceEpoch}.$fileExtension';
-    await Supabase.instance.client.storage
-        .from('product-images')
-        .uploadBinary(
-          path,
-          bytes,
-          fileOptions: const FileOptions(upsert: false),
-        );
+    await _uploadToStorage(path, bytes);
 
     return ProductImage.fromJson(
       await _post('/products/$productId/images', {

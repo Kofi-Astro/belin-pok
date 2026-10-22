@@ -7,12 +7,14 @@ import '../config.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/receive_stock_dialog.dart';
 import '../widgets/stock_movement_dialog.dart';
 
 /// Sales overview (owner/inventory_manager only), a running-low list with
-/// a one-tap restock action, and a recent-activity feed of every stock
-/// movement -- the operational counterpart to DashboardScreen's
-/// longer-range reporting view.
+/// a one-tap restock action, a recent-activity feed of every stock
+/// movement, and the "Receive Stock" entry point for logging a delivery
+/// (ReceiveStockDialog) -- the operational counterpart to
+/// DashboardScreen's longer-range reporting view.
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
 
@@ -73,8 +75,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
     if (adjusted == true) _load();
   }
 
+  Future<void> _receiveStock() async {
+    final received = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ReceiveStockDialog(api: _api),
+    );
+    if (received == true) _load();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final canReceive =
+        context.watch<AuthController>().profile?.canManageInventory ?? false;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Inventory'),
@@ -82,12 +96,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
       ),
+      floatingActionButton: canReceive
+          ? FloatingActionButton.extended(
+              onPressed: _receiveStock,
+              icon: const Icon(Icons.move_to_inbox_outlined),
+              label: const Text('Receive Stock'),
+            )
+          : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
           ? Center(child: Text('Error: $_error'))
           : ListView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
               children: [
                 if (_dailySales.isNotEmpty) ...[
                   Text(

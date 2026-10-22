@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db import get_db
 from app.models import Category, Product, ProductStatus, ProductVariant
+from app.routers.categories import UNCATEGORIZED_SLUG
 from app.schemas import CategoryRead, ProductRead, ProductWithVariants
 
 router = APIRouter(prefix="/public", tags=["public"])
@@ -27,7 +28,11 @@ router = APIRouter(prefix="/public", tags=["public"])
 
 @router.get("/categories", response_model=list[CategoryRead])
 async def list_public_categories(db: AsyncSession = Depends(get_db)) -> list[Category]:
-    result = await db.scalars(select(Category).order_by(Category.display_order, Category.name))
+    result = await db.scalars(
+        select(Category)
+        .where(Category.slug != UNCATEGORIZED_SLUG)
+        .order_by(Category.display_order, Category.name)
+    )
     return list(result)
 
 

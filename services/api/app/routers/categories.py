@@ -7,6 +7,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +19,25 @@ from app.schemas import CategoryCreate, CategoryRead, CategoryUpdate
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 _write_roles = require_role(StaffRole.owner, StaffRole.inventory_manager)
+
+# Where fast-received items (POST /products/receive) land when nobody has
+# picked a category yet. Created on first use rather than seeded, so a
+# shop that never uses that flow never sees an empty "Uncategorized";
+# hidden from the public storefront's category list either way, and a
+# product can't be published while it's still in here (see
+# products.py's _check_publishable).
+UNCATEGORIZED_SLUG = "uncategorized"
+
+
+async def get_or_create_uncategorized(db: AsyncSession) -> Category:
+    # ON CONFLICT DO NOTHING rather than select-then-insert, so two
+    # first-ever receives racing each other can't both try to create it.
+    await db.execute(
+        insert(Category)
+        .values(id=uuid.uuid4(), name="Uncategorized", slug=UNCATEGORIZED_SLUG, display_order=9999)
+        .on_conflict_do_nothing(index_elements=["slug"])
+    )
+    return await db.scalar(select(Category).where(Category.slug == UNCATEGORIZED_SLUG))
 
 
 @router.get("", response_model=list[CategoryRead], dependencies=[Depends(get_current_staff)])
