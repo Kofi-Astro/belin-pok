@@ -4,8 +4,8 @@ import '../auth_controller.dart';
 import '../theme.dart';
 
 /// Lets a signed-in user set a new password for their own account, without
-/// needing their current one -- the active Supabase session already proves
-/// who they are.
+/// needing their current one -- the signed-in session already proves who
+/// they are. The API signs out every other device when it changes.
 class ChangePasswordDialog extends StatefulWidget {
   final AuthController auth;
   const ChangePasswordDialog({super.key, required this.auth});
@@ -22,8 +22,10 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
 
   Future<void> _submit() async {
     final newPassword = _newController.text;
-    if (newPassword.length < 6) {
-      setState(() => _error = 'Password must be at least 6 characters');
+    // Matches the API's own rule (services/api/app/schemas.py), so the
+    // message shows here instead of as a server error.
+    if (newPassword.length < 8) {
+      setState(() => _error = 'Password must be at least 8 characters');
       return;
     }
     if (newPassword != _confirmController.text) {

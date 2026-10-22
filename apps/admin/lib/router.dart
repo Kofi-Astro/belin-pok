@@ -2,7 +2,14 @@
 /// member needs to reach these before -- or instead of -- the main app),
 /// everything else sits behind one ShellRoute (persistent nav via
 /// AppShell) and is gated by the redirect below on being signed in as
-/// staff, not mid-password-recovery.
+/// staff who doesn't still owe a password change.
+///
+/// /set-password serves two purposes:
+/// - with `?token=...`: an invite or reset link opened from an email or a
+///   shared message (see services/api/app/routers/auth.py's
+///   create_one_time_link). Reachable signed out -- that's the point.
+/// - without: the forced "choose a new password" step for an account
+///   flagged must_change_password (the bootstrap owner).
 library;
 
 import 'package:go_router/go_router.dart';
@@ -27,10 +34,17 @@ GoRouter buildRouter(AuthController auth) {
     redirect: (context, state) {
       final loggingIn = state.matchedLocation == '/login';
       final settingPassword = state.matchedLocation == '/set-password';
+      final hasLinkToken = state.uri.queryParameters.containsKey('token');
+      // Still restoring a saved session: stay put rather than flash the
+      // sign-in screen; refreshListenable re-runs this once it's known.
+      if (auth.status == AuthStatus.unknown) return null;
+      // An invite/reset link works whether or not someone is signed in on
+      // this device (redeeming it signs them in as the link's owner).
+      if (settingPassword && hasLinkToken) return null;
       if (auth.status != AuthStatus.signedIn) {
         return loggingIn ? null : '/login';
       }
-      if (auth.passwordRecovery) {
+      if (auth.mustChangePassword) {
         return settingPassword ? null : '/set-password';
       }
       if (loggingIn || settingPassword) return '/products';
@@ -40,7 +54,8 @@ GoRouter buildRouter(AuthController auth) {
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/set-password',
-        builder: (context, state) => const SetPasswordScreen(),
+        builder: (context, state) =>
+            SetPasswordScreen(token: state.uri.queryParameters['token']),
       ),
       ShellRoute(
         builder: (context, state, child) =>

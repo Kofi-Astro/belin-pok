@@ -1,26 +1,21 @@
 import 'dart:typed_data';
 
 import 'package:belpok_core/belpok_core.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
 import 'models.dart';
+import 'session.dart';
 
 export 'package:belpok_core/belpok_core.dart' show ApiException;
 
-/// Thin wrapper around the FastAPI backend. Every call attaches the current
-/// Supabase session's access token as a Bearer token -- the backend
-/// verifies it and resolves it to a `staff` row (see services/api/app/deps.py).
+/// Thin wrapper around the FastAPI backend. Every call attaches the shared
+/// session's access token (see session.dart) as a Bearer token, refreshing
+/// it when needed -- the backend verifies it and resolves it to a `staff`
+/// row (see services/api/app/deps.py).
 class ApiClient {
   final ApiHttp _http = ApiHttp(
     baseUrl: AppConfig.apiBaseUrl,
-    headers: () {
-      final token = Supabase.instance.client.auth.currentSession?.accessToken;
-      return {
-        'Content-Type': 'application/json',
-        if (token != null) 'Authorization': 'Bearer $token',
-      };
-    },
+    session: authSession,
   );
 
   Future<dynamic> _get(String path, [Map<String, String>? query]) =>
@@ -40,16 +35,31 @@ class ApiClient {
       .map((e) => StaffProfile.fromJson(e as Map<String, dynamic>))
       .toList();
 
-  Future<void> inviteStaff({
+  /// Creates the staff member and returns their set-password link. It's
+  /// emailed to them too when the API has email set up, but the owner can
+  /// always copy it from here and send it directly (e.g. on WhatsApp).
+  Future<String> inviteStaff({
     required String email,
     required String fullName,
     required String role,
   }) async {
-    await _post('/staff/invite', {
-      'email': email,
-      'full_name': fullName,
-      'role': role,
-    });
+    final json =
+        await _post('/staff/invite', {
+              'email': email,
+              'full_name': fullName,
+              'role': role,
+            })
+            as Map<String, dynamic>;
+    return json['invite_link'] as String;
+  }
+
+  /// A fresh set-password link for an existing staff member -- for an
+  /// invite that expired or got lost, or someone locked out of their
+  /// account.
+  Future<String> reissueInviteLink(String staffId) async {
+    final json =
+        await _post('/staff/$staffId/invite-link', {}) as Map<String, dynamic>;
+    return json['invite_link'] as String;
   }
 
   Future<void> updateStaff(String id, {String? role, bool? isActive}) async {
@@ -176,33 +186,45 @@ class ApiClient {
 
   // ---------- product images ----------
   //
-  // The file bytes go straight to Supabase Storage using the signed-in
-  // staff member's own session (respects the storage.objects RLS policies
-  // in supabase/migrations); only the resulting path is registered with
-  // the API, which is what every other admin/tablet actually reads back.
-  // _uploadToStorage is the only place that talks to storage directly.
+  // The file bytes go to the API (POST /uploads/product-photo), which puts
+  // them in the photo bucket and returns a storage path; attaching that
+  // path to a product is a separate call. See
+  // services/api/app/routers/uploads.py for why photos go through the API
+  // rather than straight to the bucket.
 
-  Future<void> _uploadToStorage(String path, Uint8List bytes) =>
-      Supabase.instance.client.storage
-          .from('product-images')
-          .uploadBinary(
-            path,
-            bytes,
-            fileOptions: const FileOptions(upsert: false),
-          );
+  static const _photoContentTypes = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'webp': 'image/webp',
+  };
+
+  /// Uploads a photo and returns its storage path. Anything the picker
+  /// hands back with an unrecognized extension is sent as JPEG, which is
+  /// what image_picker produces when it re-compresses (imageQuality < 100).
+  Future<String> _uploadPhoto(Uint8List bytes, String fileExtension) async {
+    final contentType =
+        _photoContentTypes[fileExtension.toLowerCase()] ?? 'image/jpeg';
+    final json =
+        await _http.postFile(
+              '/uploads/product-photo',
+              field: 'file',
+              bytes: bytes,
+              filename: 'photo.$fileExtension',
+              contentType: contentType,
+            )
+            as Map<String, dynamic>;
+    return json['storage_path'] as String;
+  }
 
   /// For receiveStock: the photo is taken before the product exists, so
-  /// it can't go under `products/<id>/` yet. Uploaded the moment it's
-  /// picked, so saving the item is a single quick request afterward.
+  /// it's uploaded on its own the moment it's picked, and its path is sent
+  /// along with the rest of the item afterward -- which keeps saving the
+  /// item itself a single quick request.
   Future<String> uploadIntakePhoto({
     required Uint8List bytes,
     required String fileExtension,
-  }) async {
-    final path =
-        'products/intake/${DateTime.now().microsecondsSinceEpoch}.$fileExtension';
-    await _uploadToStorage(path, bytes);
-    return path;
-  }
+  }) => _uploadPhoto(bytes, fileExtension);
 
   Future<ProductImage> uploadProductImage({
     required String productId,
@@ -210,9 +232,7 @@ class ApiClient {
     required String fileExtension,
     bool isPrimary = false,
   }) async {
-    final path =
-        'products/$productId/${DateTime.now().microsecondsSinceEpoch}.$fileExtension';
-    await _uploadToStorage(path, bytes);
+    final path = await _uploadPhoto(bytes, fileExtension);
 
     return ProductImage.fromJson(
       await _post('/products/$productId/images', {

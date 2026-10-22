@@ -241,7 +241,7 @@ class _ProductCard extends StatelessWidget {
                         ),
                       )
                     : Image.network(
-                        image.publicUrl(AppConfig.supabaseUrl),
+                        image.url(AppConfig.apiBaseUrl),
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stack) => const Center(
                           child: Icon(

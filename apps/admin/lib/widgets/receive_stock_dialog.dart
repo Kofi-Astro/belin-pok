@@ -510,7 +510,7 @@ class _Thumb extends StatelessWidget {
         child: image == null
             ? const Icon(Icons.checkroom_outlined, color: AppColors.inkMuted)
             : Image.network(
-                image.publicUrl(AppConfig.supabaseUrl),
+                image.url(AppConfig.apiBaseUrl),
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stack) => const Icon(
                   Icons.broken_image_outlined,

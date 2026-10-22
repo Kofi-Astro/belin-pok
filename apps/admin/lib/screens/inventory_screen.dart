@@ -172,16 +172,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
                               height: 56,
                               color: const Color(0xFFEFEBE3),
                               child:
-                                  entry.publicImageUrl(AppConfig.supabaseUrl) ==
+                                  entry.imageUrl(AppConfig.apiBaseUrl) ==
                                       null
                                   ? const Icon(
                                       Icons.checkroom_outlined,
                                       color: AppColors.inkMuted,
                                     )
                                   : Image.network(
-                                      entry.publicImageUrl(
-                                        AppConfig.supabaseUrl,
-                                      )!,
+                                      entry.imageUrl(AppConfig.apiBaseUrl)!,
                                       fit: BoxFit.cover,
                                       errorBuilder: (context, error, stack) =>
                                           const Icon(

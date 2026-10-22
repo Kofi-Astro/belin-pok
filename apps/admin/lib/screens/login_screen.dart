@@ -5,9 +5,11 @@ import '../auth_controller.dart';
 import '../theme.dart';
 import '../widgets/forgot_password_dialog.dart';
 
-/// Email/password sign-in for staff. A valid Supabase login with no
-/// matching `staff` row shows an explanatory message (AuthStatus.notStaff)
-/// rather than a generic error -- see AuthController's class doc comment.
+/// Sign-in for staff, by email -- or by username, for the bootstrap owner
+/// account created on the server with `python -m app.cli create-owner`.
+/// A valid login with no matching `staff` row (a storefront customer's
+/// account) shows an explanatory message (AuthStatus.notStaff) rather than
+/// a generic error -- see AuthController's class doc comment.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -16,13 +18,17 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
+  // Holds a username or an email -- the API accepts either.
+  final _identifierController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _submitting = false;
 
   Future<void> _submit(AuthController auth) async {
     setState(() => _submitting = true);
-    await auth.signIn(_emailController.text.trim(), _passwordController.text);
+    await auth.signIn(
+      _identifierController.text.trim(),
+      _passwordController.text,
+    );
     if (mounted) setState(() => _submitting = false);
   }
 
@@ -31,7 +37,10 @@ class _LoginScreenState extends State<LoginScreen> {
       context: context,
       builder: (_) => ForgotPasswordDialog(
         auth: auth,
-        initialEmail: _emailController.text.trim(),
+        // Only pre-fill it if what was typed looks like an email.
+        initialEmail: _identifierController.text.contains('@')
+            ? _identifierController.text.trim()
+            : '',
       ),
     );
   }
@@ -95,12 +104,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   TextField(
-                    controller: _emailController,
+                    controller: _identifierController,
                     decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.mail_outline),
+                      labelText: 'Email or username',
+                      prefixIcon: Icon(Icons.person_outline),
                     ),
                     keyboardType: TextInputType.emailAddress,
+                    autocorrect: false,
                   ),
                   const SizedBox(height: 14),
                   TextField(

@@ -587,7 +587,7 @@ class _Thumb extends StatelessWidget {
                 ),
               )
             : Image.network(
-                product.primaryImage!.publicUrl(AppConfig.supabaseUrl),
+                product.primaryImage!.url(AppConfig.apiBaseUrl),
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stack) =>
                     const Icon(Icons.broken_image_outlined),
@@ -633,7 +633,7 @@ class _QuickPickCard extends StatelessWidget {
                         ),
                       )
                     : Image.network(
-                        product.primaryImage!.publicUrl(AppConfig.supabaseUrl),
+                        product.primaryImage!.url(AppConfig.apiBaseUrl),
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stack) =>
                             const Icon(Icons.broken_image_outlined),

@@ -18,7 +18,9 @@ export 'package:belpok_core/belpok_core.dart'
 
 class StaffProfile {
   final String id;
-  final String email;
+  // Null only for a username-only account (the bootstrap owner created by
+  // `python -m app.cli create-owner`).
+  final String? email;
   final String fullName;
   final String role;
   final bool isActive;
@@ -33,7 +35,7 @@ class StaffProfile {
 
   factory StaffProfile.fromJson(Map<String, dynamic> json) => StaffProfile(
     id: json['id'] as String,
-    email: json['email'] as String,
+    email: json['email'] as String?,
     fullName: json['full_name'] as String,
     role: json['role'] as String,
     isActive: json['is_active'] as bool,
@@ -69,9 +71,10 @@ class LowStockVariant {
         imageStoragePath: json['image_storage_path'] as String?,
       );
 
-  String? publicImageUrl(String supabaseUrl) => imageStoragePath == null
+  /// See ProductImage.url in belpok_core -- same /images/ endpoint.
+  String? imageUrl(String apiBaseUrl) => imageStoragePath == null
       ? null
-      : '$supabaseUrl/storage/v1/object/public/product-images/$imageStoragePath';
+      : '$apiBaseUrl/images/$imageStoragePath';
 }
 
 class StockMovement {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../api_client.dart';
@@ -11,7 +12,8 @@ String _roleLabel(String role) =>
     role.split('_').map((w) => w[0].toUpperCase() + w.substring(1)).join(' ');
 
 /// Owner-only (see router.dart/shell_screen.dart's nav gating): invite
-/// new staff by email, change an existing one's role, or deactivate them.
+/// new staff by email (and get a link to share with them), change an
+/// existing one's role, issue a fresh sign-in link, or deactivate them.
 /// Nobody can change their own role or deactivate themselves (isSelf
 /// below) -- that would risk an owner locking themselves out.
 class StaffScreen extends StatefulWidget {
@@ -66,6 +68,25 @@ class _StaffScreenState extends State<StaffScreen> {
     _load();
   }
 
+  /// A fresh set-password link for someone whose invite expired or got
+  /// lost, or who's locked out -- using it replaces their password.
+  Future<void> _getSignInLink(StaffProfile staff) async {
+    try {
+      final link = await _api.reissueInviteLink(staff.id);
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        builder: (_) => _InviteLinkDialog(name: staff.fullName, link: link),
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final myId = context.watch<AuthController>().profile?.id;
@@ -102,6 +123,7 @@ class _StaffScreenState extends State<StaffScreen> {
                   isSelf: staff.id == myId,
                   onChangeRole: (role) => _changeRole(staff, role),
                   onToggleActive: () => _toggleActive(staff),
+                  onGetSignInLink: () => _getSignInLink(staff),
                 );
               },
             ),
@@ -119,12 +141,14 @@ class _StaffCard extends StatelessWidget {
   final bool isSelf;
   final ValueChanged<String> onChangeRole;
   final VoidCallback onToggleActive;
+  final VoidCallback onGetSignInLink;
 
   const _StaffCard({
     required this.staff,
     required this.isSelf,
     required this.onChangeRole,
     required this.onToggleActive,
+    required this.onGetSignInLink,
   });
 
   @override
@@ -153,7 +177,8 @@ class _StaffCard extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               Text(
-                staff.email,
+                // Only the bootstrap owner account has no email.
+                staff.email ?? 'Signs in with a username',
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: AppColors.inkMuted, fontSize: 12),
               ),
@@ -177,6 +202,13 @@ class _StaffCard extends StatelessWidget {
               .toList(),
           onChanged: isSelf ? null : (v) => v == null ? null : onChangeRole(v),
         ),
+        if (!isSelf)
+          IconButton(
+            icon: const Icon(Icons.link, size: 20),
+            tooltip: 'New sign-in link (for an expired invite or a '
+                'forgotten password)',
+            onPressed: onGetSignInLink,
+          ),
         Tooltip(
           message: isSelf ? "You can't deactivate your own account" : '',
           child: Switch(
@@ -242,10 +274,18 @@ class _InviteStaffDialogState extends State<_InviteStaffDialog> {
       _error = null;
     });
     try {
-      await widget.api.inviteStaff(
+      final name = _nameController.text.trim();
+      final link = await widget.api.inviteStaff(
         email: _emailController.text.trim(),
-        fullName: _nameController.text.trim(),
+        fullName: name,
         role: _role,
+      );
+      if (!mounted) return;
+      // Show the link before closing: it's how the new staff member gets
+      // in if the invite email doesn't arrive (or email isn't set up).
+      await showDialog(
+        context: context,
+        builder: (_) => _InviteLinkDialog(name: name, link: link),
       );
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (e) {
@@ -301,6 +341,59 @@ class _InviteStaffDialogState extends State<_InviteStaffDialog> {
         FilledButton(
           onPressed: _submitting ? null : _submit,
           child: const Text('Send invite'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Shows a set-password link for the owner to pass on. The API also
+/// emails it when email is configured, but copying it into WhatsApp or a
+/// text works either way -- the link alone is enough to set a password,
+/// so it should only go to the person it's for.
+class _InviteLinkDialog extends StatelessWidget {
+  final String name;
+  final String link;
+  const _InviteLinkDialog({required this.name, required this.link});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Sign-in link for $name'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Send this link to them -- it lets them choose a password '
+              'and sign in. It works once, for the next 7 days. If email '
+              "is set up, they've been emailed it as well.",
+            ),
+            const SizedBox(height: 12),
+            SelectableText(
+              link,
+              style: const TextStyle(fontSize: 12, color: AppColors.inkMuted),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () async {
+            await Clipboard.setData(ClipboardData(text: link));
+            if (context.mounted) {
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Link copied')));
+            }
+          },
+          child: const Text('Copy link'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Done'),
         ),
       ],
     );

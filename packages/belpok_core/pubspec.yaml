@@ -13,6 +13,10 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.6.0
+  # MediaType for multipart photo uploads (ApiHttp.postFile).
+  http_parser: ^4.1.2
+  # Keeps the refresh token across reloads/restarts (AuthSession).
+  shared_preferences: ^2.5.5
   google_fonts: ^8.2.1
 
 dev_dependencies:

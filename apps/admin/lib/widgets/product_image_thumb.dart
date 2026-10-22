@@ -59,7 +59,7 @@ class ProductImageThumb extends StatelessWidget {
             child: Container(
               color: const Color(0xFFEFEBE3),
               child: Image.network(
-                image.publicUrl(AppConfig.supabaseUrl),
+                image.url(AppConfig.apiBaseUrl),
                 fit: BoxFit.cover,
                 loadingBuilder: (context, child, progress) => progress == null
                     ? child

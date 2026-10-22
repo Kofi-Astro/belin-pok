@@ -4,12 +4,18 @@ import 'package:provider/provider.dart';
 import '../auth_controller.dart';
 import '../theme.dart';
 
-/// Shown instead of the dashboard right after a password-reset link is
-/// redeemed -- the router forces this route whenever
-/// `AuthController.passwordRecovery` is true, so nobody lands in the
-/// product list still needing to pick a real password.
+/// Choosing a password, in one of three situations:
+/// - [token] set: an invite link (a new staff member's first visit) or a
+///   password-reset link -- redeeming it sets the password and signs them
+///   in (see router.dart).
+/// - [token] null: a signed-in account that must change its password
+///   before doing anything else -- the router forces this route while
+///   `AuthController.mustChangePassword` is true (e.g. the bootstrap
+///   owner's admin/admin), so nobody works in the app on a starter
+///   password.
 class SetPasswordScreen extends StatefulWidget {
-  const SetPasswordScreen({super.key});
+  final String? token;
+  const SetPasswordScreen({super.key, this.token});
 
   @override
   State<SetPasswordScreen> createState() => _SetPasswordScreenState();
@@ -23,8 +29,9 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
 
   Future<void> _submit(AuthController auth) async {
     final newPassword = _newController.text;
-    if (newPassword.length < 6) {
-      setState(() => _error = 'Password must be at least 6 characters');
+    // Matches the API's own rule (services/api/app/schemas.py).
+    if (newPassword.length < 8) {
+      setState(() => _error = 'Password must be at least 8 characters');
       return;
     }
     if (newPassword != _confirmController.text) {
@@ -36,7 +43,10 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
       _submitting = true;
       _error = null;
     });
-    final error = await auth.changePassword(newPassword);
+    final token = widget.token;
+    final error = token != null
+        ? await auth.setPasswordWithToken(token, newPassword)
+        : await auth.changePassword(newPassword);
     if (!mounted) return;
     setState(() {
       _submitting = false;
@@ -81,9 +91,12 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
-                    "You're almost in -- just pick a password.",
-                    style: TextStyle(color: AppColors.inkMuted),
+                  Text(
+                    widget.token != null
+                        ? "You're almost in -- just pick a password."
+                        : 'Before you continue, replace the starting '
+                              'password with one only you know.',
+                    style: const TextStyle(color: AppColors.inkMuted),
                   ),
                   const SizedBox(height: 28),
                   if (_error != null)

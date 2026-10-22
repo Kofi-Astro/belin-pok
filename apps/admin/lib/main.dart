@@ -1,5 +1,5 @@
-/// Admin app entry point: initializes Supabase Auth, then wires up
-/// AuthController via Provider and hands the router (router.dart) to
+/// Admin app entry point: wires up AuthController (which restores any
+/// saved session in the background -- see AuthSession) via Provider and hands the router (router.dart) to
 /// MaterialApp.router. See apps/storefront/lib/main.dart for the
 /// customer-facing counterpart of this same shape.
 library;
@@ -7,20 +7,14 @@ library;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'api_client.dart';
 import 'auth_controller.dart';
-import 'config.dart';
 import 'router.dart';
+import 'session.dart';
 import 'theme.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(
-    url: AppConfig.supabaseUrl,
-    publishableKey: AppConfig.supabasePublishableKey,
-  );
+void main() {
   runApp(const AdminApp());
 }
 
@@ -32,7 +26,7 @@ class AdminApp extends StatefulWidget {
 }
 
 class _AdminAppState extends State<AdminApp> {
-  late final AuthController _auth = AuthController(ApiClient());
+  late final AuthController _auth = AuthController(ApiClient(), authSession);
   late final GoRouter _router = buildRouter(_auth);
 
   @override

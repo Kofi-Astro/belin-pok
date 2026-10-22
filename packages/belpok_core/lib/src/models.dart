@@ -103,10 +103,11 @@ class ProductImage {
     isPrimary: json['is_primary'] as bool,
   );
 
-  /// The product-images bucket is public, so the URL is deterministic from
-  /// the storage path -- no signed URL/extra round trip needed.
-  String publicUrl(String supabaseUrl) =>
-      '$supabaseUrl/storage/v1/object/public/product-images/$storagePath';
+  /// Where to load this photo from: the API serves every product photo
+  /// publicly at `/images/<storage path>` (see
+  /// services/api/app/routers/uploads.py), so the URL is deterministic --
+  /// no signed URL or extra round trip needed.
+  String url(String apiBaseUrl) => '$apiBaseUrl/images/$storagePath';
 }
 
 class Product {
