@@ -25,105 +25,107 @@ This repo is being built in phases:
 | Layer                     | Choice                                                                                                                |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Backend API               | Python + FastAPI                                                                                                        |
-| Database / Auth / Storage | Supabase (Postgres + Row Level Security + Auth + file storage)                                                          |
+| Database                  | PostgreSQL (Railway Postgres)                                                                                          |
+| Auth                      | Built into the API: hashed passwords, short-lived access tokens + rotating refresh tokens                              |
+| Photo storage             | S3-compatible bucket (Railway Bucket), served through the API                                                          |
 | Admin frontend             | Flutter, compiled to Flutter Web for this phase                                                                         |
 | Storefront frontend        | Flutter, compiled to Flutter Web for this phase                                                                         |
-| API hosting                | Railway                                                                                                                  |
-| Web hosting                | Cloudflare Pages — two separate projects, one per app (`belpok.xyz` for the storefront, `admin.belpok.xyz` for admin) |
+| Hosting                    | Railway -- API, database, bucket, and both web apps                                                                     |
 | Source control / CI       | GitHub + GitHub Actions                                                                                                  |
 
 ## Repo layout
 
 ```text
-apps/admin/          Flutter Web admin dashboard
-apps/storefront/      Flutter Web public storefront
-packages/belpok_core/ Shared Dart package: models, API client base, theme
+apps/admin/          Flutter Web admin dashboard (+ Dockerfile/railway.json for hosting)
+apps/storefront/      Flutter Web public storefront (+ Dockerfile/railway.json for hosting)
+packages/belpok_core/ Shared Dart package: models, API client + sign-in session, theme
 services/api/         FastAPI backend
-supabase/             SQL migrations, RLS policies, seed data
+services/api/migrations/ SQL migrations (schema + seed data), applied by app/migrate.py
+deploy/               Shared Caddy config that serves the built web apps
 .github/workflows/    CI/CD
 ```
 
 ## Prerequisites
 
-- [Supabase CLI](https://supabase.com/docs/guides/cli) (`brew install supabase/tap/supabase`)
-- Docker (Supabase CLI runs a local Postgres + Auth + Storage stack in containers)
+- PostgreSQL 15+ for local development (e.g. `brew install postgresql`)
 - Python 3.12+
 - Flutter SDK (stable channel) with web support enabled (`flutter config --enable-web`)
 
-## Supabase: schema & local dev
+## Database & migrations
 
-All schema changes live as plain SQL files in `supabase/migrations/`, applied
-in filename order. `supabase/seed.sql` seeds baseline data (the default
-product categories) and runs automatically after migrations when you reset
-your local database.
+All schema changes live as plain SQL files in `services/api/migrations/`,
+applied in filename order by a small runner, `python -m app.migrate`. It
+records what it applied in a `schema_migrations` table, so re-running it is
+a no-op, and it runs automatically before every Railway deploy (the
+`preDeployCommand` in `services/api/railway.json`) -- a deploy whose code
+needs a new column can't go live before the column exists, and a failing
+migration stops the deploy. The baseline product categories are seeded by
+a migration too, so a fresh database is ready to use straight away.
 
 ```bash
-# One-time: log in and link this repo to the hosted Supabase project
-supabase login
-supabase link --project-ref rkjcrvgtbrbdzjakgtpz
-
-# Local dev stack (Postgres, Auth, Storage, Studio) in Docker
-supabase start
-
-# Apply all migrations + seed.sql to your local database
-supabase db reset
-
-# After editing/adding a migration file, push it to the hosted project
-supabase db push
+createdb belpok
+cd services/api
+DATABASE_URL=postgresql+asyncpg://localhost/belpok JWT_SECRET=dev python -m app.migrate
 ```
 
-To add a new migration, create a new timestamped file in
-`supabase/migrations/` (`YYYYMMDDHHMMSS_description.sql`) rather than editing
-an existing one — migrations are append-only history, same as git commits.
+To change the schema, add a new timestamped file
+(`YYYYMMDDHHMMSS_description.sql`) rather than editing an existing one --
+once a migration has reached a live database it's history, same as a git
+commit.
 
-### Roles & Row Level Security
+### Roles & authorization
 
-Every table has RLS enabled with a default-deny policy. Staff roles
-(`owner`, `inventory_manager`, `order_fulfillment`, `viewer`) are read from
-the `staff` table and checked via the `current_staff_role()` /
-`is_staff()` SQL helper functions (see
-`supabase/migrations/20260816120014_rls_policies.sql`).
-
-RLS protects any access that goes through Supabase's own APIs (PostgREST,
-the Flutter app's direct Auth/Storage calls). The FastAPI backend connects
-to Postgres directly with a trusted service connection, which bypasses RLS
-by design (Postgres doesn't enforce RLS against the table owner/superuser)
-— so for that path, **FastAPI's own dependency checks are the real
-authorization layer**, and RLS serves as a second line of defense in case
-anything else ever talks to the database directly.
+Nothing connects to the database except the API, so the API is the
+authorization layer: `app/deps.py` resolves each request's signed-in user
+to a `staff` row (roles `owner`, `inventory_manager`, `order_fulfillment`,
+`viewer`, checked per endpoint with `require_role`) or a `customers` row.
+Signing in itself -- passwords, sessions, invite and reset links -- is
+`app/routers/auth.py`; see its module docstring for how sessions work.
 
 ## Backend: FastAPI (`services/api/`)
 
-Talks to Postgres directly via SQLAlchemy (async, asyncpg driver) rather
-than through Supabase's REST API — see "Roles & Row Level Security" above
-for what that means for authorization. Verifies Supabase Auth JWTs against
-the project's JWKS endpoint (`SUPABASE_URL/auth/v1/.well-known/jwks.json`),
-so no JWT secret needs to be configured.
+Talks to Postgres directly via SQLAlchemy (async, asyncpg driver), and
+issues and verifies its own sign-in tokens (`app/security.py`).
 
 ```bash
 cd services/api
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt   # includes requirements.txt + pytest/ruff
 
-cp .env.example .env   # fill in DATABASE_URL, SUPABASE_URL, SUPABASE_SECRET_KEY
+cp .env.example .env   # fill in DATABASE_URL and JWT_SECRET at minimum
+python -m app.migrate  # create/update the schema
 
 uvicorn app.main:app --reload   # http://localhost:8000, docs at /docs
 ```
 
 ```bash
 ruff check .          # lint
-python -m pytest -v   # needs DATABASE_URL pointed at a Postgres with the schema
-                       # applied (supabase start + db reset, or see
-                       # tests/ci_bootstrap.sql for how CI does this against a
-                       # plain Postgres container without the full Supabase stack).
-                       # Must be `python -m pytest`, not plain `pytest` -- the
-                       # latter doesn't add the cwd to sys.path, so `app` fails
-                       # to import.
+python -m pytest -v   # needs DATABASE_URL pointed at a Postgres that
+                       # `python -m app.migrate` has been run against (CI
+                       # does exactly that, against a plain Postgres
+                       # container). Must be `python -m pytest`, not plain
+                       # `pytest` -- the latter doesn't add the cwd to
+                       # sys.path, so `app` fails to import.
 ```
 
-Staff invitations (`POST /staff/invite`) call the Supabase Auth admin API
-using `SUPABASE_SECRET_KEY` — that's the only place the backend uses it;
-everything else goes through `DATABASE_URL`.
+Locally, with no `S3_*` settings, product photos are kept in memory (lost
+on restart) -- fine for development, and refused anywhere `ENVIRONMENT`
+isn't `local`. Without `RESEND_API_KEY`, invite/reset emails aren't sent;
+an owner can still copy an invite link from the Staff screen.
+
+### The first owner account
+
+A brand-new database has no users, and staff are normally invited by an
+owner -- so the first owner is created from a shell with the API's
+environment (locally, or `railway run` / a Railway service shell):
+
+```bash
+python -m app.cli create-owner --username admin --password admin
+```
+
+That account must choose a new password the first time it signs in
+(pass `--no-force-change` to skip that). Everyone else is invited from the
+admin app's Staff screen.
 
 ## Admin app: Flutter (`apps/admin/`)
 
@@ -141,27 +143,17 @@ flutter run -d macos --dart-define=API_BASE_URL=http://localhost:8000    # macOS
 flutter run -d <device-id> --dart-define=API_BASE_URL=http://localhost:8000  # a connected phone/simulator
 ```
 
-`SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` are baked into
-`lib/config.dart` as defaults (safe to ship in a client build — that's what
-"publishable" means, access is still governed by RLS). Override any of the
-three with `--dart-define=KEY=value` if you need to point at a different
-Supabase project or API host.
+`API_BASE_URL` is the only setting (`lib/config.dart`) -- sign-in, data
+and product photos all go through the API.
 
-Only the Web build is wired up for deployment (Cloudflare, see below) --
+Only the Web build is wired up for deployment (Railway, see below) --
 Android/iOS need signing + app store setup and Windows/Linux desktop can
 only be built on their own OS (Flutter doesn't cross-compile desktop
 targets), so those stay local-only builds until/unless that's worth setting
 up.
 
-To sign in, a Supabase Auth user needs a matching row in the `staff` table
-(role `owner` to see everything, including the Staff screen). Create the
-first owner manually — invite comes later, from that first owner:
-
-```sql
--- after the person has signed up / been created in Supabase Auth
-insert into public.staff (id, email, full_name, role)
-values ('<their auth.users id>', 'owner@example.com', 'Their Name', 'owner');
-```
+Sign in with the owner account from "The first owner account" above,
+then invite everyone else from the Staff screen.
 
 ## Storefront app: Flutter (`apps/storefront/`)
 
@@ -177,9 +169,9 @@ flutter pub get
 flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000   # web
 ```
 
-Same `--dart-define` overrides as the admin app (`SUPABASE_URL`,
-`SUPABASE_PUBLISHABLE_KEY`, `API_BASE_URL`) -- same Supabase project, just a
-`customers` row instead of a `staff` one once someone signs up.
+Same `API_BASE_URL` override as the admin app. Customers create an
+account (name, email, password) from the sign-in screen, which creates
+their `customers` record at the same time.
 
 ### Running on a phone (Android/iOS)
 
@@ -267,7 +259,9 @@ Both Flutter apps depend on this via a local path dependency
 they genuinely share: the `Category`/`Product`/`ProductVariant`/
 `ProductImage`/`Order`/`OrderItem`/`Address` models (they mirror
 `services/api/app/schemas.py` response shapes 1:1), the API client's HTTP/
-error-decoding plumbing (`ApiHttp`, `ApiException`), and the brand theme
+error-decoding plumbing (`ApiHttp`, `ApiException`), the signed-in session
+both apps use (`AuthSession`: sign in/up/out, token storage and refresh),
+and the brand theme
 (`AppColors`, `buildAppTheme()`) -- same brand, same products, just a
 dashboard vs. a storefront layout around it. Not published anywhere; it
 only ever needs to resolve inside this repo.
@@ -278,90 +272,78 @@ change (a path dependency, so no version bump/publish step needed).
 
 ## Environment variables
 
-Secrets are never committed. Each service has its own `.env.example`
-documenting what it needs; copy it to `.env` locally and fill in real
-values (get them from the Supabase project dashboard). In production,
-these are set as Railway/Cloudflare Pages environment variables (see
-Deployment below), not files in the repo.
+Secrets are never committed. `services/api/.env.example` documents every
+API setting; copy it to `.env` locally and fill in real values. In
+production these are the Railway services' Variables (see Deployment
+below), not files in the repo. The Flutter apps have no secrets -- only
+`API_BASE_URL`, compiled in at build time.
 
 ## Deployment
 
-All three deploy via their platforms' native GitHub integration, not
-GitHub Actions — `.github/workflows/api.yml`, `admin.yml`, and
-`storefront.yml` only lint/test on PRs, so bad code doesn't land on
-`main`, but none of them deploy anything. That avoids a second,
-conflicting deploy path fighting each native integration.
+Everything runs in one Railway project, deployed by Railway's native
+GitHub integration from `main` -- `.github/workflows/*.yml` only lint/test
+on PRs and never deploy, so there's exactly one deploy path.
 
-Domain layout: the storefront is the bare/`www` domain, admin is a
-subdomain, API is a subdomain:
+| Domain | Railway service | Source |
+| --- | --- | --- |
+| `belpok.xyz`, `www.belpok.xyz` | storefront | `apps/storefront/` |
+| `admin.belpok.xyz` | admin | `apps/admin/` |
+| `api.belpok.xyz` | api | `services/api/` |
+| -- | Postgres | Railway database |
+| -- | Bucket | Railway bucket for product photos |
 
-| Domain | Serves |
+### API service
+
+| Setting | Value |
 | --- | --- |
-| `belpok.xyz`, `www.belpok.xyz` | `apps/storefront/` (Cloudflare Pages) |
-| `admin.belpok.xyz` | `apps/admin/` (Cloudflare Pages, a **separate** project from the storefront's) |
-| `api.belpok.xyz` | `services/api/` (Railway) |
+| Root Directory | `services/api` |
 
-- `services/api/` deploys via **Railway's native GitHub integration**. In
-  the Railway service's settings, set:
+Railway builds it with Nixpacks and reads `services/api/railway.json` for
+the start command, health check, and the `preDeployCommand` that runs
+migrations. Variables (see `services/api/.env.example` for all of them):
 
-  | Setting | Value |
-  | --- | --- |
-  | Root Directory | `services/api` |
+| Variable | Value |
+| --- | --- |
+| `ENVIRONMENT` | `production` |
+| `DATABASE_URL` | the Postgres service's URL with the scheme changed to `postgresql+asyncpg://` (example in `.env.example`) |
+| `JWT_SECRET` | a long random string -- `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | from the bucket's credentials (Railway variable references work) |
+| `CORS_ORIGINS` | `https://belpok.xyz,https://www.belpok.xyz,https://admin.belpok.xyz` |
+| `ADMIN_APP_URL` / `STOREFRONT_URL` | `https://admin.belpok.xyz` / `https://belpok.xyz` |
+| `RESEND_API_KEY`, `EMAIL_FROM` | optional -- see `.env.example` |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | optional, for push notifications |
 
-  Railway auto-detects the Python app from there (`requirements.txt`,
-  `Procfile`/`railway.json` for the start command and health check path).
-  Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`,
-  `CORS_ORIGINS` (`https://belpok.xyz,https://www.belpok.xyz,https://admin.belpok.xyz`),
-  and `ADMIN_APP_URL` (`https://admin.belpok.xyz`) as environment variables
-  in that service's settings (same values as your local `.env` — see
-  `services/api/.env.example`). Point `api.belpok.xyz` at this service as a
-  custom domain from the Railway dashboard.
+### Admin and storefront services
 
-  `ADMIN_APP_URL` also needs to be added under Supabase Dashboard ->
-  Authentication -> URL Configuration -> **Redirect URLs** — without that,
-  Supabase ignores it and staff invite emails link to whatever the
-  project's Site URL is (localhost, by default).
+Each is built from its own Dockerfile (Flutter SDK to compile, Caddy to
+serve -- see `deploy/Caddyfile`). The Docker build needs
+`packages/belpok_core` as well as the app, so these services build from
+the repo root:
 
-- `apps/admin/` deploys via **Cloudflare's native GitHub integration**
-  (Workers Builds — the project's Deploy command is `npx wrangler deploy`,
-  driven by `apps/admin/wrangler.jsonc`, which pins the assets directory to
-  `build/web`). Flutter isn't auto-detected, so without a **Build command**
-  set, nothing ever compiles the app — `wrangler deploy` just ships
-  whatever static files it finds, which without a prior build means the
-  raw, unbuilt `web/` template (this is exactly what caused the earlier
-  "blank scaffold": no `main.dart.js` was ever generated). In the
-  project's settings, set:
+| Setting | admin | storefront |
+| --- | --- | --- |
+| Root Directory | *(blank -- repo root)* | *(blank -- repo root)* |
+| Config file path | `apps/admin/railway.json` | `apps/storefront/railway.json` |
+| Variable `API_BASE_URL` | `https://api.belpok.xyz` | `https://api.belpok.xyz` |
 
-  | Setting | Value |
-  | --- | --- |
-  | Root directory | `apps/admin` |
-  | Build command | `git clone https://github.com/flutter/flutter.git --depth 1 -b stable _flutter && export PATH="$PATH:$(pwd)/_flutter/bin" && flutter config --enable-web && flutter pub get && flutter build web --release --dart-define=API_BASE_URL=$API_BASE_URL` |
-  | Deploy command | `npx wrangler deploy` (default — leave as-is) |
+`API_BASE_URL` is read at **build** time (it's compiled into the app), so
+changing it needs a redeploy.
 
-  Also add an `API_BASE_URL` environment variable in that project's
-  settings, set to `https://api.belpok.xyz` (or the raw Railway URL if
-  `api.belpok.xyz` isn't wired up yet) — the build command above reads it.
-  **Manual step, since this moves an already-live domain:** in the
-  Cloudflare dashboard, change this project's custom domain from wherever
-  `belpok.xyz` currently points it to `admin.belpok.xyz` instead — the
-  bare domain now belongs to the storefront project below.
+### Switching over from Supabase + Cloudflare (one-time)
 
-- `apps/storefront/` deploys the same way, as its **own, separate**
-  Cloudflare Pages project (do not reuse the admin app's project — see
-  `apps/storefront/wrangler.jsonc` for why the Worker name must differ).
-  In that project's settings, set:
-
-  | Setting | Value |
-  | --- | --- |
-  | Root directory | `apps/storefront` |
-  | Build command | `git clone https://github.com/flutter/flutter.git --depth 1 -b stable _flutter && export PATH="$PATH:$(pwd)/_flutter/bin" && flutter config --enable-web && flutter pub get && flutter build web --release --dart-define=API_BASE_URL=$API_BASE_URL` |
-  | Deploy command | `npx wrangler deploy` (default — leave as-is) |
-
-  Same `API_BASE_URL` environment variable as admin's, set to
-  `https://api.belpok.xyz`. Point both `belpok.xyz` (bare/apex) and
-  `www.belpok.xyz` at this Worker as custom domains from the Cloudflare
-  dashboard.
-
-- Schema changes are **not** auto-deployed — run `supabase db push`
-  yourself after a migration lands on `main`. Nothing here runs migrations
-  against the real database unattended.
+1. Create the Railway services above (Postgres, Bucket, api, admin,
+   storefront) and set their variables. Deploy; the API's pre-deploy step
+   builds the schema.
+2. Create the first owner: `railway run --service api python -m app.cli create-owner --username admin --password admin`
+   (or from the api service's shell).
+3. Test on the raw `*.up.railway.app` URLs: sign in as admin (you'll be
+   asked for a new password), receive an item with a photo, publish it,
+   check it on the storefront, place a test order.
+4. **DNS (owner's step):** add `api`, `admin`, `belpok.xyz` and `www` as
+   custom domains on their Railway services, and update the DNS records
+   wherever belpok.xyz's DNS is managed to the targets Railway shows.
+   Then remove the custom domains from the two Cloudflare Workers
+   projects, and delete `apps/*/wrangler.jsonc` once nothing deploys
+   there any more.
+5. **Delete the Supabase project (owner's step)** once everything above
+   works -- nothing in this repo uses it any more.

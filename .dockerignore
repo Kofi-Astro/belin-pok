@@ -1,0 +1,11 @@
+# Build context for the web apps' Dockerfiles is the repo root (they need
+# packages/belpok_core as well as the app). Keep local build output,
+# caches and secrets out of it.
+**/build
+**/.dart_tool
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.env
+services/api/.venv
+**/__pycache__
+.git

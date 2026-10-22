@@ -26,11 +26,7 @@ apps/admin/build/
 apps/admin/web/flutter_service_worker.js
 **/*.g.dart.bak
 
-# --- Supabase CLI local state ---
-supabase/.branches
-supabase/.temp
-
-# --- Local reference photos (uploaded to Supabase Storage, not git) ---
+# --- Local reference photos (uploaded through the admin app, not git) ---
 /Pics/
 
 # --- Editors / OS ---
