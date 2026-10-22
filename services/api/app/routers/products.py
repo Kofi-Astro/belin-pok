@@ -362,7 +362,7 @@ async def delete_product(
 ) -> None:
     """A real delete, not just archiving -- but only actually possible for
     a product nothing has ever referenced. Every variant's stock_movements
-    and order_items rows are ON DELETE RESTRICT (see supabase/migrations),
+    and order_items rows are ON DELETE RESTRICT (see migrations/),
     so the moment a product has any sales/stock history this fails with an
     IntegrityError instead of silently destroying that history; archiving
     (PATCH status='archived') is what discontinuing an actually-sold

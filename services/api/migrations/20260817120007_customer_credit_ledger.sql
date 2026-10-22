@@ -59,12 +59,3 @@ $$;
 create trigger trg_apply_credit_ledger_entry
 after insert on public.customer_credit_ledger
 for each row execute function public.apply_credit_ledger_entry();
-
-alter table public.customer_credit_ledger enable row level security;
-
-create policy "customer_credit_ledger_select_staff" on public.customer_credit_ledger
-for select using (public.is_staff());
-
-create policy "customer_credit_ledger_write_privileged" on public.customer_credit_ledger
-for all using (public.current_staff_role() in ('owner', 'order_fulfillment'))
-with check (public.current_staff_role() in ('owner', 'order_fulfillment'));

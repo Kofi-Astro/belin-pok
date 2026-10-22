@@ -1,7 +1,4 @@
--- security_invoker makes the view respect the querying user's RLS grants
--- (Postgres 15+, which Supabase runs) instead of the view owner's.
 create view public.low_stock_variants
-with (security_invoker = true)
 as
 select
   pv.id as variant_id,

@@ -108,7 +108,7 @@ async def create_stock_movement(
 
     movement = StockMovement(**payload.model_dump(), performed_by=staff.id)
     db.add(movement)
-    # A DB trigger (see supabase/migrations) applies quantity_change to
+    # A DB trigger (see migrations/) applies quantity_change to
     # product_variants.stock_quantity as a defense-in-depth backstop; the
     # check above is what actually produces the friendly 409 for normal API
     # usage.

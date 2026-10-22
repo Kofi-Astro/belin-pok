@@ -10,31 +10,47 @@ class Settings(BaseSettings):
 
     database_url: str
 
-    supabase_url: str
-    supabase_publishable_key: str | None = None
-    supabase_secret_key: str | None = None
+    # Signs the API's own access tokens (see app/security.py). Any long
+    # random string -- e.g. `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+    # Changing it signs everyone out (their refresh tokens still work, so
+    # the apps quietly get a fresh access token on the next request).
+    jwt_secret: str
+    access_token_minutes: int = 15
+    refresh_token_days: int = 30
 
     cors_origins: str = "http://localhost:5000"
 
-    # Where Supabase should send staff after they click an invite email
-    # link. Without this, Supabase falls back to the project's Site URL,
-    # which defaults to localhost and is useless to a real invitee.
+    # Where invite and password-reset links send people. Staff links open
+    # the admin app's set-password screen; customer reset links open the
+    # storefront's.
     admin_app_url: str = "https://admin.belpok.xyz"
+    storefront_url: str = "https://belpok.xyz"
+
+    # Optional. Without a Resend API key, invite/reset emails aren't sent
+    # (see app/email.py) -- an owner can still copy an invite link from the
+    # Staff screen and share it directly.
+    resend_api_key: str | None = None
+    email_from: str = "Belin-Pok <no-reply@belpok.xyz>"
+
+    # Product photo storage: any S3-compatible bucket (a Railway Bucket in
+    # production). Unset locally/in tests, where an in-memory store stands
+    # in instead -- see app/storage.py.
+    s3_endpoint_url: str | None = None
+    s3_bucket: str | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: str | None = None
+    s3_region: str = "auto"
 
     # Raw JSON of a Firebase service account key (Firebase Console ->
     # Project Settings -> Service Accounts -> Generate new private key).
     # Optional: push notifications are a best-effort feature (see
     # app/push.py) that silently no-ops without it, same as
-    # supabase_secret_key being optional above.
+    # resend_api_key being optional above.
     firebase_service_account_json: str | None = None
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
-
-    @property
-    def supabase_jwks_url(self) -> str:
-        return f"{self.supabase_url}/auth/v1/.well-known/jwks.json"
 
 
 @lru_cache

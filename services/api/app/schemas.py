@@ -418,6 +418,79 @@ class POSSaleRead(BaseModel):
     credit_amount: float = 0
 
 
+# ---------- auth ----------
+#
+# See app/routers/auth.py. None of these follow the Base/Create/Update/Read
+# shape -- they're one-off request/response bodies for the sign-in flows.
+
+# Applies to every password a person chooses (sign-up, reset, change).
+# The bootstrap owner account created by app/cli.py is the one exception,
+# and it's flagged must_change_password so this rule catches up with it
+# on first sign-in.
+_PASSWORD = Field(min_length=8, max_length=200)
+
+
+class LoginRequest(BaseModel):
+    # A username or an email -- whichever the account has. See
+    # app/models.py's User for why both exist.
+    identifier: str = Field(min_length=1, max_length=320)
+    # No minimum here: a sign-in attempt just has to match, and rejecting a
+    # short one with a 422 would reveal the length rule to a guesser for
+    # no benefit.
+    password: str = Field(min_length=1, max_length=200)
+
+
+class TokenPair(BaseModel):
+    """What every successful sign-in-shaped call returns. The apps keep
+    both: the short-lived access_token goes on every request, and the
+    refresh_token is traded for a new pair when it expires."""
+
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    # Seconds until access_token expires, so the apps can refresh slightly
+    # early instead of waiting for a 401.
+    expires_in: int
+    # True for an account that has to pick a new password before doing
+    # anything else (the bootstrap owner) -- the admin app routes straight
+    # to its set-password screen when this is set.
+    must_change_password: bool
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=200)
+
+
+class ChangePasswordRequest(BaseModel):
+    # No "current password" field, deliberately matching the admin app's
+    # existing change-password dialog: a valid access token already proves
+    # who this is, and it's only ever minutes old.
+    new_password: str = _PASSWORD
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+
+class SetPasswordWithTokenRequest(BaseModel):
+    """Redeems an invite or password-reset link (see OneTimeToken)."""
+
+    token: str = Field(min_length=1, max_length=200)
+    new_password: str = _PASSWORD
+
+
+class SignupRequest(BaseModel):
+    """Storefront self-registration, in one step: creates the login and
+    the customer profile together (Supabase used to need a sign-up call,
+    then a separate POST /customers/register). Always retail/approved --
+    wholesale accounts are still staff-created via POST /customers."""
+
+    email: str = Field(min_length=3, max_length=320)
+    password: str = _PASSWORD
+    full_name: str = Field(min_length=1, max_length=200)
+    phone: str | None = None
+
+
 # ---------- staff ----------
 
 
@@ -425,7 +498,8 @@ class StaffRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    email: str
+    # Null only for a username-only account (the bootstrap owner).
+    email: str | None
     full_name: str
     role: StaffRole
     is_active: bool
@@ -436,6 +510,15 @@ class StaffInvite(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     full_name: str = Field(min_length=1, max_length=200)
     role: StaffRole = StaffRole.viewer
+
+
+class StaffInviteRead(StaffRead):
+    """POST /staff/invite's response: the new staff row plus the link that
+    lets them set a password. Returned to the owner as well as emailed,
+    because email is optional (see app/email.py) and in practice a link
+    sent over WhatsApp works just as well."""
+
+    invite_link: str
 
 
 class StaffUpdate(BaseModel):
@@ -451,8 +534,8 @@ class CustomerBase(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
     # Optional: a guest checkout only requires a name (see
     # app/routers/orders.py's checkout()) -- there's no account to need an
-    # email for. Always present for a registered account, whose email
-    # comes from Supabase Auth at registration.
+    # email for. Always present for a registered account, whose email is
+    # its sign-in email (see POST /auth/signup).
     email: str | None = Field(default=None, min_length=3, max_length=320)
     phone: str | None = None
     customer_type: CustomerType = CustomerType.retail
@@ -546,21 +629,6 @@ class AgedDebtorRead(BaseModel):
     credit_limit: float
     oldest_unpaid_charge_at: datetime | None
     days_outstanding: int | None
-
-
-class CustomerRegister(BaseModel):
-    """Storefront self-registration. Distinct from CustomerCreate (which
-    POST /customers, a staff-only endpoint, uses): email comes from the
-    caller's own verified Supabase Auth token rather than a body field (so
-    a customer can't register using someone else's email), and there's no
-    way to pick customer_type or status -- self-registration is always
-    customer_type='retail', status='approved'. Wholesale signup isn't part
-    of this phase; wholesale accounts are still staff-created via
-    POST /customers.
-    """
-
-    full_name: str = Field(min_length=1, max_length=200)
-    phone: str | None = None
 
 
 # ---------- addresses ----------

@@ -1,10 +1,9 @@
--- auth_user_id is nullable: Phase 1 has no public storefront, so most
--- customers (especially wholesale, onboarded by staff) won't have a
--- Supabase Auth account yet. It's here so a later phase can link one
--- without a schema change.
+-- auth_user_id is nullable: most customers (walk-ins rung up at the POS,
+-- guest checkouts, wholesale accounts onboarded by staff) never sign in.
+-- Set only for someone with a storefront login (see public.users).
 create table public.customers (
   id uuid primary key default gen_random_uuid(),
-  auth_user_id uuid unique references auth.users(id) on delete set null,
+  auth_user_id uuid unique references public.users(id) on delete set null,
   full_name text not null,
   email citext not null unique,
   phone text,

@@ -239,7 +239,7 @@ async def create_pos_sale(
 
     A credit portion requires payload.customer_id -- checked here for a
     friendly 400, and enforced regardless by a DB trigger (see
-    supabase/migrations) that also blocks the whole transaction if it
+    migrations/) that also blocks the whole transaction if it
     would push the customer's balance past their credit limit, so this
     guarantee holds even if this check is ever bypassed or wrong.
     """

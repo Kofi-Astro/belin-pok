@@ -1,8 +1,9 @@
 """Customer accounts, addresses, and the wholesale credit ledger.
 
-Three access levels in one router: self-service endpoints (/register,
-/me, /me/addresses) any signed-in customer can call for their own
-account; staff-only reads/writes for managing customer records (approving
+Three access levels in one router: self-service endpoints (/me,
+/me/addresses) any signed-in customer can call for their own account
+(signing up itself is POST /auth/signup, in app/routers/auth.py);
+staff-only reads/writes for managing customer records (approving
 wholesale sign-ups, editing credit limits); and the credit ledger, which
 is staff-only end to end since customers never see or post to it
 directly."""
@@ -35,11 +36,9 @@ from app.schemas import (
     CustomerCreditLedgerRead,
     CustomerCreditPaymentCreate,
     CustomerRead,
-    CustomerRegister,
     CustomerStatusUpdate,
     CustomerUpdate,
 )
-from app.security import get_current_auth_user
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -49,45 +48,8 @@ _write_roles = require_role(StaffRole.owner, StaffRole.order_fulfillment)
 #
 # Registered ahead of GET /{customer_id} below: FastAPI/Starlette route
 # matching is order-sensitive, and "/{customer_id}" would otherwise
-# swallow "/register" or "/me" as a (then invalid) customer_id and 422
+# swallow "/me" as a (then invalid) customer_id and 422
 # instead of ever reaching these.
-
-
-@router.post("/register", response_model=CustomerRead, status_code=status.HTTP_201_CREATED)
-async def register_customer(
-    payload: CustomerRegister,
-    auth_user: dict = Depends(get_current_auth_user),
-    db: AsyncSession = Depends(get_db),
-) -> Customer:
-    """Storefront self-registration: pairs with a Supabase Auth sign-up
-    the caller already did client-side. Always customer_type='retail',
-    status='approved' -- wholesale signup isn't part of this phase."""
-    try:
-        user_id = uuid.UUID(auth_user["sub"])
-    except (KeyError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject") from exc
-    email = auth_user.get("email")
-    if not email:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Auth token has no email claim")
-
-    customer = Customer(
-        auth_user_id=user_id,
-        full_name=payload.full_name,
-        email=email,
-        phone=payload.phone,
-        customer_type=CustomerType.retail,
-        status=CustomerStatus.approved,
-    )
-    db.add(customer)
-    try:
-        await db.commit()
-    except IntegrityError as exc:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="A customer account already exists for this user"
-        ) from exc
-    await db.refresh(customer)
-    return customer
 
 
 @router.get("/me", response_model=CustomerRead)
@@ -260,7 +222,7 @@ async def record_credit_payment(
     """A wholesale customer paying down what they owe -- the only way
     outstanding_balance moves down other than voiding the original sale.
     Stored as a negative ledger entry so the same trigger that enforces
-    the credit limit on charges (see supabase/migrations) also applies
+    the credit limit on charges (see migrations/) also applies
     the balance decrease atomically."""
     customer = await db.get(Customer, customer_id)
     if customer is None:

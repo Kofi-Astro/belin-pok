@@ -9,19 +9,19 @@ from sqlalchemy import text
 from app.db import async_session_factory
 from app.deps import get_current_customer, get_current_staff, get_optional_customer
 from app.main import app
-from app.models import Customer, CustomerStatus, CustomerType, Staff, StaffRole
-from app.security import get_current_auth_user
+from app.models import Customer, CustomerStatus, CustomerType, Staff, StaffRole, User
 
-# Tests never verify real Supabase JWTs (that needs a live Supabase project
-# or a self-hosted GoTrue instance) -- instead they override the
-# get_current_staff dependency directly, which is the standard FastAPI way
-# to unit/integration-test authenticated routes. What's still exercised for
-# real: SQLAlchemy models, Pydantic validation, role checks, and the actual
-# Postgres schema/constraints/triggers from supabase/migrations/, against
-# the database at DATABASE_URL (see tests/ci_bootstrap.sql + the CI
-# workflow for how that database is prepared).
+# Most tests don't sign in for real -- they override the get_current_staff
+# / get_current_customer dependencies directly, which is the standard
+# FastAPI way to test authenticated routes without minting tokens for
+# every request. Signing in itself (real tokens, real password hashing)
+# is covered end to end in tests/test_auth.py. What's always exercised
+# for real: SQLAlchemy models, Pydantic validation, role checks, and the
+# actual Postgres schema/constraints/triggers from migrations/, against
+# the database at DATABASE_URL (prepared by `python -m app.migrate` -- see
+# the CI workflow).
 #
-# fake_staff is a *real* row in auth.users + staff, not just an in-memory
+# fake_staff is a *real* row in users + staff, not just an in-memory
 # object -- routes write staff.id into FKs like products.created_by and
 # stock_movements.performed_by, so those inserts need a row that actually
 # exists.
@@ -33,10 +33,8 @@ async def fake_staff() -> AsyncGenerator[Staff, None]:
     email = f"test-owner-{staff_id.hex[:8]}@example.com"
 
     async with async_session_factory() as session:
-        await session.execute(
-            text("insert into auth.users (id, email) values (:id, :email)"),
-            {"id": staff_id, "email": email},
-        )
+        session.add(User(id=staff_id, email=email))
+        await session.flush()
         staff = Staff(id=staff_id, email=email, full_name="Test Owner", role=StaffRole.owner, is_active=True)
         session.add(staff)
         await session.commit()
@@ -48,12 +46,12 @@ async def fake_staff() -> AsyncGenerator[Staff, None]:
         # DELETE RESTRICT (an audit trail shouldn't silently lose who did
         # what) -- tests that log a movement or ring up a sale as this
         # staff member would otherwise leave one of those FKs blocking
-        # staff/auth.users cleanup below. pos_sale_items/pos_sale_payments
+        # staff/users cleanup below. pos_sale_items/pos_sale_payments
         # cascade from pos_sales, so deleting it is enough.
         await session.execute(text("delete from stock_movements where performed_by = :id"), {"id": staff_id})
         await session.execute(text("delete from pos_sales where staff_id = :id"), {"id": staff_id})
-        await session.execute(text("delete from staff where id = :id"), {"id": staff_id})
-        await session.execute(text("delete from auth.users where id = :id"), {"id": staff_id})
+        # Deleting the users row cascades to staff (staff.id references it).
+        await session.execute(text("delete from users where id = :id"), {"id": staff_id})
         await session.commit()
 
 
@@ -68,7 +66,7 @@ def client(fake_staff: Staff):
 
 @pytest.fixture
 async def fake_customer() -> AsyncGenerator[Customer, None]:
-    """A real `customers` row (with a matching auth.users row, same
+    """A real `customers` row (with a matching users row, same
     reasoning as fake_staff -- FKs like orders.customer_id need it to
     actually exist), used for testing the signed-in storefront paths."""
     customer_id = uuid.uuid4()
@@ -76,10 +74,8 @@ async def fake_customer() -> AsyncGenerator[Customer, None]:
     email = f"test-customer-{customer_id.hex[:8]}@example.com"
 
     async with async_session_factory() as session:
-        await session.execute(
-            text("insert into auth.users (id, email) values (:id, :email)"),
-            {"id": auth_user_id, "email": email},
-        )
+        session.add(User(id=auth_user_id, email=email))
+        await session.flush()
         customer = Customer(
             id=customer_id,
             auth_user_id=auth_user_id,
@@ -102,7 +98,7 @@ async def fake_customer() -> AsyncGenerator[Customer, None]:
         # needs an explicit delete here.
         await session.execute(text("delete from orders where customer_id = :id"), {"id": customer_id})
         await session.execute(text("delete from customers where id = :id"), {"id": customer_id})
-        await session.execute(text("delete from auth.users where id = :id"), {"id": auth_user_id})
+        await session.execute(text("delete from users where id = :id"), {"id": auth_user_id})
         await session.commit()
 
 
@@ -119,42 +115,6 @@ def customer_client(fake_customer: Customer):
     finally:
         app.dependency_overrides.pop(get_current_customer, None)
         app.dependency_overrides.pop(get_optional_customer, None)
-
-
-@pytest.fixture
-async def fake_auth_identity() -> AsyncGenerator[dict, None]:
-    """A real auth.users row with *no* matching customers row -- the state
-    a shopper is in right after Supabase Auth sign-up, before hitting
-    POST /customers/register. Yields the decoded-JWT-shaped dict
-    get_current_auth_user would normally produce."""
-    user_id = uuid.uuid4()
-    email = f"test-signup-{user_id.hex[:8]}@example.com"
-
-    async with async_session_factory() as session:
-        await session.execute(
-            text("insert into auth.users (id, email) values (:id, :email)"),
-            {"id": user_id, "email": email},
-        )
-        await session.commit()
-
-    yield {"sub": str(user_id), "email": email}
-
-    async with async_session_factory() as session:
-        await session.execute(text("delete from customers where auth_user_id = :id"), {"id": user_id})
-        await session.execute(text("delete from auth.users where id = :id"), {"id": user_id})
-        await session.commit()
-
-
-@pytest.fixture
-def signup_client(fake_auth_identity: dict):
-    """For exercising POST /customers/register itself, which depends on
-    get_current_auth_user directly (there's no customers row -- and so no
-    get_current_customer -- until that call succeeds)."""
-    app.dependency_overrides[get_current_auth_user] = lambda: fake_auth_identity
-    try:
-        yield AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
-    finally:
-        app.dependency_overrides.pop(get_current_auth_user, None)
 
 
 @pytest.fixture

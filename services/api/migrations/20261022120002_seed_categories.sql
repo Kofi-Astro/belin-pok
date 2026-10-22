@@ -1,4 +1,4 @@
--- Run automatically by `supabase db reset` after all migrations.
+-- Applied like any other migration (see app/migrate.py), idempotently.
 -- Seeds the baseline category list from the product brief.
 insert into public.categories (name, slug, description, display_order) values
   ('Caps',        'caps',        'Caps and headwear',        1),

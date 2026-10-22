@@ -21,7 +21,3 @@ create index idx_stock_notification_requests_variant_pending
 create unique index idx_stock_notification_requests_one_pending_per_customer
   on public.stock_notification_requests(customer_id, variant_id)
   where notified_at is null;
-
-alter table public.stock_notification_requests enable row level security;
--- No policies -- same reasoning as customer_device_tokens above: reached
--- only through the backend's trusted connection, never via PostgREST.

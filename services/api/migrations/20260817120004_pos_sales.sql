@@ -32,21 +32,3 @@ create table public.pos_sale_payments (
 );
 
 create index idx_pos_sale_payments_sale_id on public.pos_sale_payments(sale_id);
-
-alter table public.pos_sales enable row level security;
-
-create policy "pos_sales_select_staff" on public.pos_sales
-for select using (public.is_staff());
-
-create policy "pos_sales_write_privileged" on public.pos_sales
-for all using (public.current_staff_role() in ('owner', 'inventory_manager', 'order_fulfillment'))
-with check (public.current_staff_role() in ('owner', 'inventory_manager', 'order_fulfillment'));
-
-alter table public.pos_sale_payments enable row level security;
-
-create policy "pos_sale_payments_select_staff" on public.pos_sale_payments
-for select using (public.is_staff());
-
-create policy "pos_sale_payments_write_privileged" on public.pos_sale_payments
-for all using (public.current_staff_role() in ('owner', 'inventory_manager', 'order_fulfillment'))
-with check (public.current_staff_role() in ('owner', 'inventory_manager', 'order_fulfillment'));

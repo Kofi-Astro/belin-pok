@@ -13,10 +13,12 @@ from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
+from sqlalchemy.types import UserDefinedType
 
 from app.db import Base
 
-# These tables/types/functions/policies already exist via supabase/migrations/.
+# These tables/types/functions already exist via migrations/ (applied by
+# app/migrate.py).
 # SQLAlchemy models below map onto that schema -- they never issue DDL
 # themselves (no create_all in this app; migrations are the source of
 # truth), so every enum below is declared with create_type=False.
@@ -138,15 +140,127 @@ def _pg_enum(pg_enum: enum.EnumMeta, name: str) -> PgEnum:
     return PgEnum(pg_enum, name=name, create_type=False)
 
 
+class CIText(UserDefinedType):
+    """Postgres `citext` (case-insensitive text), for the columns the
+    migrations declare that way: usernames and emails.
+
+    Mapping these as plain `str` looks harmless but quietly breaks the
+    case-insensitivity: SQLAlchemy's asyncpg dialect casts every string
+    parameter to VARCHAR (`username = $1::VARCHAR`), and comparing citext
+    to varchar falls back to ordinary case-sensitive text comparison -- so
+    "Admin" wouldn't find "admin", and a returning guest typing their
+    email with a capital letter would look like a new customer. Declaring
+    the type makes the parameter cast `$1::CITEXT` instead, so Postgres
+    compares the way the schema intends (and can still use the unique
+    index on the column)."""
+
+    cache_ok = True
+    render_bind_cast = True
+
+    def get_col_spec(self, **kw) -> str:
+        return "CITEXT"
+
+
+class User(Base):
+    """Someone who can sign in -- just the credentials. Who they *are*
+    lives elsewhere: a staff member's Staff row shares this id, and a
+    storefront customer's Customer row points here via auth_user_id.
+    Keeping sign-in separate from those means app/deps.py's "is this a
+    staff member / a customer" checks don't change at all with how people
+    sign in. See app/routers/auth.py for issuing and revoking sessions.
+
+    username and email are both optional, but at least one is always set
+    (a CHECK constraint in the migration): the bootstrap owner signs in
+    with a username, everyone else with their email. Both are citext in
+    Postgres, so "Admin" and "admin" are the same account.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username: Mapped[str | None] = mapped_column(CIText(), unique=True)
+    email: Mapped[str | None] = mapped_column(CIText(), unique=True)
+    # Null until an invited staff member sets one via their invite link.
+    password_hash: Mapped[str | None]
+    must_change_password: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class RefreshToken(Base):
+    """One signed-in device's long-lived session. Only the token's SHA-256
+    hash is stored (see app/security.py's new_opaque_token), so reading
+    this table doesn't let anyone resume a session. revoked_at is set on
+    sign-out, on rotation (every refresh swaps in a new token, and also
+    sets rotated_at), and on password change or staff deactivation -- a
+    revoked or expired row is never accepted again."""
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    token_hash: Mapped[str] = mapped_column(unique=True)
+    expires_at: Mapped[datetime]
+    revoked_at: Mapped[datetime | None]
+    # Set only when revoked by being exchanged at /auth/refresh -- see the
+    # migration for why replaying *these* is treated as theft.
+    rotated_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class OneTimeTokenPurpose(enum.StrEnum):
+    """What a OneTimeToken link is for. Both end with the holder setting a
+    password, which is why they share a table; the purpose only changes
+    how long the link lasts and what the email says."""
+
+    invite = "invite"
+    password_reset = "password_reset"
+
+
+class OneTimeToken(Base):
+    """A single-use invite or password-reset link. Only the hash is stored;
+    used_at is set the moment it's redeemed, so the same link can't set a
+    password twice (e.g. if an old email is found later)."""
+
+    __tablename__ = "one_time_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # Plain text + a CHECK constraint in the migration, not a Postgres enum.
+    purpose: Mapped[str]
+    token_hash: Mapped[str] = mapped_column(unique=True)
+    expires_at: Mapped[datetime]
+    used_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class FailedLogin(Base):
+    """A wrong-password attempt, keyed by what was typed as the username/
+    email rather than by user id -- so guessing at a username that doesn't
+    exist gets throttled exactly the same as guessing at one that does,
+    and the throttle can't be used to find out which accounts exist. See
+    _check_not_throttled in app/routers/auth.py."""
+
+    __tablename__ = "failed_logins"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    identifier: Mapped[str] = mapped_column(CIText())
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class Staff(Base):
-    """An admin-app user -- the staff equivalent of Customer. Rows are
-    created by Supabase Auth invitation (see app/supabase_admin.py), not
+    """An admin-app user -- the staff equivalent of Customer. id is the
+    User's id. Rows are created by an owner's invitation (see
+    app/routers/staff.py), or app/cli.py for the very first owner -- never
     self-registration."""
 
     __tablename__ = "staff"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    email: Mapped[str] = mapped_column(unique=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    # Null only for a username-only account (e.g. the bootstrap owner).
+    email: Mapped[str | None] = mapped_column(CIText(), unique=True)
     full_name: Mapped[str]
     role: Mapped[StaffRole] = mapped_column(_pg_enum(StaffRole, "staff_role"), default=StaffRole.viewer)
     is_active: Mapped[bool] = mapped_column(default=True)
@@ -254,8 +368,9 @@ class ProductVariant(Base):
 
 class ProductImage(Base):
     """A photo attached to a Product, optionally scoped to one specific
-    variant (e.g. a color-specific shot). storage_path points into Supabase
-    Storage, not a URL stored directly."""
+    variant (e.g. a color-specific shot). storage_path is the object key in
+    the photo bucket (see app/storage.py), not a URL -- the apps load it
+    through GET /images/{storage_path}."""
 
     __tablename__ = "product_images"
 
@@ -287,7 +402,7 @@ class StockMovement(Base):
     reference_type: Mapped[str | None]
     reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     # Nullable: a storefront checkout's 'sale' movements have no staff
-    # member behind them (see supabase/migrations). reference_type/
+    # member behind them (see migrations/). reference_type/
     # reference_id carry the traceability in that case instead.
     performed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -296,7 +411,7 @@ class StockMovement(Base):
 class POSSale(Base):
     """An in-person checkout transaction: what groups the several
     stock_movements one register sale produces (one customer, several
-    different items, one payment) -- see supabase/migrations for why the
+    different items, one payment) -- see migrations/ for why the
     line items themselves live in stock_movements rather than a second
     table here."""
 
@@ -328,12 +443,12 @@ class POSSalePayment(Base):
 
 class POSSaleItem(Base):
     """Snapshot of what a POS sale line was actually billed at -- see
-    supabase/migrations/20260817120010_pos_sale_items.sql for why this
+    migrations/20260817120010_pos_sale_items.sql for why this
     exists as its own table rather than being inferred from
     stock_movements the way it used to be.
 
     variant_id is nullable: a "quick log" line (see
-    supabase/migrations/20260820120001_pos_sale_items_quick_log.sql)
+    migrations/20260820120001_pos_sale_items_quick_log.sql)
     records category_id + a staff-entered unit_price for a sale rung up by
     product type when there's no time to hunt down the exact SKU by hand.
     No stock_movement exists for it until a variant is attached via the
@@ -359,8 +474,8 @@ class POSSaleItem(Base):
 
 class Customer(Base):
     """A storefront/POS customer -- the customer equivalent of Staff.
-    auth_user_id links to a Supabase Auth user for customers who created an
-    online account; it's nullable because POS can also record a walk-in
+    auth_user_id links to the User for customers who created an online
+    account; it's nullable because POS can also record a walk-in
     customer with no login at all."""
 
     __tablename__ = "customers"
@@ -371,8 +486,8 @@ class Customer(Base):
     # Nullable: a guest checkout only requires a name (see
     # app/routers/orders.py's checkout()) -- an email is never required to
     # place an order without an account. Always non-null for a registered
-    # account, whose email comes from Supabase Auth at registration.
-    email: Mapped[str | None] = mapped_column(unique=True)
+    # account, whose email is its sign-in email (see POST /auth/signup).
+    email: Mapped[str | None] = mapped_column(CIText(), unique=True)
     phone: Mapped[str | None]
     customer_type: Mapped[CustomerType] = mapped_column(
         _pg_enum(CustomerType, "customer_type"), default=CustomerType.retail
@@ -545,7 +660,7 @@ class AuditLog(Base):
 
 class CustomerCreditLedger(Base):
     """Append-only history of every change to a wholesale customer's
-    outstanding_balance -- see supabase/migrations/
+    outstanding_balance -- see migrations/
     20260817120007_customer_credit_ledger.sql. Never updated or deleted;
     corrections are offsetting rows, same as stock_movements."""
 

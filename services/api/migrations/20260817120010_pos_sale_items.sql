@@ -31,12 +31,3 @@ create table public.pos_sale_items (
 
 create index idx_pos_sale_items_sale_id on public.pos_sale_items(sale_id);
 create index idx_pos_sale_items_variant_id on public.pos_sale_items(variant_id);
-
-alter table public.pos_sale_items enable row level security;
-
-create policy "pos_sale_items_select_staff" on public.pos_sale_items
-for select using (public.is_staff());
-
-create policy "pos_sale_items_write_privileged" on public.pos_sale_items
-for all using (public.current_staff_role() in ('owner', 'inventory_manager', 'order_fulfillment'))
-with check (public.current_staff_role() in ('owner', 'inventory_manager', 'order_fulfillment'));

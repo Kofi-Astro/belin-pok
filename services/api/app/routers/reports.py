@@ -59,7 +59,7 @@ async def daily_sales(
 ) -> list[DailySalesRead]:
     """One row per day with at least one sale, newest first, combining POS
     sales and storefront orders -- both snapshot unit_price at the moment
-    of sale (see supabase/migrations/20260817120010_pos_sale_items.sql for
+    of sale (see migrations/20260817120010_pos_sale_items.sql for
     why POS sales didn't used to), so this is exact even if prices have
     since changed.
     """

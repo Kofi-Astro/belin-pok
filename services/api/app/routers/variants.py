@@ -27,7 +27,7 @@ router = APIRouter(tags=["variants"])
 _write_roles = require_role(StaffRole.owner, StaffRole.inventory_manager)
 
 # stock_quantity is intentionally not settable here -- it's a cache kept in
-# sync by a DB trigger on stock_movements (see supabase/migrations). Use
+# sync by a DB trigger on stock_movements (see migrations/). Use
 # POST /stock-movements to change it, so every change is audited.
 
 

@@ -18,7 +18,7 @@ _write_roles = require_role(StaffRole.owner, StaffRole.inventory_manager)
 
 # The actual file bytes go straight from the admin app to Supabase Storage
 # (the `product-images` bucket, using the signed-in staff member's own
-# session -- see supabase/migrations for the storage.objects RLS policies
+# session -- see migrations/ for the storage.objects RLS policies
 # that restrict that to staff). This API only ever handles the resulting
 # `product_images` row, given the storage path the upload landed at.
 

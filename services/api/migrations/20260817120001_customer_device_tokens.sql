@@ -18,11 +18,3 @@ create table public.customer_device_tokens (
 );
 
 create index idx_customer_device_tokens_customer_id on public.customer_device_tokens(customer_id);
-
-alter table public.customer_device_tokens enable row level security;
--- No policies (default-deny, per the header note in
--- 20260816120014_rls_policies.sql): this table is only ever touched
--- through the storefront's own device-token endpoints, which the
--- backend's trusted service connection reaches directly, bypassing RLS --
--- it's never exposed via PostgREST, so there's no anon/authenticated
--- caller this needs a policy for.
