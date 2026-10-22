@@ -67,7 +67,7 @@ class _CartLineTile extends StatelessWidget {
             height: 64,
             child: image != null
                 ? Image.network(
-                    image.publicUrl(AppConfig.supabaseUrl),
+                    image.url(AppConfig.apiBaseUrl),
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) =>
                         Container(color: StorefrontColors.canvas),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// A little visual variety for the category rail -- keyed by the slugs
-/// seeded in supabase/seed.sql, with a sensible fallback for anything
+/// seeded in services/api/migrations/*_seed_categories.sql, with a sensible fallback for anything
 /// else (a new category a staff member adds later still renders fine,
 /// just with the generic icon).
 IconData categoryIcon(String slug) {

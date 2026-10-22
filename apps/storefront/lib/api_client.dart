@@ -1,26 +1,20 @@
 import 'package:belpok_core/belpok_core.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
 import 'models.dart';
+import 'session.dart';
 
 export 'package:belpok_core/belpok_core.dart' show ApiException;
 
 /// Thin wrapper around the FastAPI backend's public/customer-facing
-/// routes. Every call attaches the current Supabase session's access
-/// token, if there is one -- browsing and guest checkout work fine with
+/// routes. Every call attaches the shared session's access token (see
+/// session.dart), if there is one -- browsing and guest checkout work fine with
 /// none; account/order-history routes need a real one (see
 /// services/api/app/deps.py's get_current_customer/get_optional_customer).
 class StorefrontApiClient {
   final ApiHttp _http = ApiHttp(
     baseUrl: AppConfig.apiBaseUrl,
-    headers: () {
-      final token = Supabase.instance.client.auth.currentSession?.accessToken;
-      return {
-        'Content-Type': 'application/json',
-        if (token != null) 'Authorization': 'Bearer $token',
-      };
-    },
+    session: authSession,
   );
 
   // ---------- public browsing ----------
@@ -56,16 +50,8 @@ class StorefrontApiClient {
 
   // ---------- account ----------
 
-  Future<Customer> registerCustomer({
-    required String fullName,
-    String? phone,
-  }) async => Customer.fromJson(
-    await _http.post('/customers/register', {
-          'full_name': fullName,
-          if (phone != null && phone.isNotEmpty) 'phone': phone,
-        })
-        as Map<String, dynamic>,
-  );
+  // Signing up is AuthController.signUp (POST /auth/signup), which
+  // creates the customer profile along with the login.
 
   Future<Customer> getMyProfile() async => Customer.fromJson(
     await _http.get('/customers/me') as Map<String, dynamic>,

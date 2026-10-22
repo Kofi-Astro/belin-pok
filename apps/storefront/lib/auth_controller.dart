@@ -1,31 +1,33 @@
+import 'package:belpok_core/belpok_core.dart' show AuthSession;
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'api_client.dart';
 import 'models.dart';
 
-enum AuthStatus { unknown, signedOut, needsRegistration, signedIn }
+enum AuthStatus { unknown, signedOut, signedIn }
 
-/// App-wide auth/session state for retail customers. Unlike the admin app,
+/// App-wide auth state for retail customers. Unlike the admin app,
 /// signedOut is a normal, fully-usable state here -- browsing and guest
-/// checkout don't need an account at all. needsRegistration is the state
-/// right after Supabase Auth sign-up and before POST /customers/register
-/// has been called -- a valid Supabase session with no `customers` row yet.
+/// checkout don't need an account at all.
+///
+/// Signing up creates the login and the customer profile in one call (see
+/// POST /auth/signup), so there's no in-between "signed in but not
+/// registered" state any more -- with Supabase, sign-up and creating the
+/// customer record were two separate steps.
 class AuthController extends ChangeNotifier {
   final StorefrontApiClient api;
+  final AuthSession session;
   AuthStatus status = AuthStatus.unknown;
   Customer? profile;
   String? error;
 
-  AuthController(this.api) {
-    Supabase.instance.client.auth.onAuthStateChange.listen(
-      (data) => _onAuthChange(data.session),
-    );
-    _onAuthChange(Supabase.instance.client.auth.currentSession);
+  AuthController(this.api, this.session) {
+    session.addListener(_onSessionChange);
+    session.restore();
   }
 
-  Future<void> _onAuthChange(Session? session) async {
-    if (session == null) {
+  Future<void> _onSessionChange() async {
+    if (!session.isSignedIn) {
       status = AuthStatus.signedOut;
       profile = null;
       notifyListeners();
@@ -36,68 +38,59 @@ class AuthController extends ChangeNotifier {
       status = AuthStatus.signedIn;
     } on ApiException catch (e) {
       profile = null;
-      status = e.statusCode == 403
-          ? AuthStatus.needsRegistration
-          : AuthStatus.signedOut;
+      status = AuthStatus.signedOut;
+      if (e.statusCode == 403) {
+        // A staff login has no customer profile -- say so, rather than
+        // leaving them "signed in" to an account page that can't load.
+        error = 'That account is for the admin app, not the shop.';
+        await session.signOut();
+      }
     }
     notifyListeners();
   }
 
-  /// Returns true if sign-up left the caller with an active session
-  /// (this Supabase project has email confirmation disabled), false if a
-  /// confirmation email was sent instead and there's no session yet --
-  /// the caller needs to show that explicitly rather than silently
-  /// bouncing back to a blank sign-in form (auth.status stays signedOut
-  /// either way until a session actually exists, so the /account route's
-  /// redirect would otherwise send them straight back to /login with no
-  /// explanation).
-  Future<bool> signUp(String email, String password) async {
-    error = null;
-    notifyListeners();
-    try {
-      final response = await Supabase.instance.client.auth.signUp(
-        email: email,
-        password: password,
-      );
-      return response.session != null;
-    } on AuthException catch (e) {
-      error = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  Future<void> signIn(String email, String password) async {
-    error = null;
-    notifyListeners();
-    try {
-      await Supabase.instance.client.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
-    } on AuthException catch (e) {
-      error = e.message;
-      notifyListeners();
-    }
-  }
-
-  /// Completes registration for a Supabase Auth user who doesn't have a
-  /// `customers` row yet (see needsRegistration above).
-  Future<void> completeRegistration({
+  /// Creates an account and signs straight in. Returns whether it worked;
+  /// on failure the reason is in [error].
+  Future<bool> signUp({
+    required String email,
+    required String password,
     required String fullName,
     String? phone,
-  }) async {
+  }) => _attempt(
+    () => session.signUp(
+      email: email,
+      password: password,
+      fullName: fullName,
+      phone: phone,
+    ),
+  );
+
+  Future<bool> signIn(String email, String password) =>
+      _attempt(() => session.signIn(email, password));
+
+  /// Emails a reset link (to the storefront's /reset-password screen).
+  /// Succeeds the same way whether or not the email has an account.
+  Future<bool> requestPasswordReset(String email) =>
+      _attempt(() => session.requestPasswordReset(email));
+
+  /// Redeems a reset link's token, which also signs the customer in.
+  Future<bool> resetPassword(String token, String newPassword) =>
+      _attempt(() => session.setPasswordWithToken(token, newPassword));
+
+  Future<void> signOut() => session.signOut();
+
+  Future<bool> _attempt(Future<void> Function() action) async {
     error = null;
+    notifyListeners();
     try {
-      profile = await api.registerCustomer(fullName: fullName, phone: phone);
-      status = AuthStatus.signedIn;
+      await action();
+      return true;
     } on ApiException catch (e) {
       error = e.message;
+    } catch (_) {
+      error = "Couldn't reach the shop -- check your connection";
     }
     notifyListeners();
-  }
-
-  Future<void> signOut() async {
-    await Supabase.instance.client.auth.signOut();
+    return false;
   }
 }

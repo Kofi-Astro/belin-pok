@@ -52,7 +52,7 @@ class _ProductCardState extends State<ProductCard> {
                   aspectRatio: 1,
                   child: image != null
                       ? Image.network(
-                          image.publicUrl(AppConfig.supabaseUrl),
+                          image.url(AppConfig.apiBaseUrl),
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) =>
                               const _PlaceholderImage(),

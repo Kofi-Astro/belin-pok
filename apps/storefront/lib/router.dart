@@ -8,6 +8,7 @@ import 'screens/checkout_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/order_confirmation_screen.dart';
 import 'screens/product_detail_screen.dart';
+import 'screens/reset_password_screen.dart';
 import 'widgets/app_shell.dart';
 
 GoRouter buildRouter() {
@@ -73,6 +74,12 @@ GoRouter buildRouter() {
             OrderConfirmationScreen(order: state.extra as Order),
       ),
       GoRoute(path: '/login', builder: (context, state) => const AuthScreen()),
+      // Opened from a password-reset email (see ResetPasswordScreen).
+      GoRoute(
+        path: '/reset-password',
+        builder: (context, state) =>
+            ResetPasswordScreen(token: state.uri.queryParameters['token']),
+      ),
     ],
   );
 }

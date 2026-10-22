@@ -24,7 +24,6 @@ class AccountScreen extends StatelessWidget {
     return switch (auth.status) {
       AuthStatus.unknown => const Center(child: CircularProgressIndicator()),
       AuthStatus.signedOut => const _SignedOutPrompt(),
-      AuthStatus.needsRegistration => const _CompleteRegistrationForm(),
       AuthStatus.signedIn => const _AccountDetails(),
     };
   }
@@ -63,108 +62,6 @@ class _SignedOutPrompt extends StatelessWidget {
               child: const Text('Sign in'),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CompleteRegistrationForm extends StatefulWidget {
-  const _CompleteRegistrationForm();
-
-  @override
-  State<_CompleteRegistrationForm> createState() =>
-      _CompleteRegistrationFormState();
-}
-
-class _CompleteRegistrationFormState extends State<_CompleteRegistrationForm> {
-  final _formKey = GlobalKey<FormState>();
-  final _fullNameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  bool _submitting = false;
-
-  @override
-  void dispose() {
-    _fullNameController.dispose();
-    _phoneController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit(AuthController auth) async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    setState(() => _submitting = true);
-    await auth.completeRegistration(
-      fullName: _fullNameController.text.trim(),
-      phone: _phoneController.text.trim().isEmpty
-          ? null
-          : _phoneController.text.trim(),
-    );
-    if (mounted) setState(() => _submitting = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AuthController>();
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Finish setting up your account',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'One more step -- tell us your name so we know who\'s ordering.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: StorefrontColors.inkMuted),
-                ),
-                const SizedBox(height: 24),
-                TextFormField(
-                  controller: _fullNameController,
-                  decoration: const InputDecoration(labelText: 'Full name'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _phoneController,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone (optional)',
-                  ),
-                  keyboardType: TextInputType.phone,
-                ),
-                if (auth.error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    auth.error!,
-                    style: const TextStyle(color: StorefrontColors.danger),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _submitting ? null : () => _submit(auth),
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Continue'),
-                ),
-              ],
-            ),
-          ),
         ),
       ),
     );

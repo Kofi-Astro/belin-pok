@@ -134,7 +134,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 borderRadius: BorderRadius.circular(16),
                 child: product.primaryImage != null
                     ? Image.network(
-                        product.primaryImage!.publicUrl(AppConfig.supabaseUrl),
+                        product.primaryImage!.url(AppConfig.apiBaseUrl),
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) => Container(
                           color: StorefrontColors.canvas,
