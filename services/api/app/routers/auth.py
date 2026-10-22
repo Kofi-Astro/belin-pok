@@ -137,7 +137,11 @@ async def create_one_time_link(db: AsyncSession, user: User, purpose: OneTimeTok
     is_staff = await db.get(Staff, user.id) is not None
     base = settings.admin_app_url if is_staff else settings.storefront_url
     path = "set-password" if is_staff else "reset-password"
-    return f"{base.rstrip('/')}/{path}?token={token}"
+    # "/#/" because both Flutter web apps use the default hash URL
+    # strategy: everything after the # is the in-app route, so the link
+    # works on any static host without a serve-index.html-for-every-path
+    # rewrite rule.
+    return f"{base.rstrip('/')}/#/{path}?token={token}"
 
 
 async def _ensure_may_sign_in(db: AsyncSession, user: User) -> None:
