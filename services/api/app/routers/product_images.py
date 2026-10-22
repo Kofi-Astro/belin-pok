@@ -1,5 +1,5 @@
 """Product photo management (owner/inventory_manager only) -- see the note
-below on the actual upload flow, which happens outside this API."""
+below on how the photo files themselves get uploaded."""
 
 import uuid
 
@@ -16,11 +16,10 @@ router = APIRouter(tags=["product-images"])
 
 _write_roles = require_role(StaffRole.owner, StaffRole.inventory_manager)
 
-# The actual file bytes go straight from the admin app to Supabase Storage
-# (the `product-images` bucket, using the signed-in staff member's own
-# session -- see migrations/ for the storage.objects RLS policies
-# that restrict that to staff). This API only ever handles the resulting
-# `product_images` row, given the storage path the upload landed at.
+# The file bytes themselves are uploaded separately, via POST
+# /uploads/product-photo (app/routers/uploads.py), which returns a storage
+# path. This router only manages the `product_images` rows that attach
+# such a path to a product -- the gallery, cover photo, and deletion.
 
 
 @router.post(

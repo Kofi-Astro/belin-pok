@@ -8,4 +8,8 @@ pyjwt[crypto]>=2.9
 # Password hashing for the API's own sign-in (app/security.py).
 argon2-cffi>=23.1
 httpx>=0.27
+# Product photo bucket (app/storage.py) -- Railway Buckets are S3-compatible.
+boto3>=1.35
+# Multipart photo uploads (POST /uploads/product-photo).
+python-multipart>=0.0.12
 firebase-admin>=6.5

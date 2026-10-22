@@ -23,6 +23,7 @@ from app.routers import (
     reports,
     staff,
     stock_movements,
+    uploads,
     variants,
 )
 
@@ -58,3 +59,4 @@ app.include_router(reports.router)
 app.include_router(audit_log.router)
 app.include_router(pos_sales.router)
 app.include_router(inventory.router)
+app.include_router(uploads.router)
