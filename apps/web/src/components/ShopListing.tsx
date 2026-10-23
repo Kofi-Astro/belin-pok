@@ -6,8 +6,10 @@ import type { Category, ProductSort } from "@/lib/types";
 
 import { ProductGrid } from "./ProductCard";
 
+// Products per page: 24 divides evenly into rows of 2, 3 and 4.
 const PAGE_SIZE = 24;
 
+// Sort options offered, in the API's own terms (see GET /public/products).
 const SORTS: { value: ProductSort; label: string }[] = [
   { value: "newest", label: "Newest" },
   { value: "price_asc", label: "Price: low to high" },
@@ -15,8 +17,15 @@ const SORTS: { value: ProductSort; label: string }[] = [
   { value: "name", label: "Name A–Z" },
 ];
 
+// The ?query values as they arrive from the URL -- all strings, all
+// optional, and possibly nonsense (anyone can edit a URL). parse() below
+// turns them into clean values.
 export type ShopParams = { q?: string; sort?: string; min?: string; max?: string; in_stock?: string; page?: string };
 
+// Accepts only what makes sense and quietly drops the rest: a negative or
+// non-numeric price is ignored, an unknown sort falls back to newest, and
+// the page number is at least 1. A bad link shows the plain listing
+// rather than an error.
 function parse(params: ShopParams) {
   const num = (v?: string) => (v && !Number.isNaN(Number(v)) && Number(v) >= 0 ? Number(v) : undefined);
   return {
@@ -48,6 +57,7 @@ export async function ShopListing({
   category?: Category;
   categories: Category[];
 }) {
+  // f: the cleaned-up filters (see parse).
   const f = parse(params);
   const { products, total } = await getProducts({
     categoryId: category?.id,
@@ -59,8 +69,13 @@ export async function ShopListing({
     limit: PAGE_SIZE,
     offset: (f.page - 1) * PAGE_SIZE,
   });
+  // total is the number of matching products across all pages (the API
+  // sends it alongside the page).
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // Builds a link to this listing with the current filters plus some
+  // changes (e.g. the next page). Defaults are left out of the URL, so
+  // links stay short and the plain listing is just basePath.
   const href = (overrides: Partial<Record<keyof ShopParams, string | undefined>>) => {
     const qs = new URLSearchParams();
     const merged = {
@@ -76,8 +91,13 @@ export async function ShopListing({
     return s ? `${basePath}?${s}` : basePath;
   };
 
+  // The filter form, built once and placed twice below: in a sidebar on
+  // desktop, and folded into a <details> toggle on smaller screens.
+  // It's a plain GET form -- submitting reloads the page with the values
+  // in the query string.
   const filters = (
     <form action={basePath} className="space-y-8">
+      {/* Keep the search words when the filters are applied. */}
       {f.q && <input type="hidden" name="q" value={f.q} />}
       <div>
         <h3 className="label">Sort by</h3>
@@ -105,6 +125,7 @@ export async function ShopListing({
         <button type="submit" className="btn-dark flex-1">
           Apply
         </button>
+        {/* Reset clears the filters but keeps the search. */}
         <Link href={f.q ? `${basePath}?q=${encodeURIComponent(f.q)}` : basePath} className="btn-outline">
           Reset
         </Link>
@@ -134,6 +155,7 @@ export async function ShopListing({
 
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-line pb-8">
         <div>
+          {/* A search replaces the category title and description. */}
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{f.q ? `Results for “${f.q}”` : title}</h1>
           {description && !f.q && <p className="mt-2 max-w-2xl text-muted">{description}</p>}
         </div>
@@ -174,6 +196,8 @@ export async function ShopListing({
 
         <div>
           {products.length > 0 ? (
+            // The first row's photos load immediately; the rest lazily as they
+            // scroll into view.
             <ProductGrid products={products} priorityCount={4} />
           ) : (
             <div className="rounded-3xl border border-dashed border-line bg-white px-6 py-20 text-center">
@@ -185,6 +209,7 @@ export async function ShopListing({
             </div>
           )}
 
+          {/* Previous / Page x of y / Next -- plain links, keeping the filters. */}
           {pages > 1 && (
             <nav className="mt-14 flex items-center justify-center gap-2" aria-label="Pages">
               {f.page > 1 && (

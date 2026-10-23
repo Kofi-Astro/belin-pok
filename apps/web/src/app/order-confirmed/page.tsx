@@ -1,3 +1,9 @@
+// /order-confirmed -- the thank-you page after checkout. The checkout page
+// saves the order the API returned into sessionStorage (under
+// LAST_ORDER_KEY) and then navigates here, so this page needs no API call
+// and works the same for guests, who have no account to look orders up
+// in. sessionStorage is per-tab and cleared when the tab closes, so the
+// receipt doesn't linger on a shared phone.
 "use client";
 
 import { CheckCircle2 } from "lucide-react";
@@ -10,17 +16,26 @@ import { formatPrice, imageUrl } from "@/lib/format";
 import type { Order } from "@/lib/types";
 
 export default function OrderConfirmedPage() {
+  // Three states: undefined = not read yet (first render, before the
+  // effect runs in the browser); null = nothing saved (e.g. the page was
+  // opened directly, or in a new tab); otherwise the order to show.
   const [order, setOrder] = useState<Order | null | undefined>(undefined);
 
+  // Read in an effect, not during render: sessionStorage only exists in
+  // the browser, and reading it during the server render would fail.
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem(LAST_ORDER_KEY);
       setOrder(saved ? (JSON.parse(saved) as Order) : null);
     } catch {
+      // Storage blocked (some private-browsing modes) or the saved value
+      // is corrupt: treat it as "no recent order" rather than crashing.
       setOrder(null);
     }
   }, []);
 
+  // Hold the space while reading storage, so the footer doesn't jump up
+  // and back down on the first paint.
   if (order === undefined) return <div className="min-h-[50vh]" />;
 
   if (order === null) {
@@ -46,6 +61,8 @@ export default function OrderConfirmedPage() {
         </p>
       </div>
 
+      {/* What was ordered, at the prices the API actually charged (the
+          online prices -- see app/pricing.py in the API). */}
       <div className="mt-12 rounded-3xl border border-line bg-white p-6 sm:p-8">
         <ul className="divide-y divide-line">
           {order.items.map((item) => (
@@ -69,6 +86,8 @@ export default function OrderConfirmedPage() {
         </div>
       </div>
 
+      {/* Nudge guests towards an account, where every order and its status
+          can be seen later. */}
       <div className="mt-10 flex flex-wrap justify-center gap-3">
         <Link href="/shop" className="btn-dark">
           Keep shopping

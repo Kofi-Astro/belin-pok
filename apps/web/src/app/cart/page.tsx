@@ -1,3 +1,8 @@
+// /cart -- the full-page view of the cart (the header's drawer is the
+// quick view of the same thing). A client component because the cart
+// lives in the shopper's browser (localStorage, see lib/cart.tsx), not on
+// the server: nothing is reserved or priced for real until checkout,
+// where the API re-prices every line and checks stock.
 "use client";
 
 import { ShoppingBag } from "lucide-react";
@@ -8,6 +13,7 @@ import { useCart } from "@/lib/cart";
 import { formatPrice } from "@/lib/format";
 
 export default function CartPage() {
+  // lines: one per product size; count: total units across them.
   const { lines, subtotal, count } = useCart();
 
   return (
@@ -15,6 +21,7 @@ export default function CartPage() {
       <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">Your cart</h1>
 
       {lines.length === 0 ? (
+        // Empty cart: a single clear way back to the products.
         <div className="mt-10 rounded-3xl border border-dashed border-line bg-white px-6 py-20 text-center">
           <ShoppingBag className="mx-auto h-12 w-12 text-brand-100" />
           <p className="mt-4 text-lg font-bold">Your cart is empty</p>
@@ -23,6 +30,8 @@ export default function CartPage() {
           </Link>
         </div>
       ) : (
+        // Lines on the left, summary on the right (stacked on phones). Each
+        // row lets the shopper change the quantity or remove the line.
         <div className="mt-10 grid gap-10 lg:grid-cols-[1fr_22rem]">
           <ul className="divide-y divide-line rounded-3xl border border-line bg-white px-6">
             {lines.map((line) => (
@@ -36,6 +45,8 @@ export default function CartPage() {
                 <dt className="text-muted">Items ({count})</dt>
                 <dd className="font-semibold">{formatPrice(subtotal)}</dd>
               </div>
+              {/* Delivery isn't priced online: the shop calls to arrange it
+                  (and payment) after the order comes in. */}
               <div className="flex justify-between">
                 <dt className="text-muted">Delivery</dt>
                 <dd className="text-right font-semibold">Arranged after ordering</dd>

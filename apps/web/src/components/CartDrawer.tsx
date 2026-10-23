@@ -17,6 +17,7 @@ export function CartDrawer() {
   const { lines, subtotal, count, drawerOpen, setDrawerOpen } = useCart();
   const pathname = usePathname();
 
+  // Close it whenever the page changes (e.g. after tapping Checkout).
   useEffect(() => setDrawerOpen(false), [pathname, setDrawerOpen]);
 
   // Esc closes it, like any dialog.
@@ -27,10 +28,12 @@ export function CartDrawer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [drawerOpen, setDrawerOpen]);
 
+  // Rendered in the layout on every page, but only drawn when open.
   if (!drawerOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Your cart">
+      {/* Dimmed backdrop; tapping it closes the drawer. */}
       <div className="absolute inset-0 bg-ink/40" onClick={() => setDrawerOpen(false)} />
       <aside className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-line px-6 py-5">
@@ -57,6 +60,7 @@ export function CartDrawer() {
           </div>
         ) : (
           <>
+            {/* The lines scroll; the subtotal and Checkout stay pinned below. */}
             <ul className="flex-1 divide-y divide-line overflow-y-auto px-6">
               {lines.map((line) => (
                 <CartLineRow key={line.variantId} line={line} compact />

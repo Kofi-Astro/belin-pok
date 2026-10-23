@@ -1,3 +1,8 @@
+// /checkout -- turns the cart into an order. Client-side because the cart
+// (lib/cart.tsx) and the session (lib/session.ts) both live in the
+// browser. The API re-prices every line itself (online prices) and checks
+// stock as it creates the order, so nothing here is trusted for money or
+// availability -- the totals shown are a preview.
 "use client";
 
 import { Lock, Store, Truck } from "lucide-react";
@@ -12,6 +17,7 @@ import { formatPrice, imageUrl } from "@/lib/format";
 import { ApiError, session } from "@/lib/session";
 import type { Address, CheckoutRequest, Order } from "@/lib/types";
 
+// A blank delivery address; Ghana as the default country.
 const emptyAddress = { label: "Home", line1: "", line2: "", city: "", state: "", postal_code: "", country: "Ghana" };
 
 /** Checkout: who's ordering (signed in, or name + phone as a guest), pickup
@@ -23,6 +29,7 @@ export default function CheckoutPage() {
   const { lines, subtotal, clear } = useCart();
   const { status, customer } = useAuth();
 
+  // Form state. addressId is a saved address's id, or "new" to type one in.
   const [method, setMethod] = useState<"pickup" | "delivery">("pickup");
   const [guest, setGuest] = useState({ name: "", phone: "", email: "" });
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
@@ -45,6 +52,8 @@ export default function CheckoutPage() {
       .catch(() => {});
   }, [status]);
 
+  // Nothing to check out -- e.g. the page was reloaded after ordering
+  // (the cart is cleared once an order goes through).
   if (lines.length === 0) {
     return (
       <div className="container-page py-20 text-center">
@@ -59,16 +68,21 @@ export default function CheckoutPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    // Only variant ids and quantities are sent; prices are the API's job.
     const body: CheckoutRequest = {
       items: lines.map((l) => ({ variant_id: l.variantId, quantity: l.quantity })),
       fulfillment_method: method,
       notes: notes.trim() || undefined,
     };
+    // Guests identify themselves with a name and phone (the shop calls to
+    // confirm); a signed-in customer's details come from their account.
     if (status !== "signedIn") {
       body.guest_full_name = guest.name.trim();
       body.guest_phone = guest.phone.trim();
       body.guest_email = guest.email.trim() || undefined;
     }
+    // Delivery needs an address: a saved one by id, or the new one typed in
+    // (blank optional fields go up as null).
     if (method === "delivery") {
       if (addressId !== "new") body.address_id = addressId;
       else
@@ -83,10 +97,15 @@ export default function CheckoutPage() {
     setSubmitting(true);
     try {
       const order = await session.request<Order>("/orders/checkout", { method: "POST", body: JSON.stringify(body) });
+      // Hand the order to the thank-you page, which reads it from here, then
+      // empty the cart -- the order now holds the items.
       sessionStorage.setItem(LAST_ORDER_KEY, JSON.stringify(order));
       clear();
       router.push("/order-confirmed");
     } catch (err) {
+      // A 409 about stock means someone else bought the last ones while this
+      // cart was open -- say how to fix it. Other API errors are shown as
+      // the API words them; no answer at all means a connection problem.
       setError(
         err instanceof ApiError
           ? err.status === 409 && err.message.includes("stock")
@@ -98,6 +117,7 @@ export default function CheckoutPage() {
     }
   };
 
+  // One change handler per address field: setAddr("city") updates city.
   const setAddr = (k: keyof typeof emptyAddress) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setAddress({ ...address, [k]: e.target.value });
 
@@ -167,6 +187,9 @@ export default function CheckoutPage() {
                   ["delivery", Truck, "Delivery", "We'll arrange it with you"],
                 ] as const
               ).map(([value, Icon, title, text]) => (
+                // Each option is a big tappable card; the real radio input inside is
+                // visually hidden (sr-only) but still works with a keyboard and
+                // screen readers.
                 <label
                   key={value}
                   className={`flex cursor-pointer items-start gap-3 rounded-2xl border-2 p-4 transition ${method === value ? "border-brand-700 bg-brand-50" : "border-line hover:border-ink/30"}`}
@@ -183,6 +206,8 @@ export default function CheckoutPage() {
 
             {method === "delivery" && (
               <div className="mt-6 space-y-4">
+                {/* Signed-in customers with saved addresses pick one (the default is
+                   pre-selected), or choose "A new address…" to type one. */}
                 {savedAddresses.length > 0 && (
                   <div>
                     <label className="label" htmlFor="saved">
@@ -239,6 +264,7 @@ export default function CheckoutPage() {
           </section>
         </div>
 
+        {/* Order summary; stays in view while scrolling the form on desktop. */}
         <aside className="h-fit space-y-5 rounded-3xl border border-line bg-white p-6 lg:sticky lg:top-28">
           <h2 className="text-lg font-extrabold">Your order</h2>
           <ul className="space-y-4">
@@ -260,6 +286,7 @@ export default function CheckoutPage() {
             <span className="font-bold">Total</span>
             <span className="font-extrabold">{formatPrice(subtotal)}</span>
           </div>
+          {/* Said plainly before the button, so nobody expects a payment step. */}
           <p className="rounded-xl bg-brand-50 p-4 text-xs leading-relaxed text-brand-900">
             No payment is taken online. Once you place your order we&apos;ll contact you to confirm it and arrange payment
             {method === "delivery" ? " and delivery" : ""}.

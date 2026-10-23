@@ -1,3 +1,6 @@
+// /forgot-password -- asks for an email and has the API send a one-time
+// reset link to it (POST /auth/forgot-password). The link opens
+// /reset-password?token=..., where the new password is chosen.
 "use client";
 
 import Link from "next/link";
@@ -8,8 +11,10 @@ import { ApiError, session } from "@/lib/session";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
+  // Once sent, the form is swapped for a "check your email" message.
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // busy: request in flight -- disables the button against double taps.
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
@@ -20,6 +25,8 @@ export default function ForgotPasswordPage() {
       await session.requestPasswordReset(email.trim());
       setSent(true);
     } catch (err) {
+      // An ApiError carries the API's own message (e.g. too many attempts);
+      // anything else means the request never got an answer.
       setError(err instanceof ApiError ? err.message : "Couldn't reach the shop — check your connection.");
     } finally {
       setBusy(false);

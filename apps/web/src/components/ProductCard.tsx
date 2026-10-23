@@ -4,16 +4,21 @@ import Link from "next/link";
 import { formatPrice, imageUrl, priceRange, totalStock } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
+// Products added in the last three weeks get a "New" badge.
 const NEW_FOR_DAYS = 21;
 
 /** One product in a grid: photo (a second photo on hover, when there is
  * one), name, price -- or a "from" price when sizes are priced
  * differently -- and a badge for new or sold-out items. */
 export function ProductCard({ product, priority = false }: { product: Product; priority?: boolean }) {
+  // Cover photo first; the second photo (if any) is shown on hover.
   const [first, second] = [...product.images].sort((a, b) => Number(b.is_primary) - Number(a.is_primary));
   const { min, max } = priceRange(product);
+  // Sold out = has sizes, all at zero (a product with no sizes yet isn't
+  // "sold out", just not ready).
   const soldOut = product.variants.length > 0 && totalStock(product) === 0;
   const isNew = Date.now() - new Date(product.created_at).getTime() < NEW_FOR_DAYS * 86_400_000;
+  // Distinct colour swatches to hint at the range on offer.
   const colors = [...new Set(product.variants.map((v) => v.color_hex).filter(Boolean))] as string[];
 
   return (
@@ -42,6 +47,7 @@ export function ProductCard({ product, priority = false }: { product: Product; p
         ) : (
           <div className="flex h-full items-center justify-center text-sm font-semibold text-brand-700/40">No photo</div>
         )}
+        {/* Badge: Sold out takes precedence over New. */}
         <div className="absolute top-3 left-3 flex gap-1.5">
           {soldOut ? (
             <span className="rounded-full bg-ink px-2.5 py-1 text-[11px] font-bold text-white">Sold out</span>
@@ -54,6 +60,7 @@ export function ProductCard({ product, priority = false }: { product: Product; p
         {product.brand && <p className="text-[11px] font-bold tracking-wider text-muted uppercase">{product.brand}</p>}
         <h3 className="line-clamp-2 text-sm leading-snug font-semibold text-ink group-hover:text-accent">{product.name}</h3>
         <p className="text-sm font-extrabold">
+          {/* Sizes priced differently: show the cheapest, as "From". */}
           {min !== max && <span className="font-semibold text-muted">From </span>}
           {formatPrice(min)}
         </p>
@@ -69,6 +76,9 @@ export function ProductCard({ product, priority = false }: { product: Product; p
   );
 }
 
+// The responsive grid of cards: 2 across on phones, 3 on tablets, 4 on
+// desktop. priorityCount: how many of the first photos to load straight
+// away (those visible without scrolling); the rest load lazily.
 export function ProductGrid({ products, priorityCount = 0 }: { products: Product[]; priorityCount?: number }) {
   return (
     <div className="grid grid-cols-2 gap-x-4 gap-y-10 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-6">

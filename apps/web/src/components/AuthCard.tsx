@@ -14,6 +14,7 @@ export function AuthCard({ title, subtitle, children }: { title: string; subtitl
   );
 }
 
+// A form's error message, or nothing when there isn't one.
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;
   return <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-danger">{message}</p>;

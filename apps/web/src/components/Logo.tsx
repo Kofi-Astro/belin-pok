@@ -5,6 +5,7 @@ import Link from "next/link";
 export function LogoMark({ className = "h-9 w-9" }: { className?: string }) {
   return (
     <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+      {/* Purple rounded square, gold dot, white "B" and an orange underline. */}
       <rect width="64" height="64" rx="14" fill="#4B2884" />
       <circle cx="56" cy="8" r="4" fill="#D4A017" />
       <path
@@ -16,6 +17,8 @@ export function LogoMark({ className = "h-9 w-9" }: { className?: string }) {
   );
 }
 
+// Mark + wordmark, linking home. light: white text, for dark backgrounds
+// like the footer.
 export function Logo({ light = false }: { light?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-2.5" aria-label="Belin-Pok home">

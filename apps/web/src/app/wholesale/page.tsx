@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { CONTACT } from "@/lib/format";
 
+// Title and description for the browser tab and search results.
 export const metadata: Metadata = {
   title: "Wholesale",
   description: "Bulk and factory-pack pricing for businesses, and buying on account for approved wholesale customers.",
@@ -29,12 +30,14 @@ export default function WholesalePage() {
       </section>
 
       <section className="container-page grid gap-6 py-20 sm:grid-cols-2 lg:grid-cols-4">
+        {/* The four parts of the offer, as [icon, title, text] rows. */}
         {[
           [Boxes, "Factory-pack pricing", "Buy sealed packs (e.g. 6 or 12 pieces) at a lower price per piece."],
           [PackageCheck, "Bulk unit rates", "Wholesale prices on loose units, mixed across sizes and styles."],
           [CreditCard, "Buy on account", "Approved businesses can take stock now and settle on account, within an agreed limit."],
           [Users, "Real people", "Your account is set up and looked after by our team — not a form that disappears."],
         ].map(([Icon, title, text]) => {
+          // The tuple's types are mixed, so name the icon's type for JSX.
           const I = Icon as typeof Boxes;
           return (
             <div key={title as string} className="rounded-3xl border border-line bg-white p-7">
@@ -71,6 +74,7 @@ export default function WholesalePage() {
                 Email us
               </a>
             )}
+            {/* No contact details configured: point people to the shop itself. */}
             {!CONTACT.whatsapp && !CONTACT.phone && !CONTACT.email && (
               <p className="font-semibold text-gold">Visit the shop and ask for a wholesale account.</p>
             )}

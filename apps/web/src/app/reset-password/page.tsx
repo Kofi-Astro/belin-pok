@@ -1,3 +1,6 @@
+// /reset-password?token=... -- the page a password-reset email links to.
+// The token is single-use and expires after an hour (the API enforces
+// both).
 "use client";
 
 import Link from "next/link";
@@ -18,6 +21,7 @@ function ResetForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Opened without a token -- usually a link cut short when copied.
   if (!token) {
     return (
       <AuthCard title="This link isn't complete" subtitle="Request a new reset link and use the newest email.">
@@ -30,6 +34,7 @@ function ResetForm() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Checked here only: the API just receives the one new password.
     if (password !== confirm) {
       setError("The two passwords don't match.");
       return;
@@ -40,6 +45,7 @@ function ResetForm() {
       await session.resetPassword(token, password);
       router.push("/account");
     } catch (err) {
+      // E.g. the link was already used or has expired -- from the API.
       setError(err instanceof ApiError ? err.message : "Couldn't reach the shop — check your connection.");
       setBusy(false);
     }
@@ -69,6 +75,7 @@ function ResetForm() {
   );
 }
 
+// useSearchParams (for the token) needs a Suspense boundary.
 export default function ResetPasswordPage() {
   return (
     <Suspense>

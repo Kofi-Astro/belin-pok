@@ -1,3 +1,7 @@
+// /login -- customer sign-in, by email and password. On success the API
+// returns tokens that lib/session.ts keeps in the browser, and the
+// customer is sent on to ?next= (e.g. back to checkout) or their account.
+// Staff sign in to the separate admin app, not here.
 "use client";
 
 import Link from "next/link";
@@ -13,6 +17,7 @@ function safeNext(next: string | null): string {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/account";
 }
 
+// The form itself; see LoginPage for why it's split out.
 function LoginForm() {
   const router = useRouter();
   const next = safeNext(useSearchParams().get("next"));
@@ -29,6 +34,9 @@ function LoginForm() {
       await session.signIn(email.trim(), password);
       router.push(next);
     } catch (err) {
+      // E.g. "wrong email or password", or a slow-down after repeated failed
+      // attempts -- straight from the API. busy is only reset on failure;
+      // on success the page navigates away.
       setError(err instanceof ApiError ? err.message : "Couldn't reach the shop — check your connection.");
       setBusy(false);
     }
@@ -40,6 +48,7 @@ function LoginForm() {
       subtitle={
         <>
           New here?{" "}
+          {/* Pass ?next on, so registering returns them to the same place. */}
           <Link href={`/register?next=${encodeURIComponent(next)}`} className="font-semibold text-brand-700 hover:underline">
             Create an account
           </Link>

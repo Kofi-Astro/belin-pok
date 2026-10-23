@@ -1,3 +1,7 @@
+// One line of the cart -- photo, name, size/colour, line total, a quantity
+// stepper and Remove. Used by both the full /cart page and the slide-out
+// cart drawer (compact). Client-side because it edits the cart, which lives
+// in the shopper's browser (lib/cart.tsx).
 "use client";
 
 import { Minus, Plus, Trash2 } from "lucide-react";
@@ -7,6 +11,9 @@ import Link from "next/link";
 import { type CartLine, useCart } from "@/lib/cart";
 import { formatPrice, imageUrl } from "@/lib/format";
 
+// A "− 2 +" control. Exported because the product page's buy box uses it
+// too. The buttons disable at min/max rather than clamping silently, so
+// it's obvious why a tap did nothing; max is the stock available.
 export function QuantityStepper({
   value,
   max,
@@ -29,6 +36,7 @@ export function QuantityStepper({
       >
         <Minus className="h-3.5 w-3.5" />
       </button>
+      {/* aria-live: screen readers announce the new number after each tap. */}
       <span className="w-8 text-center text-sm font-bold tabular-nums" aria-live="polite">
         {value}
       </span>
@@ -45,12 +53,15 @@ export function QuantityStepper({
   );
 }
 
+// compact: smaller photo for the drawer, where space is tight.
 export function CartLineRow({ line, compact = false }: { line: CartLine; compact?: boolean }) {
   const { setQuantity, remove } = useCart();
+  // Photo width in px; the height is 1.25x (the catalogue's 4:5 photos).
   const size = compact ? 80 : 112;
 
   return (
     <li className="flex gap-4 py-5">
+      {/* Photo and name both link back to the product page. */}
       <Link
         href={`/products/${line.productSlug}`}
         className="shrink-0 overflow-hidden rounded-xl bg-brand-50"
@@ -76,6 +87,8 @@ export function CartLineRow({ line, compact = false }: { line: CartLine; compact
               {[line.color, line.size].filter(Boolean).join(" · ")}
             </p>
           </div>
+          {/* Line total. unitPrice is the price seen when it was added; checkout
+             re-prices from the API, so this is a preview, not a promise. */}
           <p className="shrink-0 font-bold">{formatPrice(line.unitPrice * line.quantity)}</p>
         </div>
         <div className="mt-auto flex items-center justify-between pt-3">
@@ -88,6 +101,8 @@ export function CartLineRow({ line, compact = false }: { line: CartLine; compact
             <Trash2 className="h-3.5 w-3.5" /> Remove
           </button>
         </div>
+        {/* Explains why + stopped working: the cart can't hold more than the
+           stock that was there when the item was added. */}
         {line.quantity >= line.maxQuantity && (
           <p className="mt-2 text-xs font-semibold text-accent">Only {line.maxQuantity} in stock</p>
         )}

@@ -1,3 +1,8 @@
+// The interactive pieces of the site header -- cart button, account link,
+// search box and the phone menu. They're split out from Header.tsx (a
+// server component) because each needs browser state: the cart, the
+// session, or whether a panel is open. The rest of the header stays
+// server-rendered.
 "use client";
 
 import { Menu, Search, ShoppingBag, User, X } from "lucide-react";
@@ -11,9 +16,12 @@ import type { Category } from "@/lib/types";
 
 import { Logo } from "./Logo";
 
+// Shared look for the round icon buttons: 44px (h-11) so they're easy to
+// hit with a thumb.
 const iconButton =
   "relative inline-flex h-11 w-11 items-center justify-center rounded-full text-ink hover:bg-brand-50 hover:text-brand-700";
 
+// Opens the cart drawer, with a badge for the number of units in the cart.
 export function CartButton() {
   const { count, setDrawerOpen } = useCart();
   return (
@@ -28,6 +36,7 @@ export function CartButton() {
   );
 }
 
+// To /account when signed in (with a small green dot), else to /login.
 export function AccountLink() {
   const { status, customer } = useAuth();
   const signedIn = status === "signedIn";
@@ -61,6 +70,7 @@ export function SearchBox() {
 
   return (
     <>
+      {/* Tablet/desktop: an always-visible field that widens on focus. */}
       <form onSubmit={submit} className="relative hidden md:block" role="search">
         <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-muted" />
         <input
@@ -73,6 +83,7 @@ export function SearchBox() {
           style={{ transition: "width 150ms" }}
         />
       </form>
+      {/* Phone: just an icon, opening a full-width bar over the header. */}
       <button type="button" className={`${iconButton} md:hidden`} onClick={() => setOpen(true)} aria-label="Search">
         <Search className="h-5 w-5" />
       </button>
@@ -98,6 +109,8 @@ export function SearchBox() {
   );
 }
 
+// The slide-in menu on phones and tablets (the desktop header lists the
+// categories inline instead).
 export function MobileMenu({ categories }: { categories: Category[] }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -112,6 +125,7 @@ export function MobileMenu({ categories }: { categories: Category[] }) {
       </button>
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+          {/* Dimmed backdrop; tapping it closes the menu. */}
           <div className="absolute inset-0 bg-ink/40" onClick={() => setOpen(false)} />
           <div className="absolute inset-y-0 left-0 flex w-80 max-w-[85vw] flex-col bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-line p-4">

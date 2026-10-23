@@ -1,3 +1,8 @@
+// /account -- a signed-in customer's own page: their orders (with live
+// status from the shop) and saved delivery addresses. Client-side because
+// it needs the customer's session (an access token held in the browser,
+// see lib/session.ts); a visitor who isn't signed in is sent to /login and
+// brought back here afterwards.
 "use client";
 
 import { LogOut, MapPin, Package, Plus } from "lucide-react";
@@ -12,6 +17,9 @@ import { formatDate, formatPrice, imageUrl } from "@/lib/format";
 import { ApiError, session } from "@/lib/session";
 import type { Address, Order, OrderStatus } from "@/lib/types";
 
+// How each order status reads to a customer -- plainer than the shop's
+// own wording (e.g. "pending" is "Awaiting confirmation", since the shop
+// calls to confirm and arrange payment), with a badge colour for each.
 const STATUS: Record<OrderStatus, { label: string; tone: string }> = {
   pending: { label: "Awaiting confirmation", tone: "bg-amber-100 text-amber-800" },
   paid: { label: "Paid", tone: "bg-blue-100 text-blue-800" },
@@ -29,6 +37,9 @@ export default function AccountPage() {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [addresses, setAddresses] = useState<Address[] | null>(null);
 
+  // Orders and addresses load together; both come from the API as the
+  // signed-in customer (session.request adds the token and refreshes it
+  // if it has expired). Also re-run after adding an address.
   const load = useCallback(async () => {
     const [o, a] = await Promise.all([
       session.request<Order[]>("/orders/me"),
@@ -38,11 +49,15 @@ export default function AccountPage() {
     setAddresses(a);
   }, []);
 
+  // Wait for the session check to finish ("loading") before deciding:
+  // signed out -> to the login page, with ?next so it returns here.
   useEffect(() => {
     if (status === "signedOut") router.replace("/login?next=/account");
     if (status === "signedIn") void load();
   }, [status, router, load]);
 
+  // Nothing to show until signed in; hold the space so the footer
+  // doesn't flash up the page meanwhile.
   if (status !== "signedIn" || !customer) return <div className="min-h-[60vh]" />;
 
   return (
@@ -65,6 +80,8 @@ export default function AccountPage() {
         </button>
       </div>
 
+      {/* Two tabs, as [key, icon, label] -- kept as state, not in the URL,
+         since there's nothing worth linking to directly. */}
       <div className="mt-8 flex gap-2">
         {(
           [
@@ -90,6 +107,8 @@ export default function AccountPage() {
   );
 }
 
+// The customer's orders, newest first (as the API returns them). null
+// means still loading, [] means none yet.
 function Orders({ orders }: { orders: Order[] | null }) {
   if (orders === null) return <p className="text-muted">Loading your orders…</p>;
   if (orders.length === 0) {
@@ -118,6 +137,7 @@ function Orders({ orders }: { orders: Order[] | null }) {
               <span className="font-extrabold">{formatPrice(o.total)}</span>
             </div>
           </div>
+          {/* Thumbnails of what's in the order, each linking to the product. */}
           <ul className="mt-5 flex flex-wrap gap-4">
             {o.items.map((item) => (
               <li key={item.id} className="flex items-center gap-3">
@@ -141,11 +161,14 @@ function Orders({ orders }: { orders: Order[] | null }) {
   );
 }
 
+// Saved delivery addresses, plus an inline form to add one. Addresses are
+// picked from at checkout, so a regular doesn't retype them.
 function Addresses({ addresses, onAdded }: { addresses: Address[] | null; onAdded: () => Promise<void> }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ label: "Home", line1: "", line2: "", city: "", state: "", country: "Ghana" });
   const [error, setError] = useState<string | null>(null);
 
+  // One change handler per field: set("city") returns the handler for city.
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
 
   const save = async (e: React.FormEvent) => {
@@ -154,6 +177,8 @@ function Addresses({ addresses, onAdded }: { addresses: Address[] | null; onAdde
     try {
       await session.request("/customers/me/addresses", {
         method: "POST",
+        // Optional fields go up as null, not "". The first address saved
+        // becomes the default one checkout pre-selects.
         body: JSON.stringify({ ...form, line2: form.line2 || null, state: form.state || null, is_default: !addresses?.length }),
       });
       await onAdded();
@@ -173,6 +198,7 @@ function Addresses({ addresses, onAdded }: { addresses: Address[] | null; onAdde
             {a.label}
             {a.is_default && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-700">Default</span>}
           </p>
+          {/* One line, skipping the optional parts that were left blank. */}
           <p className="mt-2 leading-relaxed text-muted">
             {[a.line1, a.line2, a.city, a.state, a.country].filter(Boolean).join(", ")}
           </p>

@@ -1,3 +1,6 @@
+// /register -- creates a customer account (sign-in plus customer profile)
+// and signs the new customer straight in. Accounts are optional: guests can
+// check out without one, but an account keeps order history and addresses.
 "use client";
 
 import Link from "next/link";
@@ -7,14 +10,22 @@ import { Suspense, useState } from "react";
 import { AuthCard, FormError } from "@/components/AuthCard";
 import { ApiError, session } from "@/lib/session";
 
+// The form proper. Split out from the page because it reads the URL's
+// query string (useSearchParams), which Next.js requires to sit inside a
+// <Suspense> boundary -- see RegisterPage below.
 function RegisterForm() {
   const router = useRouter();
   const nextParam = useSearchParams().get("next");
+  // Where to go once signed up: ?next=/checkout (say) if it's a path on
+  // this site, otherwise the account page. Paths starting "//" are refused
+  // too -- browsers read those as another website, so a crafted link
+  // could otherwise bounce a new customer off to a look-alike site.
   const next = nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/account";
   const [form, setForm] = useState({ full_name: "", email: "", phone: "", password: "" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // One change handler per field: set("email") updates form.email.
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
 
   const submit = async (e: React.FormEvent) => {
@@ -26,6 +37,9 @@ function RegisterForm() {
       await session.signUp({ ...form, email: form.email.trim(), full_name: form.full_name.trim() });
       router.push(next);
     } catch (err) {
+      // E.g. "an account with this email already exists", straight from
+      // the API; anything else means the request never got an answer.
+      // busy is only reset on failure -- on success the page navigates away.
       setError(err instanceof ApiError ? err.message : "Couldn't reach the shop — check your connection.");
       setBusy(false);
     }
@@ -79,6 +93,7 @@ function RegisterForm() {
   );
 }
 
+// See RegisterForm: the Suspense boundary that useSearchParams needs.
 export default function RegisterPage() {
   return (
     <Suspense>

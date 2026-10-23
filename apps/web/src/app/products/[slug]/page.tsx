@@ -1,3 +1,9 @@
+// /products/<slug> -- one product: photos, name, price, size/colour
+// picker and Add to cart (the BuyBox), delivery notes, description, and
+// a few more from the same category. Server-rendered from the public
+// catalogue API, so prices are the online prices (in-store price plus
+// the shop's online markup -- see app/pricing.py in the API) and
+// wholesale or pack prices never reach this page.
 import { Boxes, Store, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -9,6 +15,7 @@ import { ProductGrid } from "@/components/ProductCard";
 import { getCategories, getProductBySlug, getProducts } from "@/lib/catalog";
 import { SITE_URL, imageUrl, primaryImage, priceRange, totalStock } from "@/lib/format";
 
+// The slug from the URL; a Promise in Next.js 15+.
 type Props = { params: Promise<{ slug: string }> };
 
 // Also what WhatsApp, Facebook and X read when someone shares the link:
@@ -32,15 +39,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function ProductPage({ params }: Props) {
+  // Draft, archived or unknown products come back as null -> 404 page.
+  // (This fetch is shared with generateMetadata above: Next.js dedupes
+  // identical requests within one render.)
   const product = await getProductBySlug((await params).slug);
   if (!product) notFound();
 
+  // "More from <category>": fetch 5 so there are still 4 once this
+  // product itself is filtered out.
   const [categories, { products: sameCategory }] = await Promise.all([
     getCategories(),
     getProducts({ categoryId: product.category_id, limit: 5 }),
   ]);
   const category = categories.find((c) => c.id === product.category_id);
   const related = sameCategory.filter((p) => p.id !== product.id).slice(0, 4);
+  // Cheapest and dearest size, for the search-engine data below (sizes
+  // can be priced differently).
   const { min, max } = priceRange(product);
   const image = primaryImage(product);
 
@@ -67,8 +81,10 @@ export default async function ProductPage({ params }: Props) {
 
   return (
     <div className="container-page py-10">
+      {/* The structured data, embedded the way search engines expect it. */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
+      {/* Home / Category / Product -- links back up the catalogue. */}
       <nav className="mb-8 text-sm text-muted" aria-label="Breadcrumb">
         <Link href="/" className="hover:text-ink">
           Home
@@ -86,6 +102,7 @@ export default async function ProductPage({ params }: Props) {
       </nav>
 
       <div className="grid gap-10 lg:grid-cols-2 lg:gap-16">
+        {/* Left column (top on phones): photos. Right: everything else. */}
         <Gallery images={product.images} name={product.name} />
 
         <div className="lg:pt-4">
@@ -97,10 +114,13 @@ export default async function ProductPage({ params }: Props) {
             </Link>
           )}
 
+          {/* Size/colour choice, price, stock and Add to cart -- client-side,
+             since it reacts to what the shopper picks. */}
           <div className="mt-8">
             <BuyBox product={product} />
           </div>
 
+          {/* How getting the item works: pickup, delivery, and wholesale. */}
           <ul className="mt-10 divide-y divide-line rounded-2xl border border-line bg-white">
             <li className="flex gap-4 p-5">
               <Store className="h-5 w-5 shrink-0 text-brand-700" />
@@ -133,6 +153,7 @@ export default async function ProductPage({ params }: Props) {
           {product.description && (
             <div className="mt-10">
               <h2 className="label">About this item</h2>
+              {/* pre-line keeps the line breaks staff typed in the description. */}
               <p className="leading-relaxed whitespace-pre-line text-ink/85">{product.description}</p>
             </div>
           )}

@@ -1,3 +1,8 @@
+// The site-wide footer: a short blurb, shop links (including the first few
+// categories, so the footer stays in step with what the shop sells),
+// account links and -- if configured -- contact details. A server
+// component: the categories are fetched once on the server and cached
+// with the rest of the catalogue (see lib/catalog.ts).
 import { Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 import Link from "next/link";
 
@@ -8,11 +13,13 @@ import { Logo } from "./Logo";
 
 export async function Footer() {
   const categories = await getCategories();
+  // Only show the "Get in touch" column if at least one detail is set.
   const hasContact = Object.values(CONTACT).some(Boolean);
 
   return (
     <footer className="mt-24 bg-brand-950 text-white/75">
       <div className="container-page grid gap-12 py-16 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Brand column: the logo (light version, for the dark background). */}
         <div className="space-y-4">
           <Logo light />
           <p className="max-w-xs text-sm leading-relaxed text-white/60">
@@ -33,6 +40,7 @@ export async function Footer() {
                 New arrivals
               </Link>
             </li>
+            {/* At most six, to keep the column short; /shop lists them all. */}
             {categories.slice(0, 6).map((c) => (
               <li key={c.id}>
                 <Link href={`/category/${c.slug}`} className="hover:text-white">
@@ -78,6 +86,7 @@ export async function Footer() {
               {CONTACT.whatsapp && (
                 <li className="flex items-center gap-2.5">
                   <MessageCircle className="h-4 w-4 text-gold" />
+                  {/* wa.me links want digits only (no +, spaces or dashes). */}
                   <a href={`https://wa.me/${CONTACT.whatsapp.replace(/\D/g, "")}`} className="hover:text-white">
                     WhatsApp us
                   </a>
@@ -109,6 +118,7 @@ export async function Footer() {
           </div>
         )}
       </div>
+      {/* Copyright line; the year updates itself. */}
       <div className="border-t border-white/10">
         <p className="container-page py-6 text-xs text-white/45">© {new Date().getFullYear()} Belin-Pok Enterprise</p>
       </div>

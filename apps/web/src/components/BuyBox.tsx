@@ -1,3 +1,7 @@
+// The buying panel on a product page. Client-side because it reacts to
+// the shopper's choices (colour, size, quantity) and talks to the cart and
+// the session; the product data itself arrives from the server-rendered
+// page, at online prices.
 "use client";
 
 import { BellRing, Check, ShoppingBag } from "lucide-react";
@@ -15,6 +19,9 @@ import { QuantityStepper } from "./CartLineRow";
 // Clothing sizes in the order people expect to read them; anything else
 // (numeric shoe/waist sizes, "One Size") sorts after, numbers numerically.
 const SIZE_ORDER = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "2XL", "3XL", "XXXL", "4XL", "5XL"];
+// Sort key: [group, position, text] -- known clothing sizes first in
+// their usual order, then numeric sizes by value, then anything else
+// alphabetically.
 function sizeRank(size: string): [number, number, string] {
   const i = SIZE_ORDER.indexOf(size.toUpperCase());
   if (i >= 0) return [0, i, size];
@@ -34,8 +41,12 @@ export function BuyBox({ product }: { product: Product }) {
   const { status } = useAuth();
   const variants = product.variants;
 
+  // The distinct colours on offer (null for "no colour"). With one colour,
+  // it's chosen up front and the colour picker is hidden.
   const colors = useMemo(() => [...new Set(variants.map((v) => v.color))], [variants]);
   const [color, setColor] = useState<string | null>(colors.length === 1 ? colors[0] : null);
+  // The sizes to offer: all of them if there's one colour or none,
+  // otherwise just those of the chosen colour, in size order.
   const sizesForColor = useMemo(
     () =>
       variants
@@ -43,12 +54,16 @@ export function BuyBox({ product }: { product: Product }) {
         .sort((a, b) => compareSizes(a.size, b.size)),
     [variants, colors, color],
   );
+  // Pre-chosen when there's only one size ("One Size" caps, say).
   const [size, setSize] = useState<string | null>(variants.length === 1 ? variants[0].size : null);
   const [quantity, setQuantity] = useState(1);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
+  // The exact variant (colour + size) chosen, once both are.
   const selected: ProductVariant | undefined = sizesForColor.find((v) => v.size === size);
   const { min, max } = priceRange(product);
+  // A size can have its own price; until one is chosen, the price line
+  // shows the range across all sizes instead.
   const price = selected ? variantPrice(product, selected) : null;
   const image = primaryImage(product);
 
@@ -60,6 +75,9 @@ export function BuyBox({ product }: { product: Product }) {
     setNotice(null);
   };
 
+  // Adds the chosen variant to the cart with what the cart needs to show
+  // it without another API call, including the stock (maxQuantity) that
+  // caps the quantity there -- then opens the drawer as confirmation.
   const addToCart = () => {
     if (!selected) return;
     add(
@@ -78,6 +96,8 @@ export function BuyBox({ product }: { product: Product }) {
     setDrawerOpen(true);
   };
 
+  // Restock alert for a sold-out size: the API notifies the customer (by
+  // push on the phone app) when stock comes back in.
   const notifyMe = async () => {
     if (!selected) return;
     try {
@@ -88,6 +108,7 @@ export function BuyBox({ product }: { product: Product }) {
     }
   };
 
+  // A product published before any sizes were added: nothing to buy yet.
   if (variants.length === 0) {
     return <p className="rounded-2xl bg-brand-50 p-5 text-sm font-semibold text-brand-700">Coming soon to the shop.</p>;
   }
@@ -124,6 +145,9 @@ export function BuyBox({ product }: { product: Product }) {
         </fieldset>
       )}
 
+      {/* Sizes appear once a colour is chosen (or straight away if there's
+         only one). Sold-out sizes stay visible but struck through, so the
+         shopper can still pick one and ask to be notified. */}
       {(colors.length <= 1 || color !== null) && (
         <fieldset>
           <legend className="label">Size</legend>
@@ -170,6 +194,8 @@ export function BuyBox({ product }: { product: Product }) {
         </p>
       )}
 
+      {/* Sold out: offer a restock alert (which needs an account) instead of
+         Add to cart. */}
       {selected?.stock_quantity === 0 ? (
         status === "signedIn" ? (
           <button type="button" onClick={notifyMe} className="btn-dark w-full py-4">

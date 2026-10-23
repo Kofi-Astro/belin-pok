@@ -14,6 +14,7 @@ export async function Header() {
 
   return (
     <header className="sticky top-0 z-40">
+      {/* Announcement strip; the second half only fits on wider screens. */}
       <div className="bg-brand-950 text-white">
         <p className="container-page py-2 text-center text-xs font-semibold tracking-wide">
           Retail &amp; wholesale menswear
@@ -26,9 +27,11 @@ export async function Header() {
 
       <div className="border-b border-line bg-white/95 backdrop-blur">
         <div className="container-page flex h-18 items-center gap-4 lg:gap-8">
+          {/* Menu button: phones and tablets only (hidden on desktop). */}
           <MobileMenu categories={categories} />
           <Logo />
 
+          {/* Desktop: the first six categories inline; the rest via Shop all. */}
           <nav className="hidden items-center gap-6 lg:flex" aria-label="Categories">
             <Link href="/shop" className="text-sm font-bold text-ink hover:text-accent">
               Shop all

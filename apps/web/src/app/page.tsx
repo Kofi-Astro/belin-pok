@@ -1,3 +1,7 @@
+// The home page: a hero with the newest photos, what the shop offers,
+// category tiles, new arrivals and a wholesale pitch. Server-rendered from
+// the public catalogue, so it always reflects what's live -- there's no
+// separate "homepage content" to keep up to date.
 import { ArrowRight, BellRing, Boxes, Store, Truck } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -12,17 +16,21 @@ export default async function HomePage() {
   // than a request per category.
   const [categories, { products }] = await Promise.all([getCategories(), getProducts({ sort: "newest", limit: 100 })]);
 
+  // category id -> photo of its newest product (products are newest-first,
+  // so the first one seen per category wins).
   const tileImage = new Map<string, string>();
   for (const p of products) {
     const img = primaryImage(p);
     if (img && !tileImage.has(p.category_id)) tileImage.set(p.category_id, img.storage_path);
   }
+  // The three newest photos, fanned out in the hero.
   const heroImages = products.map(primaryImage).filter(Boolean).slice(0, 3) as { storage_path: string }[];
 
   return (
     <>
       {/* Hero */}
       <section className="relative overflow-hidden bg-brand-900 text-white">
+        {/* Decoration only: a faint dot pattern and a soft glow behind the text. */}
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.07]"
           style={{
@@ -51,12 +59,15 @@ export default async function HomePage() {
             </div>
           </div>
 
+          {/* Fewer than three photos (a brand-new shop) would look sparse, so
+             show the name in a simple panel instead. Desktop only either way. */}
           {heroImages.length >= 3 ? (
             <div className="relative hidden h-[30rem] lg:block">
               {heroImages.map((img, i) => (
                 <div
                   key={img.storage_path}
                   className={`absolute overflow-hidden rounded-3xl shadow-2xl ring-1 ring-white/10 ${
+                    // Position, size and tilt of each of the three photos.
                     ["top-0 left-8 h-80 w-60 -rotate-3", "top-12 right-4 h-96 w-72 rotate-2", "bottom-0 left-36 h-64 w-52 rotate-1"][i]
                   }`}
                 >
@@ -75,6 +86,7 @@ export default async function HomePage() {
       {/* Why shop here */}
       <section className="border-b border-line bg-white">
         <div className="container-page grid grid-cols-2 gap-6 py-8 lg:grid-cols-4">
+          {/* Four short selling points, as data so the markup isn't repeated. */}
           {[
             { icon: Store, title: "Pick up in store", text: "Order online, collect at the shop" },
             { icon: Truck, title: "Or get it delivered", text: "We arrange delivery after you order" },
@@ -124,6 +136,7 @@ export default async function HomePage() {
                       className="object-cover opacity-80 transition duration-500 group-hover:scale-105"
                     />
                   )}
+                  {/* Darkens the bottom of the photo so the white name stays readable. */}
                   <div className="absolute inset-0 bg-gradient-to-t from-brand-950/85 via-brand-950/20 to-transparent" />
                   <div className="absolute inset-x-0 bottom-0 flex items-center justify-between p-4 text-white">
                     <span className="text-lg font-extrabold">{c.name}</span>
@@ -147,6 +160,7 @@ export default async function HomePage() {
             Shop all new
           </Link>
         </div>
+        {/* Two rows on desktop; an empty shop gets a friendly placeholder. */}
         {products.length > 0 ? (
           <ProductGrid products={products.slice(0, 8)} />
         ) : (
