@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     s3_access_key_id: str | None = None
     s3_secret_access_key: str | None = None
     s3_region: str = "auto"
+    # How object URLs are formed: "virtual" (bucket.endpoint/key) or
+    # "path" (endpoint/bucket/key). Railway Buckets require virtual-host
+    # style; boto3 would otherwise pick path style for a custom endpoint.
+    s3_addressing_style: str = "virtual"
 
     # Raw JSON of a Firebase service account key (Firebase Console ->
     # Project Settings -> Service Accounts -> Generate new private key).

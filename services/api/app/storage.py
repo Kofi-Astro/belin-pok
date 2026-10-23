@@ -45,10 +45,20 @@ class S3PhotoStore:
     """Any S3-compatible bucket. boto3 is synchronous, so each call runs in
     a worker thread instead of blocking the event loop."""
 
-    def __init__(self, *, endpoint_url: str, bucket: str, access_key_id: str, secret_access_key: str, region: str):
+    def __init__(
+        self,
+        *,
+        endpoint_url: str,
+        bucket: str,
+        access_key_id: str,
+        secret_access_key: str,
+        region: str,
+        addressing_style: str = "virtual",
+    ):
         # Imported here so the dependency is only needed where S3 is
         # actually configured -- not for local dev or tests.
         import boto3
+        from botocore.config import Config
 
         self._bucket = bucket
         self._client = boto3.client(
@@ -57,6 +67,7 @@ class S3PhotoStore:
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
             region_name=region,
+            config=Config(s3={"addressing_style": addressing_style}),
         )
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
@@ -113,6 +124,7 @@ def get_photo_store() -> PhotoStore:
             access_key_id=settings.s3_access_key_id,
             secret_access_key=settings.s3_secret_access_key,
             region=settings.s3_region,
+            addressing_style=settings.s3_addressing_style,
         )
     if settings.environment != "local":
         raise RuntimeError(
