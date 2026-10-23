@@ -422,6 +422,10 @@ class POSSale(Base):
     staff_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
     status: Mapped[str] = mapped_column(default="completed")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Set together when a sale is voided (see void_pos_sale).
+    voided_at: Mapped[datetime | None]
+    voided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
+    void_reason: Mapped[str | None]
 
     payments: Mapped[list["POSSalePayment"]] = relationship(back_populates="sale", cascade="all, delete-orphan")
     items: Mapped[list["POSSaleItem"]] = relationship(back_populates="sale", cascade="all, delete-orphan")

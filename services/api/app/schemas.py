@@ -427,6 +427,19 @@ class POSSaleRead(BaseModel):
     payments: list[POSSalePaymentRead] = []
     total: float = 0
     credit_amount: float = 0
+    # Set on a voided sale -- who voided it, when, and the reason they gave.
+    voided_at: datetime | None = None
+    voided_by: uuid.UUID | None = None
+    voided_by_name: str | None = None
+    void_reason: str | None = None
+
+
+class POSSaleVoid(BaseModel):
+    """Voiding needs a reason: it's the one action that makes a recorded
+    sale's takings disappear, so the owner should always be able to see
+    why it happened (see the sales journal and activity log)."""
+
+    reason: str = Field(min_length=3, max_length=500)
 
 
 # ---------- auth ----------
@@ -838,3 +851,108 @@ class DashboardRead(BaseModel):
     # many quick-logged sale lines still need a real product attached),
     # not a trend.
     unidentified_item_count: int
+
+
+# ---------- sales reports & activity (app/routers/reports.py) ----------
+
+
+class SalesTotals(BaseModel):
+    revenue: float
+    counter_revenue: float
+    online_revenue: float
+    receipts: int
+    online_orders: int
+    items_sold: int
+    average_receipt: float
+    # Counter takings split by how they were paid -- cash, mobile_money,
+    # card, credit (on account). Online orders aren't paid through the till.
+    by_method: dict[str, float]
+    voided_count: int
+    voided_amount: float
+    # Money owed on account: new charges from credit sales in the period,
+    # and payments received against balances in the period.
+    credit_given: float
+    credit_collected: float
+
+
+class SalesPeriod(BaseModel):
+    """One row of the tally: a day, week or month, in the shop's timezone."""
+
+    start: date
+    end: date
+    receipts: int
+    online_orders: int
+    items_sold: int
+    counter_revenue: float
+    online_revenue: float
+    revenue: float
+    cash: float
+    mobile_money: float
+    card: float
+    credit: float
+    voided_count: int
+    voided_amount: float
+
+
+class ProductSales(BaseModel):
+    """What sold. product_id/variant_id are null for quick-logged counter
+    lines not yet matched to a product -- those are grouped by category."""
+
+    product_id: uuid.UUID | None
+    variant_id: uuid.UUID | None
+    product_name: str
+    sku: str | None
+    size: str | None
+    color: str | None
+    category_name: str | None
+    quantity: int
+    revenue: float
+    counter_quantity: int
+    online_quantity: int
+
+
+class StaffSales(BaseModel):
+    staff_id: uuid.UUID
+    staff_name: str
+    receipts: int
+    items_sold: int
+    revenue: float
+    cash_taken: float
+    # Sales this person rang up that were later voided (by anyone)...
+    voided_count: int
+    voided_amount: float
+    # ...and voids this person carried out (of anyone's sales).
+    voids_performed: int
+
+
+class CategorySales(BaseModel):
+    category_name: str
+    quantity: int
+    revenue: float
+
+
+class SalesReport(BaseModel):
+    date_from: date
+    date_to: date
+    group_by: str
+    timezone: str
+    totals: SalesTotals
+    periods: list[SalesPeriod]
+    by_product: list[ProductSales]
+    by_staff: list[StaffSales]
+    by_category: list[CategorySales]
+
+
+class ActivityRead(BaseModel):
+    """One thing that happened, for the owner's activity log -- whatever
+    its source table."""
+
+    at: datetime
+    kind: str  # sale | void | stock | catalog | order | credit | staff
+    staff_id: uuid.UUID | None
+    staff_name: str | None
+    summary: str
+    detail: str | None = None
+    amount: float | None = None
+    reference_type: str | None = None
+    reference_id: uuid.UUID | None = None

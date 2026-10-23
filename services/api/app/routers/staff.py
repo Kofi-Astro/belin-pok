@@ -12,13 +12,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.deps import get_current_staff, require_role
 from app.email import send_email
-from app.models import OneTimeTokenPurpose, Staff, StaffRole, User
+from app.models import AuditLog, OneTimeTokenPurpose, Staff, StaffRole, User
 from app.routers.auth import create_one_time_link, revoke_all_sessions
 from app.schemas import StaffInvite, StaffInviteRead, StaffRead, StaffUpdate
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 
 _owner_only = require_role(StaffRole.owner)
+
+
+def _snapshot(staff: Staff) -> dict:
+    """What audit_log records about a staff member -- shown in the owner's
+    activity log (who was invited, whose role changed, who was deactivated)."""
+    return {"full_name": staff.full_name, "email": staff.email, "role": staff.role.value, "is_active": staff.is_active}
+
+
+def _audit(db: AsyncSession, actor: Staff, action: str, target: Staff, old: dict | None, new: dict | None) -> None:
+    db.add(
+        AuditLog(
+            staff_id=actor.id, action=action, table_name="staff", record_id=target.id, old_values=old, new_values=new
+        )
+    )
 
 
 @router.get("/me", response_model=StaffRead)
@@ -46,7 +60,7 @@ async def _send_invite_email(staff: Staff, link: str) -> None:
 async def invite_staff(
     payload: StaffInvite,
     db: AsyncSession = Depends(get_db),
-    _staff: Staff = Depends(_owner_only),
+    owner: Staff = Depends(_owner_only),
 ) -> StaffInviteRead:
     """Creates a staff member's login (with no password yet) and their
     `staff` row together, then emails them a link to set a password.
@@ -71,6 +85,7 @@ async def invite_staff(
     new_staff = Staff(id=user.id, email=email, full_name=payload.full_name, role=payload.role)
     db.add(new_staff)
     link = await create_one_time_link(db, user, OneTimeTokenPurpose.invite)
+    _audit(db, owner, "staff.invite", new_staff, None, _snapshot(new_staff))
     await db.commit()
     await db.refresh(new_staff)
 
@@ -82,7 +97,7 @@ async def invite_staff(
 async def reissue_invite_link(
     staff_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _staff: Staff = Depends(_owner_only),
+    owner: Staff = Depends(_owner_only),
 ) -> StaffInviteRead:
     """A fresh set-password link for someone whose invite expired or got
     lost. Doubles as an owner-assisted password reset for a staff member
@@ -96,6 +111,7 @@ async def reissue_invite_link(
     user = await db.get(User, staff_id)
 
     link = await create_one_time_link(db, user, OneTimeTokenPurpose.invite)
+    _audit(db, owner, "staff.invite_link", target, None, _snapshot(target))
     await db.commit()
     if target.email:
         await _send_invite_email(target, link)
@@ -107,15 +123,27 @@ async def update_staff(
     staff_id: uuid.UUID,
     payload: StaffUpdate,
     db: AsyncSession = Depends(get_db),
-    _staff: Staff = Depends(_owner_only),
+    owner: Staff = Depends(_owner_only),
 ) -> Staff:
     target = await db.get(Staff, staff_id)
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found")
 
+    before = _snapshot(target)
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(target, field, value)
+    if changes:
+        # full_name always included, so the activity log can name the person.
+        after = _snapshot(target)
+        _audit(
+            db,
+            owner,
+            "staff.update",
+            target,
+            {k: before[k] for k in (*changes, "full_name")},
+            {k: after[k] for k in (*changes, "full_name")},
+        )
 
     # Deactivating someone signs them out of every device right away,
     # rather than leaving their refresh tokens able to start new sessions

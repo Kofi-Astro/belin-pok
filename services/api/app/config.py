@@ -20,6 +20,11 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5000"
 
+    # The shop's local timezone: where "today", "this week" and each day's
+    # tally begin and end in the sales reports. Ghana has no daylight
+    # saving and sits on UTC, but reports use this rather than assuming so.
+    shop_timezone: str = "Africa/Accra"
+
     # Where invite and password-reset links send people. Staff links open
     # the admin app's set-password screen; customer reset links open the
     # storefront's.

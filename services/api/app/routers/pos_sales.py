@@ -7,9 +7,10 @@ SKU has been looked up."""
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -39,7 +40,9 @@ from app.schemas import (
     POSSaleItemRead,
     POSSalePaymentRead,
     POSSaleRead,
+    POSSaleVoid,
 )
+from app.shop_time import day_range
 
 router = APIRouter(prefix="/pos-sales", tags=["pos-sales"])
 
@@ -77,6 +80,7 @@ class _ResolvedSale:
 async def _hydrate(db: AsyncSession, sale: POSSale) -> POSSaleRead:
     staff = await db.get(Staff, sale.staff_id)
     customer = await db.get(Customer, sale.customer_id) if sale.customer_id else None
+    voider = await db.get(Staff, sale.voided_by) if sale.voided_by else None
 
     stmt = (
         select(
@@ -128,6 +132,10 @@ async def _hydrate(db: AsyncSession, sale: POSSale) -> POSSaleRead:
         payments=[POSSalePaymentRead.model_validate(p) for p in sale.payments],
         total=sum(item.line_total for item in items),
         credit_amount=float(credit_amount),
+        voided_at=sale.voided_at,
+        voided_by=sale.voided_by,
+        voided_by_name=voider.full_name if voider else None,
+        void_reason=sale.void_reason,
     )
 
 
@@ -210,15 +218,40 @@ async def _resolve_lines(
 
 @router.get("", response_model=list[POSSaleRead], dependencies=[Depends(get_current_staff)])
 async def list_pos_sales(
+    response: Response,
     db: AsyncSession = Depends(get_db),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    staff_id: uuid.UUID | None = None,
+    customer_id: uuid.UUID | None = None,
+    sale_status: str | None = Query(default=None, alias="status", pattern="^(completed|voided)$"),
+    payment_method: PaymentMethod | None = None,
     limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> list[POSSaleRead]:
-    stmt = (
-        select(POSSale)
-        .options(selectinload(POSSale.payments))
-        .order_by(POSSale.created_at.desc())
-        .limit(limit)
-    )
+    """Counter sales, newest first -- the sales journal. Every receipt
+    carries who rang it up, the customer (if any), each line with its
+    quantity and price, the payments, and void details. Dates are whole
+    days in the shop's timezone (see app/shop_time.py); payment_method
+    keeps sales with at least one payment of that kind. X-Total-Count
+    carries the number of matching sales."""
+    stmt = select(POSSale)
+    if date_from or date_to:
+        start, end = day_range(date_from or date(2000, 1, 1), date_to or date(2100, 1, 1))
+        stmt = stmt.where(POSSale.created_at >= start, POSSale.created_at < end)
+    if staff_id is not None:
+        stmt = stmt.where(POSSale.staff_id == staff_id)
+    if customer_id is not None:
+        stmt = stmt.where(POSSale.customer_id == customer_id)
+    if sale_status is not None:
+        stmt = stmt.where(POSSale.status == sale_status)
+    if payment_method is not None:
+        stmt = stmt.where(
+            POSSale.id.in_(select(POSSalePayment.sale_id).where(POSSalePayment.method == payment_method))
+        )
+
+    response.headers["X-Total-Count"] = str(await db.scalar(select(func.count()).select_from(stmt.subquery())))
+    stmt = stmt.options(selectinload(POSSale.payments)).order_by(POSSale.created_at.desc()).limit(limit).offset(offset)
     sales = (await db.scalars(stmt)).all()
     return [await _hydrate(db, sale) for sale in sales]
 
@@ -343,6 +376,7 @@ async def create_pos_sale(
 @router.post("/{sale_id}/void", response_model=POSSaleRead)
 async def void_pos_sale(
     sale_id: uuid.UUID,
+    payload: POSSaleVoid,
     db: AsyncSession = Depends(get_db),
     staff: Staff = Depends(_write_roles),
 ) -> POSSaleRead:
@@ -350,7 +384,9 @@ async def void_pos_sale(
     of daily-sales totals since the reversal is itself a 'sale'-type
     movement) and any credit charge it created, then marks the sale
     voided. For fixing a mistaken entry, not a customer return -- nothing
-    is deleted, matching every other ledger in this app.
+    is deleted, matching every other ledger in this app. Who voided it,
+    when, and the (required) reason are stamped on the sale, so the owner
+    sees them in the sales journal and activity log.
     """
     stmt = select(POSSale).where(POSSale.id == sale_id).options(selectinload(POSSale.payments))
     sale = await db.scalar(stmt)
@@ -394,6 +430,9 @@ async def void_pos_sale(
             )
 
     sale.status = "voided"
+    sale.voided_at = datetime.now(UTC)
+    sale.voided_by = staff.id
+    sale.void_reason = payload.reason.strip()
     await db.commit()
 
     stmt = select(POSSale).where(POSSale.id == sale.id).options(selectinload(POSSale.payments))

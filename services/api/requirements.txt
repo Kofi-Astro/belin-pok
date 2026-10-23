@@ -7,6 +7,9 @@ pydantic-settings>=2.6
 pyjwt[crypto]>=2.9
 # Password hashing for the API's own sign-in (app/security.py).
 argon2-cffi>=23.1
+# IANA timezone data for the sales reports' shop_timezone, in case the
+# host image doesn't ship /usr/share/zoneinfo.
+tzdata>=2024.1
 httpx>=0.27
 # Product photo bucket (app/storage.py) -- Railway Buckets are S3-compatible.
 boto3>=1.35

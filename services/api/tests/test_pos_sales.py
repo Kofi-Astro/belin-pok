@@ -229,7 +229,7 @@ async def test_voiding_a_credit_sale_reverses_the_customer_balance(client, creat
         )
         sale_id = sale_res.json()["id"]
 
-        void_res = await ac.post(f"/pos-sales/{sale_id}/void")
+        void_res = await ac.post(f"/pos-sales/{sale_id}/void", json={"reason": "Rang up the wrong item"})
         assert void_res.status_code == 200, void_res.text
 
         customer_res = await ac.get(f"/customers/{customer_id}")
