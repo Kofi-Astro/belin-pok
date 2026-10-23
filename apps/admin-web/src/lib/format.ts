@@ -29,6 +29,26 @@ export const variantPrice = (p: Pick<Product, "base_price">, v: Variant) => v.pr
 
 export const variantLabel = (v: Pick<Variant, "size" | "color">) => (v.color ? `${v.size} · ${v.color}` : v.size);
 
+// Clothing sizes in the order people read them; numeric sizes (waist, shoe)
+// after, numerically; anything else ("One Size") last, alphabetically.
+const SIZE_ORDER = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "2XL", "3XL", "XXXL", "4XL", "5XL"];
+function sizeRank(size: string): [number, number, string] {
+  const i = SIZE_ORDER.indexOf(size.toUpperCase());
+  if (i >= 0) return [0, i, size];
+  const n = parseFloat(size);
+  return Number.isNaN(n) ? [2, 0, size] : [1, n, size];
+}
+
+/** Variants grouped by colour, then in size order. */
+export function sortVariants<T extends Pick<Variant, "size" | "color">>(variants: T[]): T[] {
+  return [...variants].sort((a, b) => {
+    const byColor = (a.color ?? "").localeCompare(b.color ?? "");
+    if (byColor) return byColor;
+    const [ra, rb] = [sizeRank(a.size), sizeRank(b.size)];
+    return ra[0] - rb[0] || ra[1] - rb[1] || ra[2].localeCompare(rb[2]);
+  });
+}
+
 export const totalStock = (p: { variants: Variant[] }) => p.variants.reduce((n, v) => n + v.stock_quantity, 0);
 
 export function stockLevel(v: Pick<Variant, "stock_quantity" | "low_stock_threshold">): "out" | "low" | "ok" {

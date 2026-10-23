@@ -10,7 +10,14 @@ import { ToastProvider } from "@/components/overlay";
 import { PageLoading } from "@/components/ui";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { ForgotPasswordPage, LoginPage, SetPasswordPage } from "@/pages/auth";
+import { CustomerDetailPage, CustomersPage } from "@/pages/Customers";
 import { DashboardPage } from "@/pages/Dashboard";
+import { InventoryPage } from "@/pages/Inventory";
+import { OrderDetailPage, OrdersPage } from "@/pages/Orders";
+import { PosPage } from "@/pages/Pos";
+import { ProductDetailPage } from "@/pages/ProductDetail";
+import { ProductsPage } from "@/pages/Products";
+import { AccountPage, CategoriesPage, StaffPage } from "@/pages/Settings";
 
 // Data is cached briefly and refetched when the window regains focus, so a
 // tab left open at the counter catches up with sales made elsewhere.
@@ -48,6 +55,17 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Home /> },
           { path: "dashboard", element: <DashboardPage /> },
+          { path: "pos", element: <PosPage /> },
+          { path: "orders", element: <OrdersPage /> },
+          { path: "orders/:id", element: <OrderDetailPage /> },
+          { path: "customers", element: <CustomersPage /> },
+          { path: "customers/:id", element: <CustomerDetailPage /> },
+          { path: "products", element: <ProductsPage /> },
+          { path: "products/:id", element: <ProductDetailPage /> },
+          { path: "inventory", element: <InventoryPage /> },
+          { path: "categories", element: <CategoriesPage /> },
+          { path: "staff", element: <StaffPage /> },
+          { path: "account", element: <AccountPage /> },
           { path: "*", element: <Home /> },
         ],
       },
