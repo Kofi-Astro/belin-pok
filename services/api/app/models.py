@@ -477,6 +477,11 @@ class POSSaleItem(Base):
     No stock_movement exists for it until a variant is attached via the
     identify endpoint in app/routers/pos_sales.py -- until then it counts
     for revenue/audit purposes but not for stock.
+
+    A line with neither variant_id nor category_id is "unsorted": a whole
+    basket rung up as one amount at a busy moment (quantity 1), replaced
+    by its real parts later via the break-down endpoint -- see
+    migrations/20261023120004_pos_sale_unsorted_lines.sql.
     """
 
     __tablename__ = "pos_sale_items"

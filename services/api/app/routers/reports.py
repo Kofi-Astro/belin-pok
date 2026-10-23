@@ -429,6 +429,8 @@ async def sales_report(
         entry[f"{channel}_quantity"] += int(quantity)
 
     # A quick-logged line has no variant: it's grouped under its category.
+    # An unsorted line (a busy-hour basket rung up as one amount) has
+    # neither, and is grouped on its own until someone breaks it down.
     line_category = func.coalesce(Product.category_id, POSSaleItem.category_id)
     counter_products = await db.execute(
         select(
@@ -460,8 +462,11 @@ async def sales_report(
         )
     )
     for row in counter_products:
-        if row.variant_id is None:
-            name = f"Unidentified {row.category_name or 'item'} (quick log)"
+        if row.variant_id is None and row.category_id is None:
+            add_product(("unsorted",), row, row.quantity, row.revenue, "counter", name="Unsorted sales (to break down)")
+            products[("unsorted",)]["category_name"] = "Unsorted"
+        elif row.variant_id is None:
+            name = f"Unidentified {row.category_name} (quick log)"
             add_product(("quick", row.category_id), row, row.quantity, row.revenue, "counter", name=name)
         else:
             add_product(row.variant_id, row, row.quantity, row.revenue, "counter")
@@ -689,6 +694,7 @@ async def activity_log(
                     Product.name,
                     ProductVariant.size,
                     Category.name.label("category"),
+                    POSSaleItem.note,
                 )
                 .outerjoin(ProductVariant, ProductVariant.id == POSSaleItem.variant_id)
                 .outerjoin(Product, Product.id == ProductVariant.product_id)
@@ -706,7 +712,11 @@ async def activity_log(
             total = sum(float(r.line_total) for r in sale_lines)
             items = sum(r.quantity for r in sale_lines)
             what = ", ".join(
-                f"{r.name} ({r.size}) ×{r.quantity}" if r.name else f"{r.category} (quick log) ×{r.quantity}"
+                f"{r.name} ({r.size}) ×{r.quantity}"
+                if r.name
+                else f"{r.category} (quick log) ×{r.quantity}"
+                if r.category
+                else f"Unsorted {_money(float(r.line_total))}" + (f" ({r.note})" if r.note else "")
                 for r in sale_lines
             )
             if wants("sale") and start <= sale.created_at < end and (not staff_id or sale.staff_id == staff_id):
@@ -771,8 +781,9 @@ async def activity_log(
                 )
             )
 
-    # Product, price and staff changes.
-    if wants("catalog") or wants("staff"):
+    # Product, price and staff changes -- and sales broken down after the
+    # fact, which are listed with the sales.
+    if wants("catalog") or wants("staff") or wants("sale"):
         stmt = select(AuditLog).where(AuditLog.created_at >= start, AuditLog.created_at < end)
         if staff_id:
             stmt = stmt.where(AuditLog.staff_id == staff_id)
@@ -782,10 +793,27 @@ async def activity_log(
             (await db.execute(select(Product.id, Product.name).where(Product.id.in_(product_ids)))).all()
         )
         for e in entries:
+            old, new = e.old_values or {}, e.new_values or {}
+            if e.action == "pos_sale.break_down":
+                if wants("sale"):
+                    rung_up_by = who(uuid.UUID(old["rung_up_by"])) if old.get("rung_up_by") else None
+                    events.append(
+                        ActivityRead(
+                            at=e.created_at,
+                            kind="sale",
+                            staff_id=e.staff_id,
+                            staff_name=who(e.staff_id),
+                            summary=f"Broke down a {_money(old.get('amount', 0))} sale"
+                            + (f" rung up by {rung_up_by}" if rung_up_by else ""),
+                            detail=f"{old.get('line')} → " + ", ".join(new.get("parts", [])),
+                            reference_type="pos_sale",
+                            reference_id=e.record_id,
+                        )
+                    )
+                continue
             is_staff = e.table_name == "staff"
             if not wants("staff" if is_staff else "catalog"):
                 continue
-            old, new = e.old_values or {}, e.new_values or {}
             name = new.get("name") or old.get("name") or product_names.get(e.record_id) or "a product"
             person = new.get("full_name") or old.get("full_name") or "a staff member"
             summary = {

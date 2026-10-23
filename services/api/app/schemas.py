@@ -351,6 +351,11 @@ class POSSaleItemCreate(BaseModel):
     # to hunt down the exact SKU by hand -- in which case unit_price is
     # staff-entered (there's nothing else to price it from) and can be
     # attached to a real variant later via POST .../identify.
+    #
+    # Neither is an "unsorted" line: a whole mixed basket rung up as one
+    # amount when the shop is too busy to itemise it (quantity 1,
+    # unit_price = the amount), broken down later via POST .../break-down
+    # -- see migrations/20261023120004_pos_sale_unsorted_lines.sql.
     variant_id: uuid.UUID | None = None
     category_id: uuid.UUID | None = None
     note: str | None = Field(default=None, max_length=500)
@@ -366,13 +371,13 @@ class POSSaleItemCreate(BaseModel):
 
     @model_validator(mode="after")
     def _variant_or_category(self) -> "POSSaleItemCreate":
-        if self.variant_id is None and self.category_id is None:
-            raise ValueError("Each item needs either a variant_id or a category_id")
         if self.variant_id is None:
             if self.unit_price is None:
-                raise ValueError("A quick-logged item (no variant_id) needs a unit_price")
+                raise ValueError("A quick-logged or unsorted item (no variant_id) needs a unit_price")
             if self.price_tier == PriceTier.pack:
                 raise ValueError("Pack pricing requires a specific variant_id")
+            if self.category_id is None and self.quantity != 1:
+                raise ValueError("An unsorted sale is one line for the whole amount (quantity 1)")
         return self
 
 
@@ -414,6 +419,33 @@ class POSSaleItemRead(BaseModel):
 
 class POSSaleItemIdentify(BaseModel):
     variant_id: uuid.UUID
+
+
+class POSSaleBreakdownPart(BaseModel):
+    """One component of a line being broken down: an exact product, or --
+    if even that isn't known -- a type of item, which stays a quick-logged
+    line to identify later. unit_price is what this part is taken to have
+    cost, staff-entered: the money was already taken as one amount, so the
+    parts share it out rather than being re-priced from the catalogue."""
+
+    variant_id: uuid.UUID | None = None
+    category_id: uuid.UUID | None = None
+    quantity: int = Field(gt=0)
+    unit_price: float = Field(gt=0)
+    price_tier: PriceTier = PriceTier.retail
+    note: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _names_something(self) -> "POSSaleBreakdownPart":
+        if self.variant_id is None and self.category_id is None:
+            raise ValueError("Each part needs a product (variant_id) or a type of item (category_id)")
+        if self.price_tier == PriceTier.pack:
+            raise ValueError("Parts are priced per item, not per pack")
+        return self
+
+
+class POSSaleItemBreakdown(BaseModel):
+    parts: list[POSSaleBreakdownPart] = Field(min_length=1, max_length=100)
 
 
 class POSSaleRead(BaseModel):

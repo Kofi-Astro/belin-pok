@@ -3,7 +3,8 @@ staff-only end to end. Distinct from app/routers/orders.py's storefront
 checkout: a POS sale can mix price tiers per line, split across multiple
 payment methods (including a wholesale customer's credit), and supports
 "quick log" lines for ringing something up by category before its exact
-SKU has been looked up."""
+SKU has been looked up, and "unsorted" lines for a whole busy-hour basket
+rung up as one amount and broken down into its parts later."""
 
 import uuid
 from dataclasses import dataclass, field
@@ -17,6 +18,7 @@ from sqlalchemy.orm import selectinload
 from app.db import get_db
 from app.deps import get_current_staff, require_role
 from app.models import (
+    AuditLog,
     Category,
     CreditLedgerEntryType,
     Customer,
@@ -36,6 +38,7 @@ from app.models import (
 )
 from app.schemas import (
     POSSaleCreate,
+    POSSaleItemBreakdown,
     POSSaleItemIdentify,
     POSSaleItemRead,
     POSSalePaymentRead,
@@ -224,6 +227,7 @@ async def list_pos_sales(
     date_to: date | None = None,
     staff_id: uuid.UUID | None = None,
     customer_id: uuid.UUID | None = None,
+    needs_details: bool = False,
     sale_status: str | None = Query(default=None, alias="status", pattern="^(completed|voided)$"),
     payment_method: PaymentMethod | None = None,
     limit: int = Query(default=100, ge=1, le=500),
@@ -233,8 +237,9 @@ async def list_pos_sales(
     carries who rang it up, the customer (if any), each line with its
     quantity and price, the payments, and void details. Dates are whole
     days in the shop's timezone (see app/shop_time.py); payment_method
-    keeps sales with at least one payment of that kind. X-Total-Count
-    carries the number of matching sales."""
+    keeps sales with at least one payment of that kind; needs_details keeps
+    live sales with a quick-logged or unsorted line still to be named (the
+    till's to-do list). X-Total-Count carries the number of matching sales."""
     stmt = select(POSSale)
     if date_from or date_to:
         start, end = day_range(date_from or date(2000, 1, 1), date_to or date(2100, 1, 1))
@@ -245,10 +250,13 @@ async def list_pos_sales(
         stmt = stmt.where(POSSale.customer_id == customer_id)
     if sale_status is not None:
         stmt = stmt.where(POSSale.status == sale_status)
-    if payment_method is not None:
+    if needs_details:
         stmt = stmt.where(
-            POSSale.id.in_(select(POSSalePayment.sale_id).where(POSSalePayment.method == payment_method))
+            POSSale.status != "voided",
+            POSSale.id.in_(select(POSSaleItem.sale_id).where(POSSaleItem.variant_id.is_(None))),
         )
+    if payment_method is not None:
+        stmt = stmt.where(POSSale.id.in_(select(POSSalePayment.sale_id).where(POSSalePayment.method == payment_method)))
 
     response.headers["X-Total-Count"] = str(await db.scalar(select(func.count()).select_from(stmt.subquery())))
     stmt = stmt.options(selectinload(POSSale.payments)).order_by(POSSale.created_at.desc()).limit(limit).offset(offset)
@@ -474,9 +482,7 @@ async def identify_pos_sale_item(
     if item.variant_id is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This line already has a product attached")
 
-    variant = await db.scalar(
-        select(ProductVariant).where(ProductVariant.id == payload.variant_id).with_for_update()
-    )
+    variant = await db.scalar(select(ProductVariant).where(ProductVariant.id == payload.variant_id).with_for_update())
     if variant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
     if variant.stock_quantity < item.quantity:
@@ -500,6 +506,136 @@ async def identify_pos_sale_item(
             performed_by=staff.id,
         )
     )
+    await db.commit()
+
+    stmt = select(POSSale).where(POSSale.id == sale.id).options(selectinload(POSSale.payments))
+    sale = await db.scalar(stmt)
+    return await _hydrate(db, sale)
+
+
+@router.post("/{sale_id}/items/{item_id}/break-down", response_model=POSSaleRead)
+async def break_down_pos_sale_item(
+    sale_id: uuid.UUID,
+    item_id: uuid.UUID,
+    payload: POSSaleItemBreakdown,
+    db: AsyncSession = Depends(get_db),
+    staff: Staff = Depends(_write_roles),
+) -> POSSaleRead:
+    """Splits a line that doesn't name a product yet into what was really
+    in it. Mostly for "unsorted" lines (a whole basket rung up as one
+    amount when the shop was packed -- see POSSaleItemCreate), but works on
+    a quick-logged category line too (e.g. "4 caps" that turn out to be
+    two different caps), which identify can't do since it attaches a
+    single product.
+
+    The parts must add up to exactly what the line charged: the money was
+    already taken, so a breakdown only says what it paid for. Parts naming
+    a product take that product's stock off now (the till didn't know what
+    left the shelf until this moment -- the same rule identify follows);
+    parts naming only a type of item stay quick-logged lines, to identify
+    later. The original line is replaced by its parts, and the before and
+    after are written to the audit log, so the owner's activity log shows
+    who broke what down, and into what.
+    """
+    sale = await db.get(POSSale, sale_id)
+    if sale is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sale not found")
+    if sale.status == "voided":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This sale has been voided")
+
+    item = await db.scalar(select(POSSaleItem).where(POSSaleItem.id == item_id).with_for_update())
+    if item is None or item.sale_id != sale_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sale item not found")
+    if item.variant_id is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This line already names a product")
+
+    # Cents, so ₵0.1 + ₵0.2 sums the way a person would add it up.
+    line_cents = round(float(item.line_total) * 100)
+    parts_cents = sum(round(p.unit_price * 100) * p.quantity for p in payload.parts)
+    if parts_cents != line_cents:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"The parts come to ₵{parts_cents / 100:.2f} but the line was ₵{line_cents / 100:.2f} — they must match"
+            ),
+        )
+
+    # Lock variants in a fixed order, as checkout does, and check there's
+    # stock for every part (a variant named in two parts needs both).
+    needed: dict[uuid.UUID, int] = {}
+    for part in payload.parts:
+        if part.variant_id is not None:
+            needed[part.variant_id] = needed.get(part.variant_id, 0) + part.quantity
+    labels: dict[uuid.UUID, str] = {}
+    for variant_id in sorted(needed):
+        variant = await db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id).with_for_update())
+        if variant is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Variant {variant_id} not found")
+        product = await db.get(Product, variant.product_id)
+        labels[variant_id] = f"{product.name} ({' · '.join(filter(None, [variant.size, variant.color]))})"
+        if variant.stock_quantity < needed[variant_id]:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"{labels[variant_id]} only has {variant.stock_quantity} in stock, needs {needed[variant_id]} — "
+                    "record a stock correction first if it wasn't fully counted"
+                ),
+            )
+    categories: dict[uuid.UUID, str] = {}
+    for category_id in {p.category_id for p in payload.parts if p.variant_id is None}:
+        category = await db.get(Category, category_id)
+        if category is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Category {category_id} not found")
+        categories[category_id] = category.name
+
+    # What the line was, in words, for the audit trail -- it's about to go.
+    if item.category_id is not None:
+        before = f"{(await db.get(Category, item.category_id)).name} (quick log) ×{item.quantity}"
+    else:
+        before = "Unsorted sale"
+    if item.note:
+        before += f" — “{item.note}”"
+    after = []
+
+    for part in payload.parts:
+        is_product = part.variant_id is not None
+        db.add(
+            POSSaleItem(
+                sale_id=sale.id,
+                variant_id=part.variant_id,
+                # A named product's category comes from the product itself.
+                category_id=None if is_product else part.category_id,
+                note=None if is_product else part.note,
+                price_tier=part.price_tier,
+                quantity=part.quantity,
+                unit_price=round(part.unit_price, 2),
+            )
+        )
+        name = labels[part.variant_id] if is_product else f"{categories[part.category_id]} (quick log)"
+        after.append(f"{name} ×{part.quantity} at ₵{part.unit_price:.2f}")
+    for variant_id, quantity in needed.items():
+        db.add(
+            StockMovement(
+                variant_id=variant_id,
+                movement_type=StockMovementType.sale,
+                quantity_change=-quantity,
+                reason="Named when breaking down a sale",
+                reference_type="pos_sale",
+                reference_id=sale.id,
+                performed_by=staff.id,
+            )
+        )
+    db.add(
+        AuditLog(
+            staff_id=staff.id,
+            action="pos_sale.break_down",
+            table_name="pos_sales",
+            record_id=sale.id,
+            old_values={"line": before, "amount": line_cents / 100, "rung_up_by": str(sale.staff_id)},
+            new_values={"parts": after},
+        )
+    )
+    await db.delete(item)
     await db.commit()
 
     stmt = select(POSSale).where(POSSale.id == sale.id).options(selectinload(POSSale.payments))

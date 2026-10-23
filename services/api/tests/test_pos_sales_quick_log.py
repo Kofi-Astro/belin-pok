@@ -34,13 +34,15 @@ async def _make_variant(ac, unique: str, *, price: float = 20.0, stock: int = 0,
     return product_id, variant_id, category_id
 
 
-async def test_quick_log_item_requires_variant_or_category(client):
+async def test_line_without_variant_or_category_is_one_unsorted_line(client):
+    # Neither is an "unsorted" basket (see test_pos_sales_break_down.py),
+    # which is always a single line for the whole amount.
     async with client as ac:
         sale_res = await ac.post(
             "/pos-sales",
             json={
-                "items": [{"quantity": 1, "unit_price": 20.0}],
-                "payments": [{"method": "cash", "amount": 20.0}],
+                "items": [{"quantity": 2, "unit_price": 20.0}],
+                "payments": [{"method": "cash", "amount": 40.0}],
             },
         )
         assert sale_res.status_code == 422, sale_res.text
