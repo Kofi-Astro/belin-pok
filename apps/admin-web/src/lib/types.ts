@@ -9,6 +9,8 @@ export type StaffRole = "owner" | "inventory_manager" | "order_fulfillment" | "v
 export type Staff = {
   id: string;
   email: string | null;
+  // Stored as 0XXXXXXXXX; their sign-in if they have no email.
+  phone: string | null;
   full_name: string;
   // What they can do is the union of these. Owner and Viewer stand alone.
   roles: StaffRole[];

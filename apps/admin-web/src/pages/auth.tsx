@@ -89,7 +89,7 @@ export function LoginPage() {
     <AuthLayout title="Sign in" subtitle="Welcome back. Sign in to manage the shop.">
       <form onSubmit={submit} className="space-y-4">
         <FormError message={error ?? notice} />
-        <Field label="Email or username">
+        <Field label="Email, phone number or username">
           <Input autoFocus required autoComplete="username" value={identifier} onChange={(e) => setIdentifier(e.target.value)} />
         </Field>
         <Field label="Password">

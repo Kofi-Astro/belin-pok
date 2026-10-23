@@ -6,7 +6,7 @@
 //   - Account: the signed-in person's own details and password.
 // (The shop-wide online pricing lives on its own page, ShopSettings.tsx.)
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Link2, Pencil, Plus, Tags, Trash2, UserPlus } from "lucide-react";
+import { Copy, Link2, Mail, MessageCircle, Pencil, Plus, Share2, Smartphone, Tags, Trash2, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ConfirmDialog, Modal, useToast } from "@/components/overlay";
@@ -257,8 +257,8 @@ export function StaffPage() {
   const { staff: me } = useAuth();
   const staff = useQuery({ queryKey: ["staff"], queryFn: () => api.get<Staff[]>("/staff") });
   const [inviting, setInviting] = useState(false);
-  // A freshly issued invite/sign-in link, shown in LinkModal to copy.
-  const [link, setLink] = useState<{ name: string; url: string } | null>(null);
+  // A freshly issued invite/sign-in link, shown in LinkModal to send on.
+  const [link, setLink] = useState<IssuedLink | null>(null);
   // The person whose roles are being changed, and the roles ticked.
   const [editing, setEditing] = useState<Staff | null>(null);
   const [editRoles, setEditRoles] = useState<StaffRole[]>([]);
@@ -280,8 +280,8 @@ export function StaffPage() {
   // aren't cancelled; each still works once until it expires.)
   const newLink = async (s: Staff) => {
     try {
-      const r = await api.post<Staff & { invite_link: string }>(`/staff/${s.id}/invite-link`);
-      setLink({ name: s.full_name, url: r.invite_link });
+      const r = await api.post<InviteResult>(`/staff/${s.id}/invite-link`);
+      setLink({ staff: r, url: r.invite_link, emailSent: r.email_sent, isNew: false });
     } catch (e) {
       toast.error(e);
     }
@@ -324,7 +324,7 @@ export function StaffPage() {
                         <p className="font-semibold">
                           {s.full_name} {isMe && <Badge tone="brand">You</Badge>}
                         </p>
-                        <p className="text-xs text-muted">{s.email ?? "Signs in with a username"}</p>
+                        <p className="text-xs text-muted">{[s.email, s.phone].filter(Boolean).join(" · ") || "Signs in with a username"}</p>
                       </div>
                     </div>
                   </Td>
@@ -374,7 +374,7 @@ export function StaffPage() {
           </Card>
         ))}
       </div>
-      <InviteModal open={inviting} onClose={() => setInviting(false)} onInvited={(name, url) => setLink({ name, url })} />
+      <InviteModal open={inviting} onClose={() => setInviting(false)} onInvited={(r) => setLink({ staff: r, url: r.invite_link, emailSent: r.email_sent, isNew: true })} />
       <Modal
         open={!!editing}
         onClose={() => setEditing(null)}
@@ -402,25 +402,45 @@ export function StaffPage() {
   );
 }
 
-// Invite a new staff member: creates their account with the roles
-// ticked and returns a one-time link for them to choose a password
-// (emailed if email sending is set up; shown here either way).
-function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () => void; onInvited: (name: string, url: string) => void }) {
+/** What POST /staff/invite (and /invite-link) return: the staff record, the
+ * one-time link, and whether the API managed to email it. */
+type InviteResult = Staff & { invite_link: string; email_sent: boolean };
+
+/** A link just issued, for LinkModal. isNew: a first invite (vs. a fresh
+ * link for someone who already has an account), which changes the wording
+ * of the message sent with it. */
+type IssuedLink = { staff: Staff; url: string; emailSent: boolean; isNew: boolean };
+
+// Invite a new staff member: creates their account with the roles ticked
+// and returns a one-time link for them to choose a password. They can be
+// invited with an email, a phone number or both -- whichever they have --
+// and sign in with either. The link is then sent from LinkModal however
+// suits: email, WhatsApp, SMS, or anything else on the owner's phone.
+function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () => void; onInvited: (r: InviteResult) => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ full_name: "", email: "", roles: ["order_fulfillment"] as StaffRole[] });
+  const blank = { full_name: "", email: "", phone: "", roles: ["order_fulfillment"] as StaffRole[] };
+  const [form, setForm] = useState(blank);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const hasContact = form.email.trim() !== "" || form.phone.trim() !== "";
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const r = await api.post<Staff & { invite_link: string }>("/staff/invite", { ...form, full_name: form.full_name.trim(), email: form.email.trim() });
+      // Empty fields go up as null; the API checks at least one is given
+      // and stores the phone number in one standard form.
+      const r = await api.post<InviteResult>("/staff/invite", {
+        full_name: form.full_name.trim(),
+        email: form.email.trim() || null,
+        phone: form.phone.trim() || null,
+        roles: form.roles,
+      });
       await qc.invalidateQueries({ queryKey: ["staff"] });
-      setForm({ full_name: "", email: "", roles: ["order_fulfillment"] });
+      setForm(blank);
       onClose();
-      onInvited(r.full_name, r.invite_link);
+      onInvited(r);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -433,14 +453,14 @@ function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () 
       open={open}
       onClose={onClose}
       title="Invite a staff member"
-      description="They'll get a link to choose a password."
+      description="They'll get a link to choose a password — by email, WhatsApp, SMS or however you like."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="invite-form" loading={busy} disabled={!form.roles.length}>
-            Send invite
+          <Button type="submit" form="invite-form" loading={busy} disabled={!form.roles.length || !hasContact}>
+            Create invite
           </Button>
         </>
       }
@@ -450,9 +470,15 @@ function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () 
         <Field label="Full name">
           <Input autoFocus required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
         </Field>
-        <Field label="Email" hint="They'll sign in with this.">
-          <Input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Email" hint="If they have one.">
+            <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </Field>
+          <Field label="Phone" hint="For WhatsApp or SMS.">
+            <Input type="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="024 123 4567" />
+          </Field>
+        </div>
+        <p className="text-xs text-muted">Give at least one. They sign in with their email — or their phone number if they don&apos;t have one.</p>
         <div>
           <p className="mb-1.5 text-xs font-semibold text-ink/80">What will they do? (tick all that apply)</p>
           <RolePicker value={form.roles} onChange={(roles) => setForm({ ...form, roles })} />
@@ -462,34 +488,86 @@ function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () 
   );
 }
 
-// Shows an invite/sign-in link to copy and pass on. Anyone with the link
-// can set that person's password, hence the warning.
-function LinkModal({ link, onClose }: { link: { name: string; url: string } | null; onClose: () => void }) {
+/** A Ghana number as WhatsApp wants it: country code, digits only
+ * ("0241234567" -> "233241234567"). Mirrors international() in
+ * services/api/app/phone.py; numbers are stored as 0XXXXXXXXX or +<digits>. */
+function internationalPhone(phone: string): string {
+  return phone.startsWith("+") ? phone.slice(1) : `233${phone.slice(1)}`;
+}
+
+// Passing on an invite/sign-in link. Every option sends from the owner's
+// own accounts, so nothing needs setting up and nothing costs extra:
+//   - Email: sent by the API when email sending is configured; otherwise
+//     opens the owner's email app with the message written.
+//   - WhatsApp: opens WhatsApp (app or web) to their number, message ready.
+//   - SMS: opens the phone's messages app, message ready (on a phone or
+//     tablet; a computer may have no SMS app).
+//   - Share: the phone's own share menu -- Telegram, Messenger, anything.
+//   - Copy: to paste anywhere.
+// Anyone with the link can set that person's password, hence the warning.
+function LinkModal({ link, onClose }: { link: IssuedLink | null; onClose: () => void }) {
   const toast = useToast();
+  if (!link) return null;
+  const { staff: person, url, emailSent, isNew } = link;
+  const firstName = person.full_name.split(" ")[0];
+  const signInWith = person.email ?? person.phone ?? "your username";
+  const message = isNew
+    ? `Hi ${firstName}, you've been added to the Belin-Pok shop admin. Set your password here (the link works once, for 7 days): ${url}\n\nAfter that, sign in with ${signInWith}.`
+    : `Hi ${firstName}, here's a link to set a new password for the Belin-Pok shop admin (it works once, for 7 days): ${url}\n\nSign in with ${signInWith}.`;
+  const text = encodeURIComponent(message);
+  const canShare = typeof navigator !== "undefined" && "share" in navigator;
+
+  // Each channel: where it goes, and whether it's usable for this person.
+  const channels = [
+    !emailSent && person.email && { label: "Email", icon: Mail, href: `mailto:${person.email}?subject=${encodeURIComponent("Your Belin-Pok sign-in link")}&body=${text}` },
+    { label: "WhatsApp", icon: MessageCircle, href: person.phone ? `https://wa.me/${internationalPhone(person.phone)}?text=${text}` : `https://wa.me/?text=${text}` },
+    // "?&body=" works on both iPhone and Android messages apps.
+    { label: "SMS", icon: Smartphone, href: `sms:${person.phone ?? ""}?&body=${text}` },
+  ].filter(Boolean) as { label: string; icon: typeof Mail; href: string }[];
+
   return (
     <Modal
-      open={!!link}
+      open
       onClose={onClose}
-      title={`Sign-in link for ${link?.name ?? ""}`}
-      description="It's been emailed if email is set up. You can also send it yourself, e.g. on WhatsApp."
-      footer={
-        <>
+      title={isNew ? `Send ${firstName} their invite` : `New sign-in link for ${firstName}`}
+      description={emailSent ? `Emailed to ${person.email}. You can send it another way too.` : "Choose how to send it."}
+      footer={<Button onClick={onClose}>Done</Button>}
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {channels.map((c) => (
+            <a
+              key={c.label}
+              href={c.href}
+              target={c.href.startsWith("https:") ? "_blank" : undefined}
+              rel="noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 py-2.5 text-sm font-semibold shadow-xs hover:bg-canvas"
+            >
+              <c.icon className="h-4 w-4 text-brand-600" /> {c.label}
+            </a>
+          ))}
+          {canShare && (
+            <Button variant="secondary" icon={Share2} onClick={() => void navigator.share({ title: "Belin-Pok sign-in link", text: message }).catch(() => {})}>
+              Share…
+            </Button>
+          )}
           <Button
             variant="secondary"
             icon={Copy}
             onClick={async () => {
-              await navigator.clipboard.writeText(link!.url);
-              toast.success("Link copied");
+              await navigator.clipboard.writeText(message);
+              toast.success("Message and link copied");
             }}
           >
-            Copy link
+            Copy
           </Button>
-          <Button onClick={onClose}>Done</Button>
-        </>
-      }
-    >
-      <p className="rounded-lg bg-canvas p-3 font-mono text-xs break-all">{link?.url}</p>
-      <p className="mt-3 text-xs text-muted">Works once, for 7 days. Only send it to the person it&apos;s for — it lets them set the password.</p>
+        </div>
+        <div>
+          <p className="mb-1 text-xs font-semibold text-ink/80">The message</p>
+          <p className="rounded-lg bg-canvas p-3 text-xs break-words whitespace-pre-line">{message}</p>
+        </div>
+        <p className="text-xs text-muted">Only send it to {firstName} — whoever opens the link can set the password.</p>
+      </div>
     </Modal>
   );
 }
@@ -538,7 +616,7 @@ export function AccountPage() {
             </div>
             <div className="flex justify-between">
               <dt className="text-muted">Sign-in</dt>
-              <dd className="font-medium">{staff?.email ?? "Username"}</dd>
+              <dd className="font-medium">{staff?.email ?? staff?.phone ?? "Username"}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-muted">Role</dt>
