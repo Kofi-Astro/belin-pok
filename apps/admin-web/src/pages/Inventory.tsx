@@ -370,7 +370,7 @@ function Movements() {
                   <Td className="text-right">
                     {/* Owners only, and only entries made by hand: a sale's or
                         order's stock goes with that sale/order. */}
-                    {!["pos_sale", "pos_sale_void", "order"].includes(m.reference_type ?? "") && (
+                    {!["pos_sale", "pos_sale_void", "order", "order_cancel"].includes(m.reference_type ?? "") && (
                       <OwnerDeleteButton
                         compact
                         label="Delete entry"

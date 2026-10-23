@@ -139,7 +139,11 @@ class CreditLedgerEntryType(enum.StrEnum):
 
 
 def _pg_enum(pg_enum: enum.EnumMeta, name: str) -> PgEnum:
-    return PgEnum(pg_enum, name=name, create_type=False)
+    # values_callable: store each member's *value*, which is what the
+    # Postgres enum holds. SQLAlchemy's default is the member's Python name,
+    # which only differs for StockMovementType.return_ ("return" is a Python
+    # keyword) -- and that difference made every customer return fail.
+    return PgEnum(pg_enum, name=name, create_type=False, values_callable=lambda e: [m.value for m in e])
 
 
 class CIText(UserDefinedType):

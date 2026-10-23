@@ -332,10 +332,11 @@ async def update_order_status(
     db: AsyncSession = Depends(get_db),
     staff: Staff = Depends(_write_roles),
 ) -> Order:
-    order = await db.get(Order, order_id)
+    order = await db.scalar(select(Order).where(Order.id == order_id).options(selectinload(Order.items)))
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
 
+    await _sync_order_stock(db, order, order.status, payload.status, staff)
     order.status = payload.status
     db.add(OrderStatusHistory(order_id=order.id, status=payload.status, changed_by=staff.id, note=payload.note))
 
@@ -361,6 +362,76 @@ async def update_order_status(
     return await db.scalar(stmt)
 
 
+# An order takes its stock at checkout (movements with reference_type
+# "order"). Closing it gives the stock back with "order_cancel" movements,
+# and reopening it takes it again -- so the net of an order's movements is
+# always what it's currently holding off the shelf.
+_CLOSED = {OrderStatus.cancelled, OrderStatus.refunded}
+# Until an order has been shipped its goods are still in the shop; after
+# that, a refund doesn't bring them back by itself -- when they're actually
+# returned, that's recorded as a customer return (Adjust stock).
+_STILL_IN_SHOP = {OrderStatus.pending, OrderStatus.paid, OrderStatus.packed}
+
+
+async def _sync_order_stock(db: AsyncSession, order: Order, old: OrderStatus, new: OrderStatus, staff: Staff) -> None:
+    """Returns an order's stock to the shelf when it's cancelled (or refunded
+    before shipping), and takes it again if a closed order is reopened --
+    refusing, with a clear message, if there's no longer enough."""
+    held: dict[uuid.UUID, int] = {}
+    for m in await db.scalars(
+        select(StockMovement).where(
+            StockMovement.reference_type.in_(["order", "order_cancel"]), StockMovement.reference_id == order.id
+        )
+    ):
+        held[m.variant_id] = held.get(m.variant_id, 0) - m.quantity_change
+
+    gives_back = new in _CLOSED and old not in _CLOSED and (new == OrderStatus.cancelled or old in _STILL_IN_SHOP)
+    if gives_back:
+        for variant_id, quantity in held.items():
+            if quantity > 0:
+                db.add(
+                    StockMovement(
+                        variant_id=variant_id,
+                        movement_type=StockMovementType.return_,
+                        quantity_change=quantity,
+                        reason=f"Online order {order.order_number} {new.value}",
+                        reference_type="order_cancel",
+                        reference_id=order.id,
+                        performed_by=staff.id,
+                    )
+                )
+        return
+
+    if old in _CLOSED and new not in _CLOSED:
+        # Reopened: take back whatever isn't currently held.
+        wanted: dict[uuid.UUID, int] = {}
+        for item in order.items:
+            wanted[item.variant_id] = wanted.get(item.variant_id, 0) + item.quantity
+        for variant_id in sorted(wanted):
+            missing = wanted[variant_id] - held.get(variant_id, 0)
+            if missing <= 0:
+                continue
+            variant = await db.scalar(select(ProductVariant).where(ProductVariant.id == variant_id).with_for_update())
+            if variant.stock_quantity < missing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Can't reopen: SKU {variant.sku} only has {variant.stock_quantity} in stock, needs {missing}"
+                    ),
+                )
+            db.add(
+                StockMovement(
+                    variant_id=variant_id,
+                    movement_type=StockMovementType.sale,
+                    quantity_change=-missing,
+                    reason=f"Online order {order.order_number} reopened",
+                    reference_type="order",
+                    reference_id=order.id,
+                    performed_by=staff.id,
+                )
+            )
+
+
 @router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_order(
     order_id: uuid.UUID,
@@ -381,7 +452,8 @@ async def delete_order(
         f"{i.variant.product.name} ({i.variant.size}) ×{i.quantity}" for i in order.items if i.variant is not None
     )
 
-    await undo_stock(db, ["order"], order.id)
+    # Its checkout movements, and any given back by cancelling it.
+    await undo_stock(db, ["order", "order_cancel"], order.id)
     record_deletion(
         db,
         staff,

@@ -38,7 +38,12 @@ _owner = require_role(StaffRole.owner)
 # Movements made by a sale or an order belong to that record: they're
 # removed with it (DELETE /pos-sales/{id}, DELETE /orders/{id}), never on
 # their own, or the sale and the stock would stop agreeing.
-_OWNED_BY = {"pos_sale": "till sale", "pos_sale_void": "till sale", "order": "online order"}
+_OWNED_BY = {
+    "pos_sale": "till sale",
+    "pos_sale_void": "till sale",
+    "order": "online order",
+    "order_cancel": "online order",
+}
 
 
 @router.get("", response_model=list[StockMovementRead], dependencies=[Depends(get_current_staff)])
