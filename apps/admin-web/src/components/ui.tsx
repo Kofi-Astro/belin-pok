@@ -64,26 +64,31 @@ export function IconButton({
 
 // ---------- form fields ----------
 
+// Full width unless the caller sets a width (w-40, w-48, ...) -- two
+// conflicting width utilities would otherwise be decided by stylesheet
+// order, not by which one the caller meant.
+const fullWidthUnlessSized = (className?: string) => (/(^|\s)w-/.test(className ?? "") ? undefined : "w-full");
+
 const fieldBase =
-  "w-full rounded-lg border border-line bg-white px-3 text-sm text-ink placeholder:text-muted/70 shadow-xs focus:border-brand-500 focus:ring-3 focus:ring-brand-100 focus:outline-none disabled:bg-canvas";
+  "rounded-lg border border-line bg-white px-3 text-sm text-ink placeholder:text-muted/70 shadow-xs focus:border-brand-500 focus:ring-3 focus:ring-brand-100 focus:outline-none disabled:bg-canvas";
 
 export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(function Input(
   { className, ...rest },
   ref,
 ) {
-  return <input ref={ref} className={clsx(fieldBase, "h-10", className)} {...rest} />;
+  return <input ref={ref} className={clsx(fieldBase, fullWidthUnlessSized(className), "h-10", className)} {...rest} />;
 });
 
 export function Select({ className, children, ...rest }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select className={clsx(fieldBase, "h-10 pr-8", className)} {...rest}>
+    <select className={clsx(fieldBase, fullWidthUnlessSized(className), "h-10 pr-8", className)} {...rest}>
       {children}
     </select>
   );
 }
 
 export function Textarea({ className, ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={clsx(fieldBase, "min-h-24 py-2", className)} {...rest} />;
+  return <textarea className={clsx(fieldBase, fullWidthUnlessSized(className), "min-h-24 py-2", className)} {...rest} />;
 }
 
 /** Label + control + optional hint, the standard form row. */

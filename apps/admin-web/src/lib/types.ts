@@ -208,6 +208,11 @@ export type PosSale = {
   payments: { method: PaymentMethod; amount: number }[];
   total: number;
   credit_amount: number;
+  // Set on a voided sale.
+  voided_at: string | null;
+  voided_by: string | null;
+  voided_by_name: string | null;
+  void_reason: string | null;
 };
 
 export type Dashboard = {
@@ -238,4 +243,90 @@ export type AuditEntry = {
   new_values: Record<string, unknown> | null;
   created_at: string;
   staff_name: string | null;
+};
+
+// ---------- sales report & activity (GET /reports/sales, /reports/activity) ----------
+
+export type SalesTotals = {
+  revenue: number;
+  counter_revenue: number;
+  online_revenue: number;
+  receipts: number;
+  online_orders: number;
+  items_sold: number;
+  average_receipt: number;
+  by_method: Record<PaymentMethod, number>;
+  voided_count: number;
+  voided_amount: number;
+  credit_given: number;
+  credit_collected: number;
+};
+
+export type SalesPeriod = {
+  start: string;
+  end: string;
+  receipts: number;
+  online_orders: number;
+  items_sold: number;
+  counter_revenue: number;
+  online_revenue: number;
+  revenue: number;
+  cash: number;
+  mobile_money: number;
+  card: number;
+  credit: number;
+  voided_count: number;
+  voided_amount: number;
+};
+
+export type ProductSales = {
+  product_id: string | null;
+  variant_id: string | null;
+  product_name: string;
+  sku: string | null;
+  size: string | null;
+  color: string | null;
+  category_name: string | null;
+  quantity: number;
+  revenue: number;
+  counter_quantity: number;
+  online_quantity: number;
+};
+
+export type StaffSales = {
+  staff_id: string;
+  staff_name: string;
+  receipts: number;
+  items_sold: number;
+  revenue: number;
+  cash_taken: number;
+  voided_count: number;
+  voided_amount: number;
+  voids_performed: number;
+};
+
+export type SalesReport = {
+  date_from: string;
+  date_to: string;
+  group_by: "day" | "week" | "month";
+  timezone: string;
+  totals: SalesTotals;
+  periods: SalesPeriod[];
+  by_product: ProductSales[];
+  by_staff: StaffSales[];
+  by_category: { category_name: string; quantity: number; revenue: number }[];
+};
+
+export type ActivityKind = "sale" | "void" | "stock" | "catalog" | "order" | "credit" | "staff";
+
+export type Activity = {
+  at: string;
+  kind: ActivityKind;
+  staff_id: string | null;
+  staff_name: string | null;
+  summary: string;
+  detail: string | null;
+  amount: number | null;
+  reference_type: string | null;
+  reference_id: string | null;
 };

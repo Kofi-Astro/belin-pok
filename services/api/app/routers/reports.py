@@ -407,13 +407,13 @@ async def sales_report(
     # --- by product (and, from the same rows, by category) ---
     products: dict[object, dict] = {}
 
-    def add_product(key, row, quantity, revenue, channel):
+    def add_product(key, row, quantity, revenue, channel, name=None):
         entry = products.setdefault(
             key,
             {
                 "product_id": row.product_id,
                 "variant_id": row.variant_id,
-                "product_name": row.product_name,
+                "product_name": name or row.product_name,
                 "sku": row.sku,
                 "size": row.size,
                 "color": row.color,
@@ -461,8 +461,8 @@ async def sales_report(
     )
     for row in counter_products:
         if row.variant_id is None:
-            row = row._replace(product_name=f"Unidentified {row.category_name or 'item'} (quick log)")
-            add_product(("quick", row.category_id), row, row.quantity, row.revenue, "counter")
+            name = f"Unidentified {row.category_name or 'item'} (quick log)"
+            add_product(("quick", row.category_id), row, row.quantity, row.revenue, "counter", name=name)
         else:
             add_product(row.variant_id, row, row.quantity, row.revenue, "counter")
 

@@ -55,6 +55,10 @@ export function DashboardPage() {
         title="Dashboard"
         description="How the shop is doing — sales, stock and money owed."
         actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Link to="/reports?preset=today" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-semibold shadow-xs hover:bg-canvas">
+              Today&apos;s report
+            </Link>
           <div className="flex rounded-lg border border-line bg-white p-0.5 shadow-xs">
             {PERIODS.map((p) => (
               <button
@@ -66,6 +70,7 @@ export function DashboardPage() {
                 {p} days
               </button>
             ))}
+          </div>
           </div>
         }
       />
@@ -123,7 +128,7 @@ export function DashboardPage() {
                   labelFormatter={(v) => new Date(String(v)).toLocaleDateString("en-GH", { weekday: "short", day: "numeric", month: "short" })}
                   contentStyle={{ borderRadius: 10, border: "1px solid #e6e4ea", fontSize: 12 }}
                 />
-                <Area type="monotone" dataKey="revenue" stroke="#5b33a0" strokeWidth={2} fill="url(#rev)" />
+                <Area type="monotone" dataKey="revenue" stroke="#5b33a0" strokeWidth={2} fill="url(#rev)" isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>

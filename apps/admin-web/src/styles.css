@@ -33,3 +33,30 @@ body {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* Printing a report (or saving it as PDF from the print dialog): just the
+   page content, full width, no navigation or buttons. */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  body {
+    background: white;
+  }
+  .no-print,
+  aside,
+  header {
+    display: none !important;
+  }
+  .lg\:pl-60 {
+    padding-left: 0 !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  section {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+}

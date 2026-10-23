@@ -233,3 +233,28 @@ async def test_activity_log_shows_who_did_what(client, create_product_with_stock
     async with async_session_factory() as session:
         await session.execute(text("delete from users where email = :e"), {"e": f"helper-{unique}@example.com"})
         await session.commit()
+
+
+async def test_report_groups_quick_logged_lines_under_their_category(client, fresh_client):
+    """A line rung up by type (no exact product yet) still counts, listed
+    as an unidentified item of its category until someone attaches the
+    product."""
+    unique = uuid.uuid4().hex[:8]
+    async with client as ac:
+        category_id = (
+            await ac.post("/categories", json={"name": f"Quick {unique}", "slug": f"quick-{unique}"})
+        ).json()["id"]
+        sale = await ac.post(
+            "/pos-sales",
+            json={
+                "items": [{"category_id": category_id, "quantity": 3, "unit_price": 15}],
+                "payments": [{"method": "cash", "amount": 45}],
+            },
+        )
+        assert sale.status_code == 201, sale.text
+    async with fresh_client() as ac:
+        report = await _report(ac)
+    row = _row(report, key="by_product", value=f"Unidentified Quick {unique} (quick log)")
+    assert row is not None
+    assert (row["quantity"], row["revenue"], row["product_id"]) == (3, 45, None)
+    assert _row(report, key="by_category", value=f"Quick {unique}", field="category_name")["revenue"] == 45

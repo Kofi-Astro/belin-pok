@@ -9,7 +9,7 @@ import { Ban, Building2, ChevronDown, Minus, PackageSearch, Plus, Receipt, ScanB
 import { useMemo, useState } from "react";
 
 import { Thumb } from "@/components/bits";
-import { ConfirmDialog, Modal, useToast } from "@/components/overlay";
+import { Modal, useToast } from "@/components/overlay";
 import { useInvalidateStock } from "@/components/StockModals";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, FormError, IconButton, Input, PageHeader, Select, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -644,12 +644,15 @@ function TodaysSales() {
   const unidentified = (sales.data ?? []).filter((s) => s.status !== "voided" && s.items.some((i) => !i.variant_id));
   const takings = today.filter((s) => s.status !== "voided").reduce((n, s) => n + s.total, 0);
 
+  const [voidReason, setVoidReason] = useState("");
   const voidSale = useMutation({
-    mutationFn: (s: PosSale) => api.post(`/pos-sales/${s.id}/void`),
+    // A reason is required: voids are what the owner checks first.
+    mutationFn: (s: PosSale) => api.post(`/pos-sales/${s.id}/void`, { reason: voidReason.trim() }),
     onSuccess: async () => {
       await Promise.all([invalidate(), qc.invalidateQueries({ queryKey: ["pos-sales"] })]);
       toast.success("Sale voided — stock and credit reversed");
       setVoiding(null);
+      setVoidReason("");
     },
     onError: (e) => toast.error(e),
   });
@@ -720,16 +723,33 @@ function TodaysSales() {
           ))}
         </ul>
       )}
-      <ConfirmDialog
+      <Modal
         open={!!voiding}
         onClose={() => setVoiding(null)}
-        onConfirm={() => voiding && voidSale.mutate(voiding)}
-        busy={voidSale.isPending}
-        danger
+        size="sm"
         title="Void this sale?"
-        confirmLabel="Void sale"
-        message="For a sale entered by mistake: the stock goes back and any credit charge is reversed. For a customer returning goods, adjust stock as a return instead."
-      />
+        description={voiding ? `${money(voiding.total)} rung up ${timeAgo(voiding.created_at)}` : undefined}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setVoiding(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" disabled={voidReason.trim().length < 3} loading={voidSale.isPending} onClick={() => voiding && voidSale.mutate(voiding)}>
+              Void sale
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm">
+          <p className="text-ink/80">
+            For a sale entered by mistake: the stock goes back and any credit charge is reversed. For a customer returning goods, adjust stock as a return
+            instead.
+          </p>
+          <Field label="Why is it being voided?" hint="Recorded with your name — the owner sees it.">
+            <Input autoFocus value={voidReason} onChange={(e) => setVoidReason(e.target.value)} placeholder="e.g. Rang up the wrong size" />
+          </Field>
+        </div>
+      </Modal>
       {identifying && <IdentifyModal sale={identifying.sale} item={identifying.item} onClose={() => setIdentifying(null)} />}
     </Card>
   );

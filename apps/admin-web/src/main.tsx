@@ -11,12 +11,15 @@ import { PageLoading } from "@/components/ui";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { ForgotPasswordPage, LoginPage, SetPasswordPage } from "@/pages/auth";
 import { CustomerDetailPage, CustomersPage } from "@/pages/Customers";
+import { ActivityPage } from "@/pages/Activity";
 import { DashboardPage } from "@/pages/Dashboard";
 import { InventoryPage } from "@/pages/Inventory";
 import { OrderDetailPage, OrdersPage } from "@/pages/Orders";
 import { PosPage } from "@/pages/Pos";
 import { ProductDetailPage } from "@/pages/ProductDetail";
 import { ProductsPage } from "@/pages/Products";
+import { ReportsPage } from "@/pages/Reports";
+import { SalesJournalPage } from "@/pages/SalesJournal";
 import { AccountPage, CategoriesPage, StaffPage } from "@/pages/Settings";
 
 // Data is cached briefly and refetched when the window regains focus, so a
@@ -55,6 +58,9 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Home /> },
           { path: "dashboard", element: <DashboardPage /> },
+          { path: "reports", element: <ReportsPage /> },
+          { path: "sales", element: <SalesJournalPage /> },
+          { path: "activity", element: <ActivityPage /> },
           { path: "pos", element: <PosPage /> },
           { path: "orders", element: <OrdersPage /> },
           { path: "orders/:id", element: <OrderDetailPage /> },

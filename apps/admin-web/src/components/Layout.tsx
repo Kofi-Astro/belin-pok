@@ -1,11 +1,14 @@
 import clsx from "clsx";
 import {
+  BarChart3,
   Boxes,
   ClipboardList,
+  History,
   LayoutDashboard,
   LogOut,
   Menu,
   Package,
+  ReceiptText,
   ScanBarcode,
   Settings,
   Shirt,
@@ -30,7 +33,12 @@ type NavItem = { to: string; label: string; icon: LucideIcon; show?: (can: Permi
 const NAV: { heading: string; items: NavItem[] }[] = [
   {
     heading: "Overview",
-    items: [{ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, show: (c) => c.manageCatalog }],
+    items: [
+      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, show: (c) => c.manageCatalog },
+      { to: "/reports", label: "Sales reports", icon: BarChart3, show: (c) => c.manageCatalog },
+      { to: "/sales", label: "Sales journal", icon: ReceiptText, show: (c) => c.manageCatalog },
+      { to: "/activity", label: "Activity log", icon: History, show: (c) => c.isOwner },
+    ],
   },
   {
     heading: "Sell",
