@@ -6,8 +6,8 @@ uses its own POSSale model rather than Order."""
 
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -238,24 +238,35 @@ async def list_my_orders(
 
 @router.get("", response_model=list[OrderWithItems], dependencies=[Depends(get_current_staff)])
 async def list_orders(
+    response: Response,
     db: AsyncSession = Depends(get_db),
     status_filter: OrderStatus | None = Query(default=None, alias="status"),
     customer_id: uuid.UUID | None = None,
+    search: str | None = Query(default=None, min_length=1, max_length=200),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Order]:
-    stmt = (
-        select(Order)
-        .options(*_ORDER_LOAD)
-        .order_by(Order.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    """Newest first. `search` matches the order number or the customer's
+    name, email or phone. X-Total-Count carries the number of matches."""
+    stmt = select(Order)
     if status_filter is not None:
         stmt = stmt.where(Order.status == status_filter)
     if customer_id is not None:
         stmt = stmt.where(Order.customer_id == customer_id)
-    result = await db.scalars(stmt)
+    if search:
+        pattern = f"%{search}%"
+        stmt = stmt.join(Customer, Customer.id == Order.customer_id).where(
+            or_(
+                Order.order_number.ilike(pattern),
+                Customer.full_name.ilike(pattern),
+                Customer.email.ilike(pattern),
+                Customer.phone.ilike(pattern),
+            )
+        )
+    response.headers["X-Total-Count"] = str(await db.scalar(select(func.count()).select_from(stmt.subquery())))
+    result = await db.scalars(
+        stmt.options(*_ORDER_LOAD).order_by(Order.created_at.desc()).limit(limit).offset(offset)
+    )
     return list(result)
 
 

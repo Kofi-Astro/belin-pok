@@ -11,8 +11,8 @@ directly."""
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,18 +89,33 @@ async def add_my_address(
 
 @router.get("", response_model=list[CustomerRead], dependencies=[Depends(get_current_staff)])
 async def list_customers(
+    response: Response,
     db: AsyncSession = Depends(get_db),
     status_filter: CustomerStatus | None = Query(default=None, alias="status"),
     customer_type: CustomerType | None = None,
+    search: str | None = Query(default=None, min_length=1, max_length=200),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Customer]:
-    stmt = select(Customer).order_by(Customer.created_at.desc()).limit(limit).offset(offset)
+    """Newest first. `search` matches name, business name, email or phone.
+    X-Total-Count carries the number of matches across all pages."""
+    stmt = select(Customer)
     if status_filter is not None:
         stmt = stmt.where(Customer.status == status_filter)
     if customer_type is not None:
         stmt = stmt.where(Customer.customer_type == customer_type)
-    result = await db.scalars(stmt)
+    if search:
+        pattern = f"%{search}%"
+        stmt = stmt.where(
+            or_(
+                Customer.full_name.ilike(pattern),
+                Customer.business_name.ilike(pattern),
+                Customer.email.ilike(pattern),
+                Customer.phone.ilike(pattern),
+            )
+        )
+    response.headers["X-Total-Count"] = str(await db.scalar(select(func.count()).select_from(stmt.subquery())))
+    result = await db.scalars(stmt.order_by(Customer.created_at.desc()).limit(limit).offset(offset))
     return list(result)
 
 

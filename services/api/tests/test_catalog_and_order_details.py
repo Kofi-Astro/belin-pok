@@ -121,3 +121,33 @@ async def test_orders_describe_their_lines_customer_and_history(
         updated = await ac.post(f"/orders/{order['id']}/status", json={"status": "packed", "note": "Bagged"})
     assert updated.status_code == 200, updated.text
     assert [(h["status"], h["note"]) for h in updated.json()["status_history"]] == [("packed", "Bagged")]
+
+
+async def test_customer_and_order_lists_search_and_count(client, fresh_client, create_product_with_stock):
+    unique = uuid.uuid4().hex[:8]
+    async with client as ac:
+        _, variant_id = await create_product_with_stock(ac, unique, stock=5)
+        await ac.post(
+            "/customers",
+            json={"full_name": f"Kofi Boutique {unique}", "phone": f"024{unique[:7]}", "customer_type": "wholesale"},
+        )
+    async with fresh_client() as guest:
+        order = (
+            await guest.post(
+                "/orders/checkout",
+                json={
+                    "items": [{"variant_id": variant_id, "quantity": 1}],
+                    "guest_full_name": f"Ama {unique}",
+                    "fulfillment_method": "pickup",
+                },
+            )
+        ).json()
+    async with fresh_client() as ac:
+        customers = await ac.get("/customers", params={"search": f"boutique {unique}"})
+        by_name = await ac.get("/orders", params={"search": f"ama {unique}"})
+        by_number = await ac.get("/orders", params={"search": order["order_number"]})
+    assert customers.headers["x-total-count"] == "1"
+    assert customers.json()[0]["full_name"] == f"Kofi Boutique {unique}"
+    assert [o["id"] for o in by_name.json()] == [order["id"]]
+    assert by_name.headers["x-total-count"] == "1"
+    assert [o["id"] for o in by_number.json()] == [order["id"]]
