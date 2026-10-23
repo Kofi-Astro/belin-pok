@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db import get_db
 from app.models import Category, Product, ProductStatus, ProductVariant
+from app.pricing import get_shop_settings, public_view
 from app.routers.categories import UNCATEGORIZED_SLUG
 from app.schemas import CategoryRead, ProductWithVariants
 
@@ -71,8 +72,9 @@ async def list_public_products(
     sort: ProductSort = ProductSort.name,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> list[Product]:
-    """The catalog listing. Each product comes with its active variants, so
+) -> list[ProductWithVariants]:
+    """The catalog listing. Prices are online prices (app/pricing.py) --
+    in-store, wholesale and pack prices are never included. Each product comes with its active variants, so
     a product card can show "Sold out" or a price range without a request
     per product. X-Total-Count carries the number of matching products
     across all pages, for pagination."""
@@ -81,10 +83,15 @@ async def list_public_products(
         stmt = stmt.where(Product.category_id == category_id)
     if search:
         stmt = stmt.where(Product.name.ilike(f"%{search}%"))
+    # Shoppers filter by the online prices they see; the stored base_price
+    # is in-store, so scale the bounds by the markup. (Rounding and fixed
+    # per-variant online prices can shift a product slightly past a bound.)
+    settings = await get_shop_settings(db)
+    factor = 1 + float(settings.online_markup_percent) / 100
     if min_price is not None:
-        stmt = stmt.where(Product.base_price >= min_price)
+        stmt = stmt.where(Product.base_price >= min_price / factor)
     if max_price is not None:
-        stmt = stmt.where(Product.base_price <= max_price)
+        stmt = stmt.where(Product.base_price <= max_price / factor)
     if in_stock_only:
         stmt = stmt.where(
             exists().where(
@@ -98,11 +105,11 @@ async def list_public_products(
     result = await db.scalars(
         stmt.options(*_PUBLIC_PRODUCT_LOAD).order_by(*_SORT_COLUMNS[sort]).limit(limit).offset(offset)
     )
-    return list(result)
+    return [public_view(p, settings) for p in result]
 
 
 @router.get("/products/by-slug/{slug}", response_model=ProductWithVariants)
-async def get_public_product_by_slug(slug: str, db: AsyncSession = Depends(get_db)) -> Product:
+async def get_public_product_by_slug(slug: str, db: AsyncSession = Depends(get_db)) -> ProductWithVariants:
     """Same as GET /public/products/{product_id}, by the product's slug --
     what the web storefront's readable URLs (/products/black-oversized-tee)
     resolve through. Registered before the {product_id} route so "by-slug"
@@ -115,11 +122,11 @@ async def get_public_product_by_slug(slug: str, db: AsyncSession = Depends(get_d
     product = await db.scalar(stmt)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    return product
+    return public_view(product, await get_shop_settings(db))
 
 
 @router.get("/products/{product_id}", response_model=ProductWithVariants)
-async def get_public_product(product_id: UUID, db: AsyncSession = Depends(get_db)) -> Product:
+async def get_public_product(product_id: UUID, db: AsyncSession = Depends(get_db)) -> ProductWithVariants:
     stmt = (
         select(Product)
         .where(Product.id == product_id, Product.status == ProductStatus.active)
@@ -138,4 +145,4 @@ async def get_public_product(product_id: UUID, db: AsyncSession = Depends(get_db
         # active -- a public caller shouldn't be able to distinguish
         # "no such product" from "that product is a draft".
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    return product
+    return public_view(product, await get_shop_settings(db))

@@ -5,6 +5,7 @@ app/routers/pos_sales.py for the separate in-person register flow, which
 uses its own POSSale model rather than Order."""
 
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
@@ -34,8 +35,10 @@ from app.models import (
     StockMovement,
     StockMovementType,
 )
+from app.pricing import get_shop_settings, in_store_price, online_price
 from app.push import send_push
 from app.schemas import CheckoutCreate, OrderStatusUpdate, OrderWithItems
+from app.shop_time import day_range
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -165,8 +168,9 @@ async def checkout(
         variants[variant_id] = variant
 
     products: dict[uuid.UUID, Product] = {}
+    settings = await get_shop_settings(db)
     subtotal = 0.0
-    line_items: list[tuple[ProductVariant, int, float]] = []
+    line_items: list[tuple[ProductVariant, int, float, float]] = []
     for variant_id, quantity in quantities.items():
         variant = variants[variant_id]
         product = products.get(variant.product_id) or await db.get(Product, variant.product_id)
@@ -180,9 +184,11 @@ async def checkout(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Only {variant.stock_quantity} left in stock for SKU {variant.sku}",
             )
-        unit_price = variant.price_override if variant.price_override is not None else product.base_price
+        # Orders placed online pay the online price (see app/pricing.py);
+        # the in-store price is kept beside it on the order line.
+        unit_price = online_price(product, variant, settings)
         subtotal += float(unit_price) * quantity
-        line_items.append((variant, quantity, unit_price))
+        line_items.append((variant, quantity, unit_price, in_store_price(product, variant)))
 
     order = Order(
         customer_id=customer.id,
@@ -197,8 +203,16 @@ async def checkout(
     db.add(order)
     await db.flush()
 
-    for variant, quantity, unit_price in line_items:
-        db.add(OrderItem(order_id=order.id, variant_id=variant.id, quantity=quantity, unit_price=unit_price))
+    for variant, quantity, unit_price, store_price in line_items:
+        db.add(
+            OrderItem(
+                order_id=order.id,
+                variant_id=variant.id,
+                quantity=quantity,
+                unit_price=unit_price,
+                in_store_unit_price=store_price,
+            )
+        )
         db.add(
             StockMovement(
                 variant_id=variant.id,
@@ -243,12 +257,18 @@ async def list_orders(
     status_filter: OrderStatus | None = Query(default=None, alias="status"),
     customer_id: uuid.UUID | None = None,
     search: str | None = Query(default=None, min_length=1, max_length=200),
+    date_from: date | None = None,
+    date_to: date | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Order]:
     """Newest first. `search` matches the order number or the customer's
     name, email or phone. X-Total-Count carries the number of matches."""
     stmt = select(Order)
+    if date_from or date_to:
+        # Whole days in the shop's timezone, like the sales journal.
+        start, end = day_range(date_from or date(2000, 1, 1), date_to or date(2100, 1, 1))
+        stmt = stmt.where(Order.created_at >= start, Order.created_at < end)
     if status_filter is not None:
         stmt = stmt.where(Order.status == status_filter)
     if customer_id is not None:

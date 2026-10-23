@@ -575,6 +575,12 @@ async def sales_report(
         ).all()
     )
 
+    online_markup = await db.scalar(
+        select(func.coalesce(func.sum((OrderItem.unit_price - OrderItem.in_store_unit_price) * OrderItem.quantity), 0))
+        .join(Order, Order.id == OrderItem.order_id)
+        .where(*counted_orders, OrderItem.in_store_unit_price.is_not(None))
+    )
+
     counter_revenue = sum(p.counter_revenue for p in period_list)
     online_revenue = sum(p.online_revenue for p in period_list)
     receipts = sum(p.receipts for p in period_list)
@@ -589,6 +595,7 @@ async def sales_report(
         by_method={m.value: sum(getattr(p, m.value) for p in period_list) for m in PaymentMethod},
         voided_count=sum(p.voided_count for p in period_list),
         voided_amount=sum(p.voided_amount for p in period_list),
+        online_markup_earned=float(online_markup),
         credit_given=float(credit.get(CreditLedgerEntryType.charge, 0) or 0),
         # Payments are stored as positive amounts that reduce the balance.
         credit_collected=abs(float(credit.get(CreditLedgerEntryType.payment, 0) or 0)),
@@ -789,9 +796,10 @@ async def activity_log(
                 "staff.invite": f"Invited {person} as {_roles_label(new)}",
                 "staff.update": f"Changed {person}'s account",
                 "staff.invite_link": f"Issued a new sign-in link for {person}",
+                "settings.update": "Changed online pricing",
             }.get(e.action, e.action)
             detail = None
-            if e.action.endswith("update"):
+            if e.action.endswith("update") or e.action == "settings.update":
                 changed = [k for k in new if k in old and old.get(k) != new.get(k)]
                 detail = "; ".join(f"{k.replace('_', ' ')}: {old.get(k)} → {new.get(k)}" for k in changed) or None
             events.append(

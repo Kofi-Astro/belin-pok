@@ -371,6 +371,9 @@ class ProductVariant(Base):
     wholesale_price: Mapped[float | None] = mapped_column(Numeric(10, 2))
     pack_price: Mapped[float | None] = mapped_column(Numeric(10, 2))
     pack_size: Mapped[int | None]
+    # A fixed online price for this size/colour; null = in-store price plus
+    # the shop's online markup (see app/pricing.py).
+    online_price: Mapped[float | None] = mapped_column(Numeric(10, 2))
     stock_quantity: Mapped[int] = mapped_column(default=0)
     low_stock_threshold: Mapped[int] = mapped_column(default=5)
     is_active: Mapped[bool] = mapped_column(default=True)
@@ -634,6 +637,9 @@ class OrderItem(Base):
     # Order.order_number above, for the same reason: no route constructed
     # an OrderItem via the ORM until checkout, so this never got exercised.
     line_total: Mapped[float] = mapped_column(Numeric(10, 2), server_default=FetchedValue())
+    # The in-store price at the time of the order, beside the online
+    # unit_price actually charged (null for orders before online pricing).
+    in_store_unit_price: Mapped[float | None] = mapped_column(Numeric(10, 2))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     order: Mapped["Order"] = relationship(back_populates="items")
@@ -755,3 +761,16 @@ class CustomerCreditLedger(Base):
     reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     performed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class ShopSettings(Base):
+    """Shop-wide settings -- a single row (id = 1). Currently online
+    pricing; see app/pricing.py."""
+
+    __tablename__ = "shop_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    online_markup_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    online_price_rounding: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))

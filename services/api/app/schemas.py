@@ -93,6 +93,9 @@ class ProductVariantBase(BaseModel):
     # set together (checked below and by a matching DB constraint).
     pack_price: float | None = Field(default=None, ge=0)
     pack_size: int | None = Field(default=None, gt=0)
+    # A fixed online price, instead of in-store price + the shop's online
+    # markup (app/pricing.py). Null = use the markup.
+    online_price: float | None = Field(default=None, ge=0)
     low_stock_threshold: int = Field(default=5, ge=0)
     is_active: bool = True
 
@@ -120,6 +123,7 @@ class ProductVariantUpdate(BaseModel):
     wholesale_price: float | None = Field(default=None, ge=0)
     pack_price: float | None = Field(default=None, ge=0)
     pack_size: int | None = Field(default=None, gt=0)
+    online_price: float | None = Field(default=None, ge=0)
     low_stock_threshold: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
@@ -726,8 +730,11 @@ class OrderItemRead(BaseModel):
     id: uuid.UUID
     variant_id: uuid.UUID
     quantity: int
+    # What the customer paid each, online...
     unit_price: float
     line_total: float
+    # ...and what it cost in store at the time (null for older orders).
+    in_store_unit_price: float | None = None
     # Joined in from the variant/product (see OrderItem's properties in
     # app/models.py), so an order can be displayed without extra lookups.
     product_id: uuid.UUID
@@ -904,6 +911,9 @@ class SalesTotals(BaseModel):
     by_method: dict[str, float]
     voided_count: int
     voided_amount: float
+    # How much more online orders brought in than the same items would
+    # have cost in store -- what the online markup earned.
+    online_markup_earned: float
     # Money owed on account: new charges from credit sales in the period,
     # and payments received against balances in the period.
     credit_given: float
@@ -991,3 +1001,20 @@ class ActivityRead(BaseModel):
     amount: float | None = None
     reference_type: str | None = None
     reference_id: uuid.UUID | None = None
+
+
+# ---------- shop settings (app/routers/settings.py) ----------
+
+
+class ShopSettingsRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    online_markup_percent: float
+    online_price_rounding: float
+    updated_at: datetime
+
+
+class ShopSettingsUpdate(BaseModel):
+    online_markup_percent: float | None = Field(default=None, ge=0, le=200)
+    # 0 = no rounding; otherwise online prices round *up* to a multiple of this.
+    online_price_rounding: float | None = Field(default=None, ge=0, le=100)

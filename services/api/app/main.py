@@ -21,6 +21,7 @@ from app.routers import (
     products,
     public,
     reports,
+    shop_settings,
     staff,
     stock_movements,
     uploads,
@@ -64,3 +65,4 @@ app.include_router(audit_log.router)
 app.include_router(pos_sales.router)
 app.include_router(inventory.router)
 app.include_router(uploads.router)
+app.include_router(shop_settings.router)
