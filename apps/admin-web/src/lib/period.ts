@@ -4,6 +4,7 @@
 
 export type Period = { from: string; to: string };
 
+// The ready-made ranges, in the order the period picker lists them.
 export const PRESETS = [
   "today",
   "yesterday",
@@ -28,6 +29,8 @@ export const PRESET_LABELS: Record<Preset, string> = {
   custom: "Custom dates",
 };
 
+// A date as YYYY-MM-DD in local time (toISOString would use UTC, which
+// can be a different day near midnight).
 export function iso(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -39,6 +42,8 @@ const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), 
 /** Monday of d's week -- weeks start on Monday, as in the API's tallies. */
 const monday = (d: Date) => addDays(d, -((d.getDay() + 6) % 7));
 
+// The from/to dates of a preset, relative to now. Ranges like "this week"
+// end today rather than on Sunday.
 export function presetRange(preset: Exclude<Preset, "custom">, now = new Date()): Period {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   switch (preset) {
@@ -73,6 +78,8 @@ export function defaultGrouping(p: Period): "day" | "week" | "month" {
   return days <= 62 ? "day" : days <= 190 ? "week" : "month";
 }
 
+// A range in words, for page titles: "Friday, 23 Oct 2026",
+// "1 Oct – 23 Oct 2026" and so on (the start's year only when it differs).
 export function describePeriod(p: Period): string {
   const fmt = (s: string, withYear: boolean) =>
     new Date(`${s}T00:00:00`).toLocaleDateString("en-GH", { weekday: p.from === p.to ? "long" : undefined, day: "numeric", month: "short", year: withYear ? "numeric" : undefined });

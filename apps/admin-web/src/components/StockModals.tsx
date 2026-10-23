@@ -17,11 +17,16 @@ import { Button, Field, FormError, Input, Select } from "./ui";
 export function useInvalidateStock() {
   const qc = useQueryClient();
   return () =>
+    // Every cached query whose screen shows stock somewhere (categories:
+    // the product counts on the Categories page).
     Promise.all(
       ["products", "product", "inventory", "low-stock", "movements", "dashboard", "categories"].map((k) => qc.invalidateQueries({ queryKey: [k] })),
     );
 }
 
+// What a manual stock change can be. sign: +1 adds the quantity typed, -1
+// removes it, 0 takes it as typed (a correction can go either way).
+// "initial" isn't offered -- it's only for opening stock.
 const MOVEMENTS: { value: MovementType; label: string; sign: 1 | -1 | 0; hint: string }[] = [
   { value: "restock", label: "Restock (stock in)", sign: 1, hint: "A delivery or new stock arriving." },
   { value: "adjustment", label: "Correction (+ or −)", sign: 0, hint: "Counted stock doesn't match — enter the difference." },
@@ -49,6 +54,7 @@ export function AdjustStockModal({
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The chosen kind, and the signed change it makes to stock.
   const movement = MOVEMENTS.find((m) => m.value === type)!;
 
   if (!variant) return null;
@@ -56,6 +62,7 @@ export function AdjustStockModal({
   const change = Number.isNaN(n) ? 0 : movement.sign === 0 ? n : movement.sign * Math.abs(n);
   const after = variant.stock_quantity + change;
 
+  // Clear the form on the way out, so the next SKU starts fresh.
   const close = () => {
     setQty("");
     setReason("");
@@ -67,6 +74,7 @@ export function AdjustStockModal({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!change) return setError("Enter a quantity other than zero.");
+    // The API refuses negative stock too; this just says so sooner.
     if (after < 0) return setError(`That would take stock below zero (only ${variant.stock_quantity} on hand).`);
     setBusy(true);
     setError(null);
@@ -116,6 +124,7 @@ export function AdjustStockModal({
         <Field label="Reason (optional)">
           <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Supplier delivery, stock count" />
         </Field>
+        {/* Now / Change / After preview, so a typo is obvious before saving. */}
         <div className="grid grid-cols-3 rounded-lg bg-canvas p-3 text-center text-sm">
           <div>
             <p className="text-xs text-muted">Now</p>
@@ -148,9 +157,14 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
   const toast = useToast();
   const invalidate = useInvalidateStock();
   const categories = useCategories();
+  // "new": an item not in the catalogue yet. "existing": more of something
+  // that is. Opened from a product's own page (fixedProduct), it's always
+  // that product.
   const [mode, setMode] = useState<"new" | "existing">(fixedProduct ? "existing" : "new");
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // New item: its photo (a local preview url, plus the storage path once
+  // uploaded), name, quantity, and the optional extra details.
   const [photo, setPhoto] = useState<{ url: string; path: string | null; uploading: boolean } | null>(null);
   const [name, setName] = useState("");
   const [qty, setQty] = useState("");
@@ -160,6 +174,8 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
   const [size, setSize] = useState("");
   const [color, setColor] = useState("");
 
+  // Existing item: the product search, the product chosen, and which of
+  // its sizes ("new" = a size/colour it doesn't have yet).
   const [search, setSearch] = useState("");
   const debounced = useDebounced(search);
   const [picked, setPicked] = useState<Product | null>(fixedProduct ?? null);
@@ -167,6 +183,8 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A confirmation of the last item saved, kept on screen while the next
+  // one is entered.
   const [lastSaved, setLastSaved] = useState<string | null>(null);
 
   const results = useQuery({
@@ -175,6 +193,8 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
     enabled: mode === "existing" && !picked && debounced.length > 0,
   });
 
+  // Clears the item fields for the next one -- but not the mode, and not
+  // the chosen product when the dialog belongs to one product.
   const reset = () => {
     setPhoto(null);
     setName("");
@@ -207,6 +227,8 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
     }
   };
 
+  // Search results don't carry full variant details, so fetch the product.
+  // With a single size, pre-select it.
   const selectProduct = async (p: Product) => {
     const full = await api.get<Product>(`/products/${p.id}`);
     setPicked(full);
@@ -219,6 +241,9 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
     const quantity = parseInt(qty, 10);
     if (!quantity || quantity <= 0) return setError("Enter how many came in.");
     let body: Record<string, unknown>;
+    // A new item needs a name and a photo (so it can be recognised later on
+    // the till and in the catalogue); the rest is optional. The API creates a
+    // draft product with one variant and records the stock as received.
     if (mode === "new") {
       if (!name.trim()) return setError("Enter the item's name.");
       if (!photo?.path) return setError(photo?.uploading ? "The photo is still uploading — one moment." : "Add a photo of the item.");
@@ -233,6 +258,8 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
       };
     } else {
       if (!picked) return setError("Choose the item first.");
+      // An existing size is identified by its size/colour; a new one is
+      // created by the API from what was typed.
       const v = picked.variants.find((x) => x.id === variantId);
       body = { product_id: picked.id, quantity, size: v ? v.size : size.trim() || null, color: v ? v.color : color.trim() || null };
     }
@@ -291,6 +318,7 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
           </div>
         )}
 
+        {/* Confirmation of the item just saved, while entering the next. */}
         {lastSaved && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">✓ {lastSaved}</p>}
         <FormError message={error} />
 
@@ -328,6 +356,7 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
                 </Field>
               </div>
             </div>
+            {/* Category, price, size and colour can be set now or later. */}
             <button type="button" onClick={() => setMore(!more)} className="flex items-center gap-1 text-sm font-semibold text-brand-700">
               <ChevronDown className={`h-4 w-4 transition ${more ? "rotate-180" : ""}`} /> More details (optional)
             </button>
@@ -336,6 +365,7 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
                 <Field label="Category">
                   <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
                     <option value="">Decide later</option>
+                    {/* "Uncategorized" is where items go by default -- not a real choice. */}
                     {categories.data
                       ?.filter((c) => c.slug !== "uncategorized")
                       .map((c) => (
@@ -364,6 +394,7 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
               <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted" />
               <Input autoFocus className="pl-9" placeholder="Search products by name…" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
+            {/* empty:hidden -- no empty bordered box before anything is typed. */}
             <ul className="divide-y divide-line rounded-lg border border-line empty:hidden">
               {results.data?.rows.map((p) => (
                 <li key={p.id}>

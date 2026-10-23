@@ -12,6 +12,10 @@ function withQuery(path: string, query?: Query): string {
   return s ? `${path}?${s}` : path;
 }
 
+// Every request goes through session.fetch, which adds the access token,
+// refreshes it when it expires (retrying once), and turns API errors into
+// ApiError with the API's own message. Empty query values are dropped,
+// so screens can pass filters without checking which are set.
 export const api = {
   get: async <T>(path: string, query?: Query) => (await session.fetch<T>(withQuery(path, query))).data,
   /** A page of a list plus the total number of matches (X-Total-Count). */

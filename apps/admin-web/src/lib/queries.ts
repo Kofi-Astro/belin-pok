@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import type { Category } from "./types";
 
+// All categories, in menu order -- cached for 5 minutes.
 export function useCategories() {
   return useQuery({ queryKey: ["categories"], queryFn: () => api.get<Category[]>("/categories"), staleTime: 5 * 60_000 });
 }

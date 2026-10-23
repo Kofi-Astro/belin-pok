@@ -1,3 +1,8 @@
+// The admin app's entry point: the data cache, the session, toasts and the
+// router -- which URL shows which page. A single-page app: the server
+// (Caddy, see deploy/Caddyfile) serves index.html for every path and the
+// router takes it from there, so links like /products/<id> work when
+// opened directly or refreshed.
 import "./styles.css";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -47,6 +52,9 @@ function Home() {
   return <Navigate to={can.manageCatalog ? "/dashboard" : "/products"} replace />;
 }
 
+// Signed-out pages first, then everything behind RequireAuth, inside the
+// sidebar Layout. Pages check permissions themselves (and the API enforces
+// them regardless); the sidebar only hides links a role can't use.
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
   { path: "/forgot-password", element: <ForgotPasswordPage /> },
@@ -74,6 +82,7 @@ const router = createBrowserRouter([
           { path: "staff", element: <StaffPage /> },
           { path: "account", element: <AccountPage /> },
           { path: "settings", element: <ShopSettingsPage /> },
+          // An unknown address goes to the home page rather than a dead end.
           { path: "*", element: <Home /> },
         ],
       },
@@ -81,6 +90,9 @@ const router = createBrowserRouter([
   },
 ]);
 
+// Providers, outermost first: the data cache, the session, toasts, then
+// the router -- so every page can use all three. StrictMode runs extra
+// checks in development only.
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

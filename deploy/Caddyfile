@@ -1,6 +1,6 @@
-# Serves a compiled Flutter web app (apps/admin or apps/storefront) on
-# Railway -- see the Dockerfile next to each app. Railway terminates HTTPS
-# in front of this, so Caddy only speaks plain HTTP on the port Railway
+# Serves the compiled admin app (apps/admin-web, built by Vite into /srv)
+# on Railway -- see apps/admin-web/Dockerfile. Railway terminates HTTPS in
+# front of this, so Caddy only speaks plain HTTP on the port Railway
 # assigns ($PORT).
 {
 	admin off
@@ -11,17 +11,19 @@
 	root * /srv
 	encode zstd gzip
 
-	# index.html, the service worker and version.json must always be
-	# revalidated, or browsers keep running an old build after a deploy.
-	# Flutter doesn't content-hash its other filenames either, so they
-	# get a short cache rather than a long one.
+	# index.html must always be revalidated, or browsers keep running an old
+	# build after a deploy. (The service-worker and version.json paths are
+	# left over from the Flutter builds this used to serve; harmless.)
+	# Everything else gets an hour's cache. Vite content-hashes the files
+	# under /assets, so those could safely be cached far longer.
 	@entrypoints path / /index.html /flutter_service_worker.js /version.json
 	@assets not path / /index.html /flutter_service_worker.js /version.json
 	header @entrypoints Cache-Control "no-cache"
 	header @assets Cache-Control "public, max-age=3600"
 
-	# The apps use hash routing (/#/...), so every real request is for an
-	# actual file -- this fallback only matters if someone types a bare path.
+	# The admin uses real paths (/products/<id>, /orders/<id>...), handled by
+	# its router in the browser. Any path that isn't an actual file gets
+	# index.html, so those links work when opened directly or refreshed.
 	try_files {path} /index.html
 	file_server
 }

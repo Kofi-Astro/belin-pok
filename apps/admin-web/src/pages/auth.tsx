@@ -8,6 +8,9 @@ import { Button, Field, FormError, Input } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { ApiError, session } from "@/lib/session";
 
+// An error as words: the API's own message (wrong password, too many
+// attempts, expired link...), or a connection problem if there was no
+// answer at all.
 function message(err: unknown) {
   return err instanceof ApiError ? err.message : "Couldn't reach the server — check your connection.";
 }
@@ -55,6 +58,9 @@ function AuthLayout({ title, subtitle, children }: { title: string; subtitle?: R
   );
 }
 
+// Staff sign in with an email or a username (the first owner account has
+// a username). notice: why a previous session was ended, e.g. a
+// customer's login, or a deactivated account.
 export function LoginPage() {
   const { status, notice } = useAuth();
   const [identifier, setIdentifier] = useState("");
@@ -62,6 +68,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Already signed in (e.g. Back after signing in): go to the app.
   if (status === "signedIn") return <Navigate to="/" replace />;
 
   const submit = async (e: React.FormEvent) => {
@@ -101,6 +108,8 @@ export function LoginPage() {
   );
 }
 
+// Emails a one-time reset link (if email sending is set up -- otherwise
+// an owner can issue a sign-in link from the Staff page).
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
@@ -169,6 +178,8 @@ export function SetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Without a link token this page is only for a signed-in person who must
+  // change their password; anyone else belongs at the sign-in page.
   if (!token && status === "signedOut") return <Navigate to="/login" replace />;
 
   const submit = async (e: React.FormEvent) => {
@@ -180,6 +191,8 @@ export function SetPasswordPage() {
     setBusy(true);
     setError(null);
     try {
+      // With a token: set the password from the link (this also signs them in).
+      // Without: change the signed-in person's own password.
       if (token) await session.setPasswordWithToken(token, password);
       else await session.changePassword(password);
       navigate("/", { replace: true });

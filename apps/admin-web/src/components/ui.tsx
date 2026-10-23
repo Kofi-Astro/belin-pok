@@ -15,6 +15,10 @@ const buttonStyles: Record<ButtonVariant, string> = {
   danger: "bg-red-600 text-white hover:bg-red-700 shadow-sm",
 };
 
+// The app's button. variant: primary (the main action), secondary,
+// ghost (low-key), danger (destructive). loading swaps the icon for a
+// spinner and disables it, so a slow save can't be submitted twice.
+// forwardRef: lets a parent focus it or measure it if needed.
 export const Button = forwardRef<
   HTMLButtonElement,
   React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -43,6 +47,8 @@ export const Button = forwardRef<
   );
 });
 
+// A small icon-only button. label is required: it's what screen readers
+// read out, and the tooltip on hover.
 export function IconButton({
   icon: Icon,
   label,
@@ -72,6 +78,7 @@ const fullWidthUnlessSized = (className?: string) => (/(^|\s)w-/.test(className 
 const fieldBase =
   "rounded-lg border border-line bg-white px-3 text-sm text-ink placeholder:text-muted/70 shadow-xs focus:border-brand-500 focus:ring-3 focus:ring-brand-100 focus:outline-none disabled:bg-canvas";
 
+// Text/number/date input in the standard style.
 export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(function Input(
   { className, ...rest },
   ref,
@@ -79,6 +86,7 @@ export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTML
   return <input ref={ref} className={clsx(fieldBase, fullWidthUnlessSized(className), "h-10", className)} {...rest} />;
 });
 
+// Dropdown in the standard style (extra right padding for the arrow).
 export function Select({ className, children, ...rest }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select className={clsx(fieldBase, fullWidthUnlessSized(className), "h-10 pr-8", className)} {...rest}>
@@ -87,6 +95,7 @@ export function Select({ className, children, ...rest }: React.SelectHTMLAttribu
   );
 }
 
+// Multi-line text in the standard style.
 export function Textarea({ className, ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea className={clsx(fieldBase, fullWidthUnlessSized(className), "min-h-24 py-2", className)} {...rest} />;
 }
@@ -112,6 +121,7 @@ export function Field({
   );
 }
 
+// A form's error message in a red box, or nothing when there isn't one.
 export function FormError({ message }: { message: string | null | undefined }) {
   if (!message) return null;
   return <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{message}</p>;
@@ -119,6 +129,8 @@ export function FormError({ message }: { message: string | null | undefined }) {
 
 // ---------- display ----------
 
+// Colour families for badges: neutral grey, brand purple, and the usual
+// green (good), amber (attention), red (problem), blue (information).
 export type Tone = "neutral" | "brand" | "green" | "amber" | "red" | "blue";
 
 const toneStyles: Record<Tone, string> = {
@@ -130,6 +142,8 @@ const toneStyles: Record<Tone, string> = {
   blue: "bg-sky-50 text-sky-700 ring-sky-200",
 };
 
+// A small rounded label. dot adds a coloured dot in front (used for
+// statuses).
 export function Badge({ tone = "neutral", children, dot }: { tone?: Tone; children: React.ReactNode; dot?: boolean }) {
   return (
     <span className={clsx("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap ring-1 ring-inset", toneStyles[tone])}>
@@ -139,10 +153,13 @@ export function Badge({ tone = "neutral", children, dot }: { tone?: Tone; childr
   );
 }
 
+// The white panel most content sits in.
 export function Card({ className, children }: { className?: string; children: React.ReactNode }) {
   return <section className={clsx("rounded-xl border border-line bg-white shadow-xs", className)}>{children}</section>;
 }
 
+// A card's title row: title, optional description, and buttons on the
+// right.
 export function CardHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
@@ -179,10 +196,12 @@ export function PageHeader({
   );
 }
 
+// A spinning loader, for "something is loading" in place.
 export function Spinner({ className }: { className?: string }) {
   return <Loader2 className={clsx("h-5 w-5 animate-spin text-brand-600", className)} />;
 }
 
+// Placeholder for a whole page whose data is still loading.
 export function PageLoading() {
   return (
     <div className="flex h-64 items-center justify-center">
@@ -191,6 +210,8 @@ export function PageLoading() {
   );
 }
 
+// What a list shows when it has nothing in it: an icon, a title, an
+// optional explanation and an optional action button.
 export function EmptyState({
   icon: Icon,
   title,
@@ -214,6 +235,8 @@ export function EmptyState({
   );
 }
 
+// A failed load, with the reason (e.g. "not permitted", or a network
+// error) when there is one.
 export function ErrorState({ error }: { error: unknown }) {
   return (
     <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
@@ -222,6 +245,8 @@ export function ErrorState({ error }: { error: unknown }) {
   );
 }
 
+// A headline number card (dashboard, reports): label, big value, an
+// optional line under it, and a tinted icon.
 export function StatCard({
   label,
   value,
@@ -255,6 +280,8 @@ export function StatCard({
   );
 }
 
+// Underlined tabs, each with an optional count bubble. Generic over the
+// tab values, so value/onChange stay type-checked per screen.
 export function Tabs<T extends string>({
   tabs,
   value,
@@ -288,6 +315,8 @@ export function Tabs<T extends string>({
 
 // ---------- tables ----------
 
+// A table that scrolls sideways on narrow screens instead of squashing.
+// Th and Td below are its header and body cells.
 export function Table({ children }: { children: React.ReactNode }) {
   return (
     <div className="overflow-x-auto">
@@ -336,6 +365,8 @@ export function Pagination({
   );
 }
 
+// An on/off switch (role="switch", so screen readers announce it as one).
+// label is read out, since there's no visible text.
 export function Toggle({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
     <button
@@ -355,6 +386,7 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
   );
 }
 
+// Initials in a circle -- the first letters of the first two words.
 export function Avatar({ name, className }: { name: string; className?: string }) {
   const initials = name
     .split(/\s+/)

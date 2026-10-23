@@ -1,3 +1,7 @@
+// The admin's frame: sidebar navigation (grouped Overview / Sell / Stock /
+// Team, showing only what the signed-in person's roles allow), the
+// signed-in person with Account and Sign out, and the page itself
+// (<Outlet />, filled in by the router -- see main.tsx).
 import clsx from "clsx";
 import {
   BarChart3,
@@ -26,6 +30,7 @@ import { titleCase } from "@/lib/format";
 
 import { Avatar } from "./ui";
 
+// A sidebar link. show: who sees it (everyone, if omitted).
 type NavItem = { to: string; label: string; icon: LucideIcon; show?: (can: Permissions) => boolean };
 
 // Grouped the way the shop works: selling, managing stock, managing people.
@@ -66,6 +71,8 @@ const NAV: { heading: string; items: NavItem[] }[] = [
   },
 ];
 
+// The sidebar's contents, used both fixed (desktop) and slide-out
+// (tablet/phone). onNavigate closes the slide-out after a tap.
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { staff, can, signOut } = useAuth();
   return (
@@ -80,6 +87,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-2">
         {NAV.map((group) => {
+          // Hide links this person can't use, and a heading left with none.
           const items = group.items.filter((i) => !i.show || i.show(can));
           if (!items.length) return null;
           return (
@@ -106,6 +114,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
 
+      {/* Who's signed in (name and roles), with Account and Sign out. */}
       {staff && (
         <div className="border-t border-white/10 p-3">
           <div className="flex items-center gap-3 rounded-lg px-2 py-2">
@@ -135,6 +144,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 export function Layout() {
   const [open, setOpen] = useState(false);
   const location = useLocation();
+  // Close the slide-out menu whenever the page changes.
   useEffect(() => setOpen(false), [location.pathname]);
 
   return (
@@ -153,6 +163,7 @@ export function Layout() {
       )}
 
       <div className="lg:pl-60">
+        {/* Top bar with the menu button -- below desktop width only. */}
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-white/90 px-4 backdrop-blur lg:hidden">
           <button type="button" onClick={() => setOpen(true)} className="rounded-lg p-2 hover:bg-black/5" aria-label="Open menu">
             <Menu className="h-5 w-5" />

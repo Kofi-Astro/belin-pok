@@ -14,6 +14,8 @@ import { money } from "@/lib/format";
 import { describePeriod, type Period, type Preset, presetRange } from "@/lib/period";
 import type { Activity, ActivityKind, Staff } from "@/lib/types";
 
+// Each kind of activity: its label on the filter tiles, icon and colour.
+// Breakdowns of one-amount sales come under "Sales".
 const KINDS: Record<ActivityKind, { label: string; icon: LucideIcon; tone: string }> = {
   sale: { label: "Sales", icon: ScanBarcode, tone: "bg-emerald-50 text-emerald-700" },
   void: { label: "Voids", icon: Ban, tone: "bg-red-50 text-red-700" },
@@ -27,6 +29,7 @@ const KINDS: Record<ActivityKind, { label: string; icon: LucideIcon; tone: strin
 /** Where an entry's "View" link goes. */
 function link(e: Activity): string | null {
   switch (e.reference_type) {
+    // A till sale: the journal for that day (voided ones if it's a void).
     case "pos_sale": {
       const day = e.at.slice(0, 10);
       return `/sales?from=${day}&to=${day}${e.kind === "void" ? "&status=voided" : ""}`;
@@ -49,6 +52,9 @@ function link(e: Activity): string | null {
 }
 
 export function ActivityPage() {
+  // Filters: the period (today by default), one staff member, and a kind
+  // of activity. Kind filters what's already loaded, so the tile counts
+  // always show the whole period.
   const [preset, setPreset] = useState<Preset>("today");
   const [period, setPeriod] = useState<Period>(presetRange("today"));
   const [staffId, setStaffId] = useState("");
@@ -57,6 +63,8 @@ export function ActivityPage() {
   const staff = useQuery({ queryKey: ["staff"], queryFn: () => api.get<Staff[]>("/staff") });
   const activity = useQuery({
     queryKey: ["activity", period, staffId],
+    // Owner-only on the API. Up to 2,000 entries for the period, newest
+    // first -- far more than a shop's busiest week.
     queryFn: () => api.get<Activity[]>("/reports/activity", { date_from: period.from, date_to: period.to, staff_id: staffId, limit: 2000 }),
   });
 
@@ -64,6 +72,7 @@ export function ActivityPage() {
   if (activity.isError) return <ErrorState error={activity.error} />;
 
   const all = activity.data;
+  // How many of each kind, for the tiles.
   const counts = all.reduce<Partial<Record<ActivityKind, number>>>((acc, e) => ((acc[e.kind] = (acc[e.kind] ?? 0) + 1), acc), {});
   const shown = kind ? all.filter((e) => e.kind === kind) : all;
   // Grouped by calendar day, newest first.
@@ -138,6 +147,7 @@ export function ActivityPage() {
                 <ol className="divide-y divide-line">
                   {entries.map((e, i) => {
                     const { icon: Icon, tone } = KINDS[e.kind];
+                    // Where "View" goes, if anywhere.
                     const to = link(e);
                     return (
                       <li key={`${e.at}-${i}`} className={`flex gap-4 px-5 py-4 ${e.kind === "void" ? "bg-red-50/50" : ""}`}>
@@ -158,6 +168,8 @@ export function ActivityPage() {
                             )}
                           </p>
                         </div>
+                        {/* Money involved: positive for sales and payments, negative (red)
+                           for voids. */}
                         {e.amount !== null && (
                           <span className={`tabular shrink-0 text-sm font-semibold ${e.amount < 0 ? "text-red-600" : ""}`}>
                             {e.amount < 0 ? "−" : ""}

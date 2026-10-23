@@ -20,8 +20,13 @@ import { money, primaryImage, saleItemName, sortVariants, timeAgo, titleCase, to
 import { useCategories, useDebounced } from "@/lib/queries";
 import type { Category, Customer, PaymentMethod, PosSale, PosSaleItem, PriceTier, Product, Variant } from "@/lib/types";
 
+// Retail: walk-in prices, no customer needed. Wholesale: a wholesale
+// customer is chosen first, and wholesale/pack prices (and paying on
+// account) become available.
 type Mode = "retail" | "wholesale";
 
+// A line in the sale being built: a product, a quick-logged type of item,
+// or a one-amount basket. key identifies the line in the list.
 type CartLine =
   | { key: string; kind: "item"; product: Product; variant: Variant; tier: PriceTier; quantity: number }
   | { key: string; kind: "quick"; category: Category; unitPrice: number; tier: PriceTier; quantity: number; note: string }
@@ -40,6 +45,8 @@ function unitPrice(p: Product, v: Variant, tier: PriceTier): number {
   return retailPrice(p, v);
 }
 
+// The most of a variant that can go on a line: its stock, or for packs,
+// how many whole packs that stock makes.
 function maxQuantity(v: Variant, tier: PriceTier): number {
   return tier === "pack" ? Math.floor(v.stock_quantity / (v.pack_size ?? 1)) : v.stock_quantity;
 }
@@ -47,6 +54,8 @@ function maxQuantity(v: Variant, tier: PriceTier): number {
 const lineUnit = (l: CartLine) => (l.kind === "item" ? unitPrice(l.product, l.variant, l.tier) : l.unitPrice);
 const lineTotal = (l: CartLine) => Math.round(lineUnit(l) * l.quantity * 100) / 100;
 
+// Payment methods the till offers. "On account" only appears for an
+// approved wholesale customer (see CheckoutModal).
 const METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "cash", label: "Cash" },
   { value: "mobile_money", label: "Mobile money" },
@@ -54,6 +63,8 @@ const METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "credit", label: "On account (credit)" },
 ];
 
+// The till page: product grid on the left, the sale on the right (below
+// on tablets), and today's receipts underneath.
 export function PosPage() {
   const categories = useCategories();
   const [mode, setMode] = useState<Mode>("retail");
@@ -68,6 +79,7 @@ export function PosPage() {
   const [lumping, setLumping] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
 
+  // Live products only, filtered by the search box and category chips.
   const products = useQuery({
     queryKey: ["products", "pos", debounced, categoryId],
     // Only published products can be sold (the API refuses drafts).
@@ -77,12 +89,16 @@ export function PosPage() {
   const total = cart.reduce((n, l) => n + lineTotal(l), 0);
   const count = cart.reduce((n, l) => n + l.quantity, 0);
 
+  // Switching to wholesale asks for the customer straight away; back to
+  // retail drops the customer.
   const switchMode = (m: Mode) => {
     setMode(m);
     if (m === "retail") setCustomer(null);
     else if (!customer) setPickingCustomer(true);
   };
 
+  // Adding the same product, size and price tier again tops up that line
+  // (up to the stock available) instead of adding a second one.
   const addLine = (line: CartLine) =>
     setCart((current) => {
       if (line.kind === "item") {
@@ -164,6 +180,7 @@ export function PosPage() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {products.data.rows.map((p) => {
                 const stock = totalStock(p);
+                // Show the lowest retail price across its sizes.
                 const prices = p.variants.map((v) => retailPrice(p, v));
                 return (
                   <button
@@ -205,6 +222,7 @@ export function PosPage() {
               )}
             </div>
 
+            {/* The wholesale customer this sale is for, and their credit left. */}
             {mode === "wholesale" && (
               <button
                 type="button"
@@ -344,14 +362,20 @@ export function PosPage() {
   );
 }
 
+// Unique keys for cart lines (only need to be unique per page visit).
 let keySeq = 0;
 const nextKey = () => `line-${++keySeq}`;
 
+// Picking a size (and, in wholesale mode, a price tier) and quantity for a
+// product tapped in the grid. Sold-out sizes are struck through; a single
+// size is pre-selected.
 function VariantPicker({ product, mode, onClose, onAdd }: { product: Product; mode: Mode; onClose: () => void; onAdd: (l: CartLine) => void }) {
   const active = sortVariants(product.variants.filter((v) => v.is_active));
   const [variant, setVariant] = useState<Variant | null>(active.length === 1 ? active[0] : null);
   const [tier, setTier] = useState<PriceTier>(mode === "wholesale" ? "wholesale" : "retail");
   const [qty, setQty] = useState(1);
+  // Wholesale customers can also be sold at retail price (e.g. a one-off
+  // item without a wholesale price).
   const tiers: PriceTier[] = mode === "wholesale" ? ["wholesale", "pack", "retail"] : ["retail"];
   const max = variant ? maxQuantity(variant, tier) : 0;
 
@@ -400,6 +424,7 @@ function VariantPicker({ product, mode, onClose, onAdd }: { product: Product; mo
             <p className="mb-2 text-xs font-semibold text-ink/80">Price</p>
             <div className="grid grid-cols-3 gap-2">
               {tiers.map((t) => {
+                // Pack pricing only exists for sizes set up with a pack size and price.
                 const unavailable = t === "pack" && (!variant.pack_size || !variant.pack_price);
                 return (
                   <button
@@ -440,6 +465,9 @@ function VariantPicker({ product, mode, onClose, onAdd }: { product: Product; mo
   );
 }
 
+// Quick log: a sale line by type of item ("Caps") with a price and
+// quantity, for when finding the exact product would hold up the queue.
+// It's identified later from Today's sales, and stock comes off then.
 function QuickLogModal({ open, onClose, mode, onAdd }: { open: boolean; onClose: () => void; mode: Mode; onAdd: (l: CartLine) => void }) {
   const categories = useCategories();
   const [categoryId, setCategoryId] = useState("");
@@ -542,6 +570,8 @@ function OneAmountModal({ open, onClose, mode, onAdd }: { open: boolean; onClose
   );
 }
 
+// Choosing the wholesale customer a sale is for. Unapproved accounts can
+// still be chosen (to buy for cash), but can't pay on account.
 function CustomerPicker({ open, onClose, onPick }: { open: boolean; onClose: () => void; onPick: (c: Customer) => void }) {
   const [search, setSearch] = useState("");
   const debounced = useDebounced(search);
@@ -576,8 +606,13 @@ function CustomerPicker({ open, onClose, onPick }: { open: boolean; onClose: () 
   );
 }
 
+// A payment as it's being entered (the amount as typed).
 type PaymentLine = { method: PaymentMethod; amount: string };
 
+// Taking payment: one or more methods (e.g. part cash, part mobile money)
+// that must add up to the total exactly before the sale can complete.
+// POST /pos-sales re-prices every line, checks stock, takes it off and
+// records any credit charge, all at once -- or nothing at all.
 function CheckoutModal({
   open,
   onClose,
@@ -601,6 +636,8 @@ function CheckoutModal({
   const [busy, setBusy] = useState(false);
 
   // Start each checkout with one cash line for the full amount.
+  // Start each checkout with one cash line for the full amount (reset
+  // whenever the dialog opens or the total changes).
   const key = `${open}-${total}`;
   const [lastKey, setLastKey] = useState("");
   if (open && key !== lastKey) {
@@ -610,10 +647,13 @@ function CheckoutModal({
   }
 
   const paid = payments.reduce((n, p) => n + (Number(p.amount) || 0), 0);
+  // What's still to pay (negative: paid too much), and whether the credit
+  // part fits within the customer's available credit.
   const remaining = Math.round((total - paid) * 100) / 100;
   const creditAvailable = customer?.is_wholesale_verified ? Math.max(0, customer.credit_limit - customer.outstanding_balance) : 0;
   const credit = payments.filter((p) => p.method === "credit").reduce((n, p) => n + (Number(p.amount) || 0), 0);
   const overLimit = credit > creditAvailable + 0.001;
+  // "On account" only for an approved wholesale customer.
   const methods = METHODS.filter((m) => m.value !== "credit" || customer?.is_wholesale_verified);
 
   const submit = async () => {
@@ -629,8 +669,10 @@ function CheckoutModal({
               ? { category_id: l.category.id, price_tier: l.tier, quantity: l.quantity, unit_price: l.unitPrice, note: l.note || null }
               : { price_tier: l.tier, quantity: 1, unit_price: l.unitPrice, note: l.note || null },
         ),
+        // Lines left at zero are dropped rather than sent.
         payments: payments.filter((p) => Number(p.amount) > 0).map((p) => ({ method: p.method, amount: Number(p.amount) })),
       });
+      // Stock, today's sales and (for credit) the customer's balance changed.
       await Promise.all([invalidate(), qc.invalidateQueries({ queryKey: ["pos-sales"] }), qc.invalidateQueries({ queryKey: ["customers"] })]);
       toast.success(`Sale recorded — ${money(sale.total)}`);
       onDone();
@@ -718,6 +760,9 @@ function TodaysSales() {
   const takings = today.filter((s) => s.status !== "voided").reduce((n, s) => n + s.total, 0);
 
   const [voidReason, setVoidReason] = useState("");
+  // Voiding reverses the sale: stock goes back, any credit charge is
+  // reversed, and the sale is kept -- marked voided, with who, when and
+  // why -- rather than deleted.
   const voidSale = useMutation({
     // A reason is required: voids are what the owner checks first.
     mutationFn: (s: PosSale) => api.post(`/pos-sales/${s.id}/void`, { reason: voidReason.trim() }),
@@ -730,6 +775,7 @@ function TodaysSales() {
     onError: (e) => toast.error(e),
   });
 
+  // Today's receipts, then any older ones still to sort out.
   const list = [...today, ...unidentified.filter((s) => !today.some((t) => t.id === s.id))];
 
   return (
@@ -841,6 +887,10 @@ function TodaysSales() {
   );
 }
 
+// Attaching the exact product to a quick-logged line: search (within its
+// type), pick the product, then the size. Sizes without enough stock for
+// the line's quantity are disabled. Stock comes off now; the price
+// charged doesn't change.
 function IdentifyModal({ sale, item, onClose }: { sale: PosSale; item: PosSaleItem; onClose: () => void }) {
   const toast = useToast();
   const qc = useQueryClient();

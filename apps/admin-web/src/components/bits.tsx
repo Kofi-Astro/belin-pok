@@ -8,6 +8,8 @@ import type { CustomerStatus, OrderStatus, ProductStatus, Variant } from "@/lib/
 
 import { Badge, type Tone } from "./ui";
 
+// A square product photo of `size` px, or a placeholder icon when there
+// is none. Lazy-loaded: long lists only fetch the photos scrolled to.
 export function Thumb({ path, size = 40, className }: { path: string | null | undefined; size?: number; className?: string }) {
   return (
     <span
@@ -23,6 +25,8 @@ export function Thumb({ path, size = 40, className }: { path: string | null | un
   );
 }
 
+// Product status: green Live (the API's "active"), amber Draft, grey
+// Archived.
 const productTone: Record<ProductStatus, Tone> = { active: "green", draft: "amber", archived: "neutral" };
 export function ProductStatusBadge({ status }: { status: ProductStatus }) {
   return (
@@ -32,6 +36,8 @@ export function ProductStatusBadge({ status }: { status: ProductStatus }) {
   );
 }
 
+// Order status colours: amber waiting on the shop, blue paid, purple
+// being sent, green done, grey closed without completing.
 const orderTone: Record<OrderStatus, Tone> = {
   pending: "amber",
   paid: "blue",
@@ -49,11 +55,14 @@ export function OrderStatusBadge({ status }: { status: OrderStatus }) {
   );
 }
 
+// Customer account approval.
 const customerTone: Record<CustomerStatus, Tone> = { approved: "green", pending: "amber", rejected: "red" };
 export function CustomerStatusBadge({ status }: { status: CustomerStatus }) {
   return <Badge tone={customerTone[status]}>{titleCase(status)}</Badge>;
 }
 
+// Stock for one SKU: out (red), at/below its alert level (amber), fine
+// (green). The thresholds are per SKU -- see stockLevel in lib/format.ts.
 export function StockBadge({ variant }: { variant: Pick<Variant, "stock_quantity" | "low_stock_threshold"> }) {
   const level = stockLevel(variant);
   if (level === "out") return <Badge tone="red">Out of stock</Badge>;

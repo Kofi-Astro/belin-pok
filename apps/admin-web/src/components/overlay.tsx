@@ -143,6 +143,9 @@ export function ConfirmDialog({
 
 // ---------- toasts ----------
 
+// Toasts: short messages in the corner confirming an action or showing
+// an error. ToastProvider (wrapped around the app in main.tsx) holds the
+// current ones; useToast() below is how screens raise them.
 type Toast = { id: number; kind: "success" | "error"; message: string };
 const ToastContext = createContext<(kind: Toast["kind"], message: string) => void>(() => {});
 
@@ -151,6 +154,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const push = useCallback((kind: Toast["kind"], message: string) => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, kind, message }]);
+    // Errors stay up longer than confirmations -- they need reading.
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === "error" ? 6000 : 3500);
   }, []);
   return (

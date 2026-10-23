@@ -16,6 +16,7 @@ import { dateTime, money, saleItemName, titleCase } from "@/lib/format";
 import { describePeriod, type Period, type Preset, presetRange } from "@/lib/period";
 import type { Order, PosSale, Staff } from "@/lib/types";
 
+// Receipts per page, and short payment labels for the narrow column.
 const PAGE_SIZE = 50;
 const METHOD_LABELS: Record<string, string> = { cash: "Cash", mobile_money: "MoMo", card: "Card", credit: "On account" };
 
@@ -30,9 +31,13 @@ export function SalesJournalPage() {
   const staffId = params.get("staff") ?? "";
   const status = params.get("status") ?? "";
   const method = params.get("method") ?? "";
+  // page: 0-based. open: the receipt expanded to show its lines.
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
 
+  // Applies filter changes to the URL (an empty value removes the filter)
+  // and goes back to the first page. replace: filter tweaks don't each
+  // add a step to the browser's Back button.
   const update = (changes: Record<string, string>) => {
     const next = Object.fromEntries(params);
     for (const [k, v] of Object.entries(changes)) {
@@ -48,6 +53,8 @@ export function SalesJournalPage() {
   // The staff list is owner-only on the API; others filter via report links.
   const staff = useQuery({ queryKey: ["staff"], queryFn: () => api.get<Staff[]>("/staff"), enabled: can.isOwner });
 
+  // The filters, as GET /pos-sales takes them (empty ones are dropped by
+  // api.list).
   const query = { date_from: period.from, date_to: period.to, staff_id: staffId, status, payment_method: method };
   const sales = useQuery({
     queryKey: ["pos-sales", "journal", query, page],
@@ -56,6 +63,8 @@ export function SalesJournalPage() {
     enabled: channel === "store",
   });
 
+  // Fetches every matching receipt, 500 at a time (not just the page on
+  // screen), then writes the CSV.
   const exportCsv = async () => {
     const rows: PosSale[] = [];
     for (let offset = 0; ; offset += 500) {
@@ -90,8 +99,12 @@ export function SalesJournalPage() {
   };
 
   const data = sales.data;
+  // Takings on this page, voids excluded. Only shown when every match
+  // fits on one page -- otherwise it would be a misleading part-total
+  // (the Sales report has the full figures).
   const pageTotal = (data?.rows ?? []).filter((s) => s.status !== "voided").reduce((n, s) => n + s.total, 0);
 
+  // In store / Online. Switching clears the in-store-only filters.
   const channelSwitch = (
     <div className="flex rounded-lg border border-line bg-white p-0.5 shadow-xs">
       {(
@@ -149,6 +162,8 @@ export function SalesJournalPage() {
               ))}
             </Select>
           )}
+          {/* Non-owners can't list staff, but can arrive filtered to someone from
+             a report link -- give them a way to clear it. */}
           {!can.isOwner && staffId && (
             <Button size="sm" variant="secondary" onClick={() => update({ staff: "" })}>
               Clear staff filter
@@ -202,10 +217,12 @@ export function SalesJournalPage() {
                   const count = s.items.reduce((n, i) => n + i.quantity, 0);
                   return (
                     <Fragment key={s.id}>
+                      {/* The receipt row; click to expand. Voided ones are tinted red. */}
                       <tr onClick={() => setOpen(isOpen ? null : s.id)} className={`cursor-pointer hover:bg-canvas/70 ${voided ? "bg-red-50/40" : ""}`}>
                         <Td className="text-muted">{isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</Td>
                         <Td className="whitespace-nowrap">
                           <p className="font-medium">{dateTime(s.created_at)}</p>
+                          {/* A short receipt number: the first 8 characters of its id. */}
                           <p className="font-mono text-[11px] text-muted">#{s.id.slice(0, 8).toUpperCase()}</p>
                         </Td>
                         <Td className="font-medium">{s.staff_name ?? "—"}</Td>
@@ -232,6 +249,8 @@ export function SalesJournalPage() {
                           )}
                         </Td>
                       </tr>
+                      {/* Expanded: every line with its price, the payments, and the void
+                         details (who, when, why) if voided. */}
                       {isOpen && (
                         <tr>
                           <td colSpan={7} className="border-b border-line bg-canvas/50 px-6 py-5">
@@ -330,11 +349,14 @@ function OnlineOrders({ period, preset, onPeriod }: { period: Period; preset: Pr
     queryFn: () => api.list<Order>("/orders", { ...query, limit: PAGE_SIZE, offset: page * PAGE_SIZE }),
     placeholderData: keepPreviousData,
   });
+  // How much more the order cost than the same items in store (lines from
+  // before online pricing existed have no in-store price and count 0).
   const markupOf = (o: Order) =>
     o.items.reduce((n, i) => n + (i.in_store_unit_price !== null ? (i.unit_price - i.in_store_unit_price) * i.quantity : 0), 0);
 
   const exportCsv = async () => {
     const rows: Order[] = [];
+    // Every order in the period, 200 per request (the API's page limit).
     for (let offset = 0; ; offset += 200) {
       const page = await api.list<Order>("/orders", { ...query, limit: 200, offset });
       rows.push(...page.rows);
