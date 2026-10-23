@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.deps import get_current_staff, require_role
+from app.erase import record_deletion, remove_movement
 from app.models import (
     CustomerDeviceToken,
     Product,
@@ -32,6 +33,12 @@ router = APIRouter(prefix="/stock-movements", tags=["stock-movements"])
 # the counter; Owner and Inventory Manager retain full control. Viewer
 # stays read-only, matching its name.
 _write_roles = require_role(StaffRole.owner, StaffRole.inventory_manager, StaffRole.order_fulfillment)
+_owner = require_role(StaffRole.owner)
+
+# Movements made by a sale or an order belong to that record: they're
+# removed with it (DELETE /pos-sales/{id}, DELETE /orders/{id}), never on
+# their own, or the sale and the stock would stop agreeing.
+_OWNED_BY = {"pos_sale": "till sale", "pos_sale_void": "till sale", "order": "online order"}
 
 
 @router.get("", response_model=list[StockMovementRead], dependencies=[Depends(get_current_staff)])
@@ -167,3 +174,46 @@ async def notify_back_in_stock_subscribers(
         product = await db.get(Product, variant.product_id) if variant else None
         label = f"{product.name} ({variant.size})" if product and variant else "An item you wanted"
         background_tasks.add_task(send_push, tokens, "Back in stock", f"{label} is back in stock.")
+
+
+@router.delete("/{movement_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_stock_movement(
+    movement_id: uuid.UUID,
+    reason: str = Query(min_length=3, max_length=500),
+    db: AsyncSession = Depends(get_db),
+    staff: Staff = Depends(_owner),
+) -> None:
+    """Deletes one stock entry made by hand -- a delivery received, a count
+    correction, a return -- and undoes its effect on stock. Owner only, for
+    test entries and mistakes (see app/erase.py); everyone else corrects
+    with an offsetting adjustment, which keeps the history. Refused for
+    movements belonging to a sale or order, and for a stock-in whose units
+    have since been sold (stock can't go below zero).
+    """
+    movement = await db.get(StockMovement, movement_id)
+    if movement is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stock entry not found")
+    if movement.reference_type in _OWNED_BY:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This is part of a {_OWNED_BY[movement.reference_type]} — delete that instead",
+        )
+    variant = await db.get(ProductVariant, movement.variant_id)
+    product = await db.get(Product, variant.product_id)
+    change = f"{'+' if movement.quantity_change > 0 else ''}{movement.quantity_change}"
+
+    await remove_movement(db, movement)
+    record_deletion(
+        db,
+        staff,
+        action="stock_movement.delete",
+        table_name="stock_movements",
+        record_id=movement.id,
+        reason=reason.strip(),
+        what={
+            "summary": f"a stock entry for {product.name} ({variant.size}): {change}",
+            "lines": f"{movement.movement_type.value}" + (f" — {movement.reason}" if movement.reason else ""),
+            "made_at": movement.created_at.isoformat(),
+        },
+    )
+    await db.commit()

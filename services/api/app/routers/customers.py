@@ -12,12 +12,13 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.deps import get_current_customer, get_current_staff, require_role
+from app.erase import record_deletion
 from app.models import (
     Address,
     CreditLedgerEntryType,
@@ -25,8 +26,11 @@ from app.models import (
     CustomerCreditLedger,
     CustomerStatus,
     CustomerType,
+    Order,
+    POSSale,
     Staff,
     StaffRole,
+    User,
 )
 from app.schemas import (
     AddressCreate,
@@ -43,6 +47,7 @@ from app.schemas import (
 router = APIRouter(prefix="/customers", tags=["customers"])
 
 _write_roles = require_role(StaffRole.owner, StaffRole.order_fulfillment)
+_owner = require_role(StaffRole.owner)
 
 # ---------- storefront self-service (own account only) ----------
 #
@@ -302,3 +307,55 @@ async def record_credit_adjustment(
     await db.commit()
     await db.refresh(entry)
     return entry
+
+
+@router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_customer(
+    customer_id: uuid.UUID,
+    reason: str = Query(min_length=3, max_length=500),
+    db: AsyncSession = Depends(get_db),
+    staff: Staff = Depends(_owner),
+) -> None:
+    """Deletes a customer outright -- owner only, for test or duplicate
+    records (see app/erase.py). Only once nothing refers to them: online
+    orders, till sales and credit history all have to go first (delete
+    test orders/sales, or keep a real customer). Their saved addresses,
+    restock alerts and app devices go with them, and so does their website
+    login, if they made one -- so the email can be used to sign up afresh.
+    """
+    customer = await db.get(Customer, customer_id)
+    if customer is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+
+    orders = await db.scalar(select(func.count()).where(Order.customer_id == customer_id))
+    sales = await db.scalar(select(func.count()).where(POSSale.customer_id == customer_id))
+    ledger = await db.scalar(select(func.count()).where(CustomerCreditLedger.customer_id == customer_id))
+    if orders or sales or ledger:
+        held = [
+            f"{n} {label}{'s' if n != 1 else ''}"
+            for n, label in ((orders, "online order"), (sales, "till sale"), (ledger, "credit entry"))
+            if n
+        ]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{customer.full_name} still has {', '.join(held)} — delete those first, or keep the customer",
+        )
+
+    record_deletion(
+        db,
+        staff,
+        action="customer.delete",
+        table_name="customers",
+        record_id=customer.id,
+        reason=reason.strip(),
+        what={
+            "summary": f"customer {customer.business_name or customer.full_name}",
+            "lines": " · ".join(filter(None, [customer.phone, customer.email, customer.customer_type.value])),
+        },
+    )
+    login_id = customer.auth_user_id
+    await db.execute(delete(Customer).where(Customer.id == customer.id))
+    # Their login too -- unless it somehow also belongs to a staff member.
+    if login_id is not None and await db.get(Staff, login_id) is None:
+        await db.execute(delete(User).where(User.id == login_id))
+    await db.commit()

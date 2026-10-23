@@ -12,6 +12,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { StockBadge, Thumb } from "@/components/bits";
+import { OwnerDeleteButton } from "@/components/DeleteRecord";
 import { Modal, useToast } from "@/components/overlay";
 import { AdjustStockModal, ReceiveStockModal, useInvalidateStock } from "@/components/StockModals";
 import { Badge, Button, Card, EmptyState, ErrorState, Field, FormError, Input, PageHeader, Pagination, Select, Spinner, Table, Tabs, Td, Th } from "@/components/ui";
@@ -335,6 +336,7 @@ function Movements() {
                 <Th className="text-right">Change</Th>
                 <Th>By</Th>
                 <Th>Reason</Th>
+                <Th />
               </tr>
             </thead>
             <tbody>
@@ -364,6 +366,20 @@ function Movements() {
                   <Td className="text-muted">{m.performed_by_name ?? (m.reference_type === "order" ? "Online order" : "—")}</Td>
                   <Td className="max-w-56 truncate text-muted">
                     {m.reason ?? (m.unit_price !== null && m.movement_type === "sale" ? `@ ${money(m.unit_price)}` : "")}
+                  </Td>
+                  <Td className="text-right">
+                    {/* Owners only, and only entries made by hand: a sale's or
+                        order's stock goes with that sale/order. */}
+                    {!["pos_sale", "pos_sale_void", "order"].includes(m.reference_type ?? "") && (
+                      <OwnerDeleteButton
+                        compact
+                        label="Delete entry"
+                        title="Delete this stock entry permanently?"
+                        description={`${m.product_name} · ${[m.variant_size, m.variant_color].filter(Boolean).join(" · ")}: ${m.quantity_change > 0 ? "+" : ""}${m.quantity_change}`}
+                        consequences="For test entries and mistakes. Its effect on stock is undone. Not possible for a delivery whose units have since been sold."
+                        run={(reason) => api.del(`/stock-movements/${m.id}`, { reason })}
+                      />
+                    )}
                   </Td>
                 </tr>
               ))}

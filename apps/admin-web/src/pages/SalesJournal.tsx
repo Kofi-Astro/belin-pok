@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { downloadCsv } from "@/lib/csv";
 import { OrderStatusBadge } from "@/components/bits";
+import { OwnerDeleteButton } from "@/components/DeleteRecord";
 import { dateTime, money, saleItemName, titleCase } from "@/lib/format";
 import { describePeriod, type Period, type Preset, presetRange } from "@/lib/period";
 import type { Order, PosSale, Staff } from "@/lib/types";
@@ -318,6 +319,14 @@ export function SalesJournalPage() {
                                     <p className="mt-1">{s.void_reason ? `“${s.void_reason}”` : "No reason recorded (voided before reasons were required)."}</p>
                                   </div>
                                 )}
+                                {/* Owners only: removes a test/junk sale entirely (see DeleteRecord.tsx). */}
+                                <OwnerDeleteButton
+                                  label="Delete sale"
+                                  title="Delete this sale permanently?"
+                                  description={`${money(s.total)} · ${dateTime(s.created_at)}${s.staff_name ? ` · ${s.staff_name}` : ""}`}
+                                  consequences="It disappears from the journal and every report. Stock it took goes back on the shelf, and any amount put on a customer's account comes off. For a real sale entered wrongly, void it instead — that keeps the record."
+                                  run={(reason) => api.del(`/pos-sales/${s.id}`, { reason })}
+                                />
                               </div>
                             </div>
                           </td>

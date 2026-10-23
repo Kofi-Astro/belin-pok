@@ -388,7 +388,7 @@ export type SalesReport = {
 };
 
 // The activity log's categories (the filter tiles on the Activity page).
-export type ActivityKind = "sale" | "void" | "stock" | "catalog" | "order" | "credit" | "staff";
+export type ActivityKind = "sale" | "void" | "stock" | "catalog" | "order" | "credit" | "staff" | "deleted";
 
 // One entry in the owner's activity log. reference_type/_id say what it
 // was about, for the "View" link (see link() in pages/Activity.tsx).

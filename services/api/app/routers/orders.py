@@ -8,13 +8,14 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_db
 from app.deps import get_current_customer, get_current_staff, get_optional_customer, require_role
+from app.erase import record_deletion, undo_stock
 from app.models import (
     Address,
     Customer,
@@ -57,6 +58,7 @@ _ORDER_LOAD = (
 )
 
 _write_roles = require_role(StaffRole.owner, StaffRole.order_fulfillment)
+_owner = require_role(StaffRole.owner)
 
 
 # ---------- storefront checkout ----------
@@ -237,12 +239,7 @@ async def list_my_orders(
     customer: Customer = Depends(get_current_customer),
     db: AsyncSession = Depends(get_db),
 ) -> list[Order]:
-    stmt = (
-        select(Order)
-        .where(Order.customer_id == customer.id)
-        .options(*_ORDER_LOAD)
-        .order_by(Order.created_at.desc())
-    )
+    stmt = select(Order).where(Order.customer_id == customer.id).options(*_ORDER_LOAD).order_by(Order.created_at.desc())
     result = await db.scalars(stmt)
     return list(result)
 
@@ -284,9 +281,7 @@ async def list_orders(
             )
         )
     response.headers["X-Total-Count"] = str(await db.scalar(select(func.count()).select_from(stmt.subquery())))
-    result = await db.scalars(
-        stmt.options(*_ORDER_LOAD).order_by(Order.created_at.desc()).limit(limit).offset(offset)
-    )
+    result = await db.scalars(stmt.options(*_ORDER_LOAD).order_by(Order.created_at.desc()).limit(limit).offset(offset))
     return list(result)
 
 
@@ -362,10 +357,46 @@ async def update_order_status(
         )
 
     # populate_existing: status_history just gained a row in this session.
-    stmt = (
-        select(Order)
-        .where(Order.id == order_id)
-        .options(*_ORDER_LOAD)
-        .execution_options(populate_existing=True)
-    )
+    stmt = select(Order).where(Order.id == order_id).options(*_ORDER_LOAD).execution_options(populate_existing=True)
     return await db.scalar(stmt)
+
+
+@router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_order(
+    order_id: uuid.UUID,
+    reason: str = Query(min_length=3, max_length=500),
+    db: AsyncSession = Depends(get_db),
+    staff: Staff = Depends(_owner),
+) -> None:
+    """Deletes an online order outright -- owner only, for test orders and
+    junk (see app/erase.py). The stock it took comes back, it disappears
+    from the orders list and the reports, and an audit entry records who
+    deleted it, why, and what it was. The customer record stays (delete it
+    separately if it was a test customer too).
+    """
+    order = await db.scalar(select(Order).where(Order.id == order_id).options(*_ORDER_LOAD))
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    lines = ", ".join(
+        f"{i.variant.product.name} ({i.variant.size}) ×{i.quantity}" for i in order.items if i.variant is not None
+    )
+
+    await undo_stock(db, ["order"], order.id)
+    record_deletion(
+        db,
+        staff,
+        action="order.delete",
+        table_name="orders",
+        record_id=order.id,
+        reason=reason.strip(),
+        what={
+            "summary": f"online order {order.order_number} (₵{float(order.total):.2f}) from {order.customer.full_name}",
+            "lines": lines,
+            "status": order.status.value,
+            "placed_at": order.created_at.isoformat(),
+            "amount": float(order.total),
+        },
+    )
+    # Lines and status history go with it (ON DELETE CASCADE).
+    await db.execute(delete(Order).where(Order.id == order.id))
+    await db.commit()

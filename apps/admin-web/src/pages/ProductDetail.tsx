@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { ProductStatusBadge, StockBadge } from "@/components/bits";
+import { OwnerDeleteButton } from "@/components/DeleteRecord";
 import { ConfirmDialog, Modal, useToast } from "@/components/overlay";
 import { AdjustStockModal, ReceiveStockModal } from "@/components/StockModals";
 import {
@@ -133,7 +134,21 @@ export function ProductDetailPage() {
                   Archive
                 </Button>
               )}
-              <IconButton icon={Trash2} label="Delete product" onClick={() => setConfirmDelete(true)} className="hover:text-red-600" />
+              {/* Owners can also delete a test product that has stock history
+                  (but no sales) -- see DeleteRecord.tsx. Other staff get the
+                  plain delete, which only works for a product never used. */}
+              {can.isOwner ? (
+                <OwnerDeleteButton
+                  compact
+                  label="Delete product"
+                  title={`Delete ${p.name} permanently?`}
+                  consequences="For test items. The product, its sizes, photos and stock history all go. Not possible while any sale or order includes it — delete those first if they were tests, or archive the product instead."
+                  run={(reason) => api.del(`/products/${p.id}`, { reason })}
+                  done={() => navigate("/products")}
+                />
+              ) : (
+                <IconButton icon={Trash2} label="Delete product" onClick={() => setConfirmDelete(true)} className="hover:text-red-600" />
+              )}
             </>
           )
         }

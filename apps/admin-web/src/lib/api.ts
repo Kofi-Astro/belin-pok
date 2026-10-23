@@ -27,7 +27,9 @@ export const api = {
     (await session.fetch<T>(path, { method: "POST", body: JSON.stringify(body) })).data,
   patch: async <T>(path: string, body: unknown) =>
     (await session.fetch<T>(path, { method: "PATCH", body: JSON.stringify(body) })).data,
-  del: async (path: string) => void (await session.fetch(path, { method: "DELETE" })),
+  /** DELETE, with optional query values (e.g. the reason an owner gives
+   * for deleting a record outright). */
+  del: async (path: string, query?: Query) => void (await session.fetch(withQuery(path, query), { method: "DELETE" })),
   /** Uploads a product photo; returns its storage path (see
    * services/api/app/routers/uploads.py). */
   uploadPhoto: async (file: File) => {

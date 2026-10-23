@@ -11,12 +11,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_db
 from app.deps import get_current_staff, require_role
+from app.erase import record_deletion, undo_credit, undo_stock
 from app.models import (
     AuditLog,
     Category,
@@ -50,6 +51,7 @@ from app.shop_time import day_range
 router = APIRouter(prefix="/pos-sales", tags=["pos-sales"])
 
 _write_roles = require_role(StaffRole.owner, StaffRole.inventory_manager, StaffRole.order_fulfillment)
+_owner = require_role(StaffRole.owner)
 
 
 @dataclass
@@ -641,3 +643,64 @@ async def break_down_pos_sale_item(
     stmt = select(POSSale).where(POSSale.id == sale.id).options(selectinload(POSSale.payments))
     sale = await db.scalar(stmt)
     return await _hydrate(db, sale)
+
+
+def _describe_lines(sale: POSSaleRead) -> str:
+    """A sale's lines in words ("Classic Cap (One Size) ×2, Unsorted ₵90"),
+    for the record left behind when it's deleted."""
+    parts = []
+    for i in sale.items:
+        if i.product_name:
+            parts.append(f"{i.product_name} ({i.variant_size}) ×{i.quantity}")
+        elif i.category_name:
+            parts.append(f"{i.category_name} (quick log) ×{i.quantity}")
+        else:
+            parts.append(f"Unsorted ₵{i.line_total:.2f}" + (f" ({i.note})" if i.note else ""))
+    return ", ".join(parts)
+
+
+@router.delete("/{sale_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_pos_sale(
+    sale_id: uuid.UUID,
+    reason: str = Query(min_length=3, max_length=500),
+    db: AsyncSession = Depends(get_db),
+    staff: Staff = Depends(_owner),
+) -> None:
+    """Deletes a till sale outright -- owner only, for test or junk entries
+    (see app/erase.py). Unlike a void, the sale disappears from the journal
+    and every report; what it did is undone (stock it took comes back, a
+    credit charge comes off the customer's balance), and an audit entry
+    records who deleted it, why, and what it was.
+
+    Voided sales can be deleted too: their stock and credit already
+    balance out, so only the record goes.
+    """
+    sale = await db.scalar(select(POSSale).where(POSSale.id == sale_id).options(selectinload(POSSale.payments)))
+    if sale is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sale not found")
+    described = await _hydrate(db, sale)
+
+    # The sale's own movements/charges, and the reversals a void added.
+    await undo_stock(db, ["pos_sale", "pos_sale_void"], sale.id)
+    await undo_credit(db, ["pos_sale", "pos_sale_void"], sale.id)
+    record_deletion(
+        db,
+        staff,
+        action="pos_sale.delete",
+        table_name="pos_sales",
+        record_id=sale.id,
+        reason=reason.strip(),
+        what={
+            "summary": f"a ₵{described.total:.2f} sale rung up by {described.staff_name or 'someone'}",
+            "lines": _describe_lines(described),
+            "status": sale.status,
+            "sold_at": sale.created_at.isoformat(),
+            "customer": described.customer_name,
+            "amount": described.total,
+        },
+    )
+    # Items and payments go with it (ON DELETE CASCADE). A core DELETE
+    # rather than db.delete(sale), so the ORM doesn't try to manage the
+    # children itself.
+    await db.execute(delete(POSSale).where(POSSale.id == sale.id))
+    await db.commit()

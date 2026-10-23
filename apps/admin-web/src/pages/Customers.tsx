@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { CustomerStatusBadge, OrderStatusBadge } from "@/components/bits";
+import { OwnerDeleteButton } from "@/components/DeleteRecord";
 import { Modal, useToast } from "@/components/overlay";
 import {
   Avatar,
@@ -302,6 +303,7 @@ function CustomerFormModal({
 // account for wholesale customers, their online orders, and details.
 export function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
   const { can } = useAuth();
@@ -367,6 +369,15 @@ export function CustomerDetailPage() {
               <Button variant="secondary" onClick={() => setEditing(true)}>
                 Edit
               </Button>
+              {/* Owners only: removes a test/duplicate customer (see DeleteRecord.tsx). */}
+              <OwnerDeleteButton
+                compact
+                label="Delete customer"
+                title={`Delete ${c.business_name || c.full_name} permanently?`}
+                consequences="For test or duplicate customers. Only possible once they have no orders, till sales or account history — delete those first. Their saved addresses and website login go too."
+                run={(reason) => api.del(`/customers/${c.id}`, { reason })}
+                done={() => navigate("/customers")}
+              />
             </>
           )
         }

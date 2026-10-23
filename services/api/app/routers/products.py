@@ -7,7 +7,7 @@ import re
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,6 +17,8 @@ from app.deps import get_current_staff, require_role
 from app.models import (
     AuditLog,
     Category,
+    OrderItem,
+    POSSaleItem,
     Product,
     ProductImage,
     ProductStatus,
@@ -239,9 +241,7 @@ async def receive_stock(
         created_product = True
 
     size = payload.size or DEFAULT_RECEIVE_SIZE
-    color_match = (
-        ProductVariant.color.is_(None) if payload.color is None else ProductVariant.color == payload.color
-    )
+    color_match = ProductVariant.color.is_(None) if payload.color is None else ProductVariant.color == payload.color
     # Locked for the same reason create_stock_movement locks it: the
     # zero-crossing check below needs an old quantity nobody else can
     # change underneath it.
@@ -362,16 +362,23 @@ async def update_product(
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
     product_id: uuid.UUID,
+    reason: str | None = Query(default=None, max_length=500),
     db: AsyncSession = Depends(get_db),
     staff: Staff = Depends(_write_roles),
 ) -> None:
-    """A real delete, not just archiving -- but only actually possible for
-    a product nothing has ever referenced. Every variant's stock_movements
-    and order_items rows are ON DELETE RESTRICT (see migrations/),
-    so the moment a product has any sales/stock history this fails with an
-    IntegrityError instead of silently destroying that history; archiving
-    (PATCH status='archived') is what discontinuing an actually-sold
-    product should use instead.
+    """A real delete, not just archiving.
+
+    For most staff it's only possible for a product nothing has ever
+    referenced. Every variant's stock_movements and order_items rows are ON
+    DELETE RESTRICT (see migrations/), so the moment a product has any
+    sales/stock history this fails with an IntegrityError instead of
+    silently destroying that history; archiving (PATCH status='archived')
+    is what discontinuing an actually-sold product should use instead.
+
+    An owner can also delete a product whose only history is stock entries
+    -- typically a test item received to try the app out -- taking those
+    entries with it (see app/erase.py). Still refused while any till sale
+    or online order includes it: those are deleted first, or it's archived.
     """
     stmt = (
         select(Product)
@@ -383,6 +390,24 @@ async def delete_product(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
     before = _snapshot(product)
+    variant_ids = [v.id for v in product.variants]
+    removed_stock = 0
+    if staff.role_set & {StaffRole.owner} and variant_ids:
+        sold = await db.scalar(select(func.count()).where(POSSaleItem.variant_id.in_(variant_ids)))
+        ordered = await db.scalar(select(func.count()).where(OrderItem.variant_id.in_(variant_ids)))
+        if sold or ordered:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"{product.name} is in {sold} till sale line(s) and {ordered} online order line(s) — "
+                    "delete those first if they were tests, or archive the product"
+                ),
+            )
+        # Stock entries only touch these variants' own stock, which is
+        # going too -- so they're simply removed, no balances to restore.
+        removed_stock = sum(v.stock_quantity for v in product.variants)
+        await db.execute(delete(StockMovement).where(StockMovement.variant_id.in_(variant_ids)))
+
     await db.delete(product)
     try:
         await db.commit()
@@ -399,7 +424,8 @@ async def delete_product(
             action="product.delete",
             table_name="products",
             record_id=product_id,
-            old_values=before,
+            old_values={**before, "summary": f"product {before['name']}", "stock_on_hand": removed_stock},
+            new_values={"reason": reason.strip()} if reason else None,
         )
     )
     await db.commit()

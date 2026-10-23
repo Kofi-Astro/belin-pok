@@ -14,6 +14,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { OrderStatusBadge, Thumb } from "@/components/bits";
+import { OwnerDeleteButton } from "@/components/DeleteRecord";
 import { useToast } from "@/components/overlay";
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, PageHeader, PageLoading, Pagination, Select, Spinner, Table, Td, Th } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -161,6 +162,7 @@ export function OrdersPage() {
 // manageOrders permission (owner or order fulfilment).
 export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
   const { can } = useAuth();
@@ -207,12 +209,23 @@ export function OrderDetailPage() {
         }
         description={`Placed ${dateTime(o.created_at)}`}
         actions={
-          can.manageOrders &&
-          suggested && (
-            <Button loading={update.isPending} onClick={() => update.mutate(suggested)}>
-              Mark as {suggested}
-            </Button>
-          )
+          <>
+            {can.manageOrders && suggested && (
+              <Button loading={update.isPending} onClick={() => update.mutate(suggested)}>
+                Mark as {suggested}
+              </Button>
+            )}
+            {/* Owners only: removes a test order entirely (see DeleteRecord.tsx). */}
+            <OwnerDeleteButton
+              compact
+              label="Delete order"
+              title={`Delete ${o.order_number} permanently?`}
+              description={`${money(o.total)} from ${o.customer_name}, ${dateTime(o.created_at)}`}
+              consequences="For test orders. It disappears from the orders list and every report, and its items go back into stock. The customer record stays — delete it from their page if it was a test too."
+              run={(reason) => api.del(`/orders/${o.id}`, { reason })}
+              done={() => navigate("/orders")}
+            />
+          </>
         }
       />
 

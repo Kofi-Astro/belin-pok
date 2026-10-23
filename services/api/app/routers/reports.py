@@ -623,7 +623,8 @@ async def sales_report(
 
 _owner_only = require_role(StaffRole.owner)
 
-ActivityKind = Literal["sale", "void", "stock", "catalog", "order", "credit", "staff"]
+# "deleted": records an owner removed outright (see app/erase.py).
+ActivityKind = Literal["sale", "void", "stock", "catalog", "order", "credit", "staff", "deleted"]
 
 _STOCK_VERBS = {
     StockMovementType.restock: "Restocked",
@@ -797,8 +798,8 @@ async def activity_log(
             )
 
     # Product, price and staff changes -- and sales broken down after the
-    # fact, which are listed with the sales.
-    if wants("catalog") or wants("staff") or wants("sale"):
+    # fact, which are listed with the sales, and deletions.
+    if wants("catalog") or wants("staff") or wants("sale") or wants("deleted"):
         stmt = select(AuditLog).where(AuditLog.created_at >= start, AuditLog.created_at < end)
         if staff_id:
             stmt = stmt.where(AuditLog.staff_id == staff_id)
@@ -809,6 +810,29 @@ async def activity_log(
         )
         for e in entries:
             old, new = e.old_values or {}, e.new_values or {}
+            if e.action.endswith(".delete"):
+                # Anything deleted outright, by an owner. The record is gone,
+                # so its description was saved with the entry (see
+                # app/erase.record_deletion); older product deletions
+                # predate that and only have the product's fields.
+                if wants("deleted"):
+                    what = old.get("summary") or (f"product {old['name']}" if old.get("name") else "a record")
+                    reason = (new or {}).get("reason")
+                    detail = " · ".join(filter(None, [old.get("lines"), f"Reason: {reason}" if reason else None]))
+                    events.append(
+                        ActivityRead(
+                            at=e.created_at,
+                            kind="deleted",
+                            staff_id=e.staff_id,
+                            staff_name=who(e.staff_id),
+                            summary=f"Deleted {what}",
+                            detail=detail or None,
+                            amount=None,
+                            reference_type=None,
+                            reference_id=None,
+                        )
+                    )
+                continue
             if e.action == "pos_sale.break_down":
                 if wants("sale"):
                     rung_up_by = who(uuid.UUID(old["rung_up_by"])) if old.get("rung_up_by") else None
@@ -833,7 +857,6 @@ async def activity_log(
             person = new.get("full_name") or old.get("full_name") or "a staff member"
             summary = {
                 "product.create": f"Created {name}",
-                "product.delete": f"Deleted {name}",
                 "product.update": f"Changed {name}",
                 "inventory.rebalance": f"Repacked {new.get('units_packed')} units into {new.get('pack_count')} pack(s)",
                 "staff.invite": f"Invited {person} as {_roles_label(new)}",

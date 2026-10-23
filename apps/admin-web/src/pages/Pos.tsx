@@ -12,6 +12,7 @@ import { Ban, Building2, ChevronDown, Minus, PackageSearch, Plus, Receipt, ScanB
 import { useMemo, useState } from "react";
 
 import { Thumb } from "@/components/bits";
+import { OwnerDeleteButton } from "@/components/DeleteRecord";
 import { Modal, useToast } from "@/components/overlay";
 import { useInvalidateStock } from "@/components/StockModals";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, FormError, IconButton, Input, PageHeader, Select, Spinner } from "@/components/ui";
@@ -842,11 +843,22 @@ function TodaysSales() {
                       {s.payments.map((p) => `${METHODS.find((m) => m.value === p.method)?.label}: ${money(p.amount)}`).join(" · ")}
                       {s.staff_name && ` · by ${s.staff_name}`}
                     </span>
-                    {s.status !== "voided" && (
-                      <Button size="sm" variant="ghost" icon={Ban} className="text-red-600" onClick={() => setVoiding(s)}>
-                        Void
-                      </Button>
-                    )}
+                    <span className="flex items-center gap-1">
+                      {s.status !== "voided" && (
+                        <Button size="sm" variant="ghost" icon={Ban} className="text-red-600" onClick={() => setVoiding(s)}>
+                          Void
+                        </Button>
+                      )}
+                      {/* Owners only: removes a test/junk sale entirely (see DeleteRecord.tsx). */}
+                      <OwnerDeleteButton
+                        compact
+                        label="Delete sale"
+                        title="Delete this sale permanently?"
+                        description={`${money(s.total)} rung up ${timeAgo(s.created_at)}${s.staff_name ? ` by ${s.staff_name}` : ""}`}
+                        consequences="It disappears from the journal and every report. Stock it took goes back on the shelf, and any amount put on a customer's account comes off. For a real sale entered wrongly, void it instead — that keeps the record."
+                        run={(reason) => api.del(`/pos-sales/${s.id}`, { reason })}
+                      />
+                    </span>
                   </div>
                 </div>
               )}

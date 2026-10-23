@@ -3,7 +3,7 @@
 // staff changes, order updates and payments on account. For keeping an eye
 // on the shop without being there.
 import { useQuery } from "@tanstack/react-query";
-import { Ban, Boxes, ClipboardList, HandCoins, History, Pencil, ScanBarcode, UserCog, type LucideIcon } from "lucide-react";
+import { Ban, Boxes, ClipboardList, HandCoins, History, Pencil, ScanBarcode, Trash2, UserCog, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 
@@ -24,6 +24,8 @@ const KINDS: Record<ActivityKind, { label: string; icon: LucideIcon; tone: strin
   order: { label: "Online orders", icon: ClipboardList, tone: "bg-amber-50 text-amber-700" },
   credit: { label: "Payments on account", icon: HandCoins, tone: "bg-teal-50 text-teal-700" },
   staff: { label: "Staff changes", icon: UserCog, tone: "bg-gray-100 text-gray-700" },
+  // Records an owner deleted outright, with what they were and why.
+  deleted: { label: "Deleted", icon: Trash2, tone: "bg-red-100 text-red-800" },
 };
 
 /** Where an entry's "View" link goes. */
@@ -111,7 +113,7 @@ export function ActivityPage() {
       />
 
       {/* What kinds of things happened, at a glance -- each a filter. */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
         {(Object.keys(KINDS) as ActivityKind[]).map((k) => {
           const { label, icon: Icon, tone } = KINDS[k];
           const active = kind === k;
@@ -121,7 +123,7 @@ export function ActivityPage() {
               type="button"
               onClick={() => setKind(active ? "" : k)}
               className={`rounded-xl border bg-white p-3 text-left shadow-xs transition ${active ? "border-brand-600 ring-2 ring-brand-100" : "border-line hover:border-ink/20"} ${
-                k === "void" && counts.void ? "border-red-300" : ""
+                (k === "void" && counts.void) || (k === "deleted" && counts.deleted) ? "border-red-300" : ""
               }`}
             >
               <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${tone}`}>
@@ -150,7 +152,7 @@ export function ActivityPage() {
                     // Where "View" goes, if anywhere.
                     const to = link(e);
                     return (
-                      <li key={`${e.at}-${i}`} className={`flex gap-4 px-5 py-4 ${e.kind === "void" ? "bg-red-50/50" : ""}`}>
+                      <li key={`${e.at}-${i}`} className={`flex gap-4 px-5 py-4 ${e.kind === "void" || e.kind === "deleted" ? "bg-red-50/50" : ""}`}>
                         <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tone}`}>
                           <Icon className="h-4 w-4" />
                         </span>
