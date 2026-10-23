@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Belin-Pok — Project Handbook</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm 20mm 18mm; }
+  @page :first { margin: 0; }
+  :root {
+    --brand: #4b2884; --brand-dark: #2a1550; --brand-soft: #f1ecf9; --accent: #d14e0f; --gold: #d4a017;
+    --ink: #1c1a22; --muted: #6b6775; --line: #e3e0e8; --canvas: #f7f6f9;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: var(--ink); font-size: 10pt; line-height: 1.5; margin: 0; }
+  h1, h2, h3, h4 { color: var(--brand-dark); line-height: 1.2; break-after: avoid; }
+  h1 { font-size: 22pt; margin: 0 0 4mm; padding-bottom: 3mm; border-bottom: 3px solid var(--brand); }
+  h1 .num { color: var(--accent); margin-right: 3mm; }
+  h2 { font-size: 13.5pt; margin: 7mm 0 2mm; }
+  h3 { font-size: 11pt; margin: 5mm 0 1.5mm; }
+  p { margin: 0 0 2.5mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 5mm; }
+  li { margin-bottom: 1mm; }
+  code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.6pt; background: var(--canvas); padding: 0.2mm 1mm; border-radius: 1mm; }
+  pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.2pt; background: var(--canvas); border: 1px solid var(--line); border-radius: 2mm; padding: 3mm 4mm; white-space: pre-wrap; word-break: break-word; break-inside: avoid; margin: 0 0 3mm; }
+  pre code { background: none; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 1mm 0 4mm; font-size: 9pt; break-inside: auto; }
+  tr { break-inside: avoid; }
+  th { text-align: left; background: var(--brand-soft); color: var(--brand-dark); font-weight: 700; padding: 1.8mm 2.5mm; border-bottom: 1.5px solid var(--brand); }
+  td { padding: 1.6mm 2.5mm; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.c, th.c { text-align: center; }
+  .chapter { break-before: page; }
+  .lead { font-size: 11pt; color: #3a3542; margin-bottom: 4mm; }
+  .box { border: 1px solid var(--line); border-left: 4px solid var(--brand); background: #fbfafd; border-radius: 2mm; padding: 3mm 4mm; margin: 2mm 0 4mm; break-inside: avoid; }
+  .box.warn { border-left-color: var(--accent); background: #fff8f4; }
+  .box.ok { border-left-color: #1f8f5f; background: #f3fbf7; }
+  .box h4 { margin: 0 0 1.5mm; font-size: 10pt; }
+  .box p:last-child, .box ul:last-child { margin-bottom: 0; }
+  .steps { counter-reset: s; list-style: none; padding-left: 0; }
+  .steps > li { counter-increment: s; position: relative; padding-left: 8mm; margin-bottom: 2mm; }
+  .steps > li::before { content: counter(s); position: absolute; left: 0; top: 0.2mm; width: 5mm; height: 5mm; border-radius: 50%; background: var(--brand); color: #fff; font-size: 7.5pt; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .yes { color: #1f8f5f; font-weight: 700; }
+  .no { color: #b3aebb; }
+  .tag { display: inline-block; font-size: 7.5pt; font-weight: 700; padding: 0.3mm 1.8mm; border-radius: 3mm; background: var(--brand-soft); color: var(--brand); vertical-align: 1px; }
+  .tag.owner { background: #fde9df; color: var(--accent); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  .muted { color: var(--muted); }
+  .small { font-size: 8.5pt; }
+  .method { font-family: "SF Mono", Menlo, monospace; font-size: 7.6pt; font-weight: 700; padding: 0.3mm 1.4mm; border-radius: 1mm; color: #fff; }
+  .GET { background: #2f7ab8; } .POST { background: #1f8f5f; } .PATCH { background: #b07a12; } .DELETE { background: #c0392b; }
+  .api { font-size: 8.4pt; }
+  .api td { padding: 1.05mm 2mm; }
+  .api th { padding: 1.3mm 2mm; }
+  .api td:first-child { width: 17mm; white-space: nowrap; }
+  .api td:nth-child(2) { font-family: "SF Mono", Menlo, monospace; font-size: 8pt; width: 78mm; }
+  figure { margin: 2mm 0 5mm; break-inside: avoid; }
+  figcaption { font-size: 8.5pt; color: var(--muted); text-align: center; margin-top: 1.5mm; }
+
+  /* cover */
+  .cover { height: 297mm; width: 210mm; background: linear-gradient(160deg, #2a1550 0%, #4b2884 60%, #5b33a0 100%); color: #fff; position: relative; overflow: hidden; padding: 30mm 22mm; }
+  .cover .dots { position: absolute; inset: 0; opacity: .08; background-image: radial-gradient(circle at 1px 1px, #fff 1px, transparent 0); background-size: 6mm 6mm; }
+  .cover .glow { position: absolute; right: -60mm; bottom: -60mm; width: 160mm; height: 160mm; border-radius: 50%; background: rgba(209,78,15,.35); filter: blur(30mm); }
+  .cover .mark { width: 22mm; height: 22mm; }
+  .cover .eyebrow { margin-top: 40mm; letter-spacing: .25em; text-transform: uppercase; font-size: 9pt; color: var(--gold); font-weight: 700; }
+  .cover h1.title { color: #fff; border: 0; font-size: 40pt; margin: 4mm 0 2mm; padding: 0; letter-spacing: -.5px; }
+  .cover .sub { font-size: 15pt; color: rgba(255,255,255,.82); max-width: 140mm; }
+  .cover .meta { position: absolute; left: 22mm; bottom: 26mm; font-size: 9.5pt; color: rgba(255,255,255,.75); line-height: 1.8; }
+  .cover .meta b { color: #fff; }
+
+  /* contents */
+  .toc ol { list-style: none; padding: 0; margin: 0; }
+  .toc > ol > li { margin: 0 0 3mm; font-weight: 700; color: var(--brand-dark); font-size: 11pt; }
+  .toc > ol > li > span { color: var(--accent); display: inline-block; width: 8mm; }
+  .toc ol ol { margin: 1mm 0 0 8mm; font-weight: 400; color: var(--ink); font-size: 9.5pt; columns: 2; column-gap: 8mm; }
+  .toc ol ol li { margin-bottom: .6mm; break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ============================== COVER ============================== -->
+<section class="cover">
+  <div class="dots"></div><div class="glow"></div>
+  <svg class="mark" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#fff" fill-opacity=".12"/><circle cx="56" cy="8" r="4" fill="#D4A017"/><path d="M21 17h13.5c7 0 11 3.2 11 8.4 0 3.4-1.9 5.8-4.9 6.8 3.9.9 6.4 3.6 6.4 7.6 0 5.8-4.4 9.2-12 9.2H21V17Zm12.6 12.7c3.1 0 4.7-1.2 4.7-3.5s-1.6-3.4-4.7-3.4h-5v6.9h5Zm.8 13.3c3.4 0 5.2-1.3 5.2-3.8s-1.8-3.8-5.2-3.8h-5.8V43h5.8Z" fill="#fff"/><rect x="21" y="52" width="22" height="4" rx="2" fill="#D14E0F"/></svg>
+  <p class="eyebrow">Project handbook</p>
+  <h1 class="title">Belin-Pok</h1>
+  <p class="sub">Inventory, point of sale, online shop and owner reporting for a menswear retail &amp; wholesale business.</p>
+  <div class="meta">
+    <b>Version:</b> 23 October 2026<br>
+    <b>Covers:</b> the API, the admin &amp; inventory system, the web storefront and the phone app<br>
+    <b>Live at:</b> belpok.xyz · admin.belpok.xyz · api.belpok.xyz
+  </div>
+</section>
+
+<!-- ============================== CONTENTS ============================== -->
+<section class="chapter toc">
+  <h1>Contents</h1>
+  <ol>
+    <li><span>1</span>The system at a glance
+      <ol><li>What Belin-Pok does</li><li>The four parts</li><li>Who uses what</li><li>Principles behind the design</li></ol></li>
+    <li><span>2</span>Running the shop — a guide for the owner and staff
+      <ol><li>Signing in</li><li>Staff roles</li><li>Products and stock</li><li>Prices: in-store, wholesale, pack, online</li><li>Selling at the till</li><li>Busy-hour sales</li><li>Voids, returns and corrections</li><li>Online orders</li><li>Customers and credit</li><li>Watching the shop from anywhere</li><li>Managing staff</li><li>Deleting test data</li><li>A daily routine</li></ol></li>
+    <li><span>3</span>Technical reference
+      <ol><li>Architecture</li><li>Repository layout</li><li>The API</li><li>Data model</li><li>Sign-in and security</li><li>The web storefront</li><li>The admin system</li><li>The phone app</li><li>Configuration</li><li>API endpoint reference</li></ol></li>
+    <li><span>4</span>Hosting and operations
+      <ol><li>Railway services</li><li>How a change goes live</li><li>Local development</li><li>Tests and checks</li><li>Common tasks</li><li>Backups and recovery</li></ol></li>
+    <li><span>5</span>Status and next steps
+      <ol><li>Outstanding setup</li><li>Known limitations</li><li>Recommended next features</li></ol></li>
+  </ol>
+</section>
+
+<!-- ============================== 1 ============================== -->
+<section class="chapter">
+  <h1><span class="num">1</span>The system at a glance</h1>
+  <p class="lead">Belin-Pok runs a menswear shop that sells caps, tees, jackets, sweatshirts, shorts, joggers, boxers and socks — over the counter to walk-in customers, in bulk to businesses buying wholesale, and online. One system keeps all three in step.</p>
+
+  <h2>1.1 What Belin-Pok does</h2>
+  <ul>
+    <li><b>Stock:</b> every size and colour of every product is tracked separately. Deliveries are logged in seconds, and stock comes off automatically when anything sells, in store or online.</li>
+    <li><b>Point of sale:</b> a till for the counter, with retail, wholesale and factory-pack prices, split payments (cash, mobile money, card, on account), and shortcuts for busy moments.</li>
+    <li><b>Online shop:</b> a full website (and a phone app) where customers browse, order for pickup or delivery, and track orders. Online prices carry a configurable markup over in-store prices.</li>
+    <li><b>Wholesale accounts:</b> approved business customers can buy on credit up to a limit, with a complete ledger of charges and payments.</li>
+    <li><b>Owner oversight:</b> sales reports for any day, week or period; a receipt-by-receipt sales journal; and an activity log of everything staff did — built for an owner who isn't always in the shop.</li>
+  </ul>
+
+  <h2>1.2 The four parts</h2>
+  <table>
+    <tr><th style="width:30%">Part</th><th style="width:22%">Address</th><th>What it is</th></tr>
+    <tr><td><b>Admin &amp; inventory system</b></td><td>admin.belpok.xyz</td><td>Where the shop is run: the till, stock, products, orders, customers, reports and staff. Works on a computer, tablet or phone.</td></tr>
+    <tr><td><b>Web storefront</b></td><td>belpok.xyz</td><td>The public online shop. Fast, searchable, and shareable — product links show the photo and price on WhatsApp and social media.</td></tr>
+    <tr><td><b>Phone app</b></td><td>Android / iOS (to be published)</td><td>The storefront as an installable app, with push notifications for order updates and back-in-stock alerts.</td></tr>
+    <tr><td><b>API</b></td><td>api.belpok.xyz</td><td>The engine behind all three: data, rules, prices, sign-in and permissions. Nothing reaches the database except through it.</td></tr>
+  </table>
+
+  <h2>1.3 Who uses what</h2>
+  <table>
+    <tr><th>Person</th><th>Uses</th><th>Typical tasks</th></tr>
+    <tr><td>Owner</td><td>Admin (everything)</td><td>Reports, journal, activity log, pricing, staff, approving wholesale accounts</td></tr>
+    <tr><td>Sales staff</td><td>Admin: till, orders, customers</td><td>Ringing up sales, packing online orders, taking payments on account</td></tr>
+    <tr><td>Inventory manager</td><td>Admin: products, stock, till, reports</td><td>Receiving deliveries, pricing and publishing products, stock counts</td></tr>
+    <tr><td>Retail customer</td><td>Website or phone app</td><td>Browsing, ordering, tracking orders, restock alerts</td></tr>
+    <tr><td>Wholesale customer</td><td>In person (till), with an account</td><td>Buying in bulk at wholesale/pack prices, on credit if approved</td></tr>
+  </table>
+
+  <h2>1.4 Principles behind the design</h2>
+  <div class="box">
+    <h4>Nothing changes without a record</h4>
+    <p>Stock never changes by editing a number: every change is a <i>movement</i> (received, sold, corrected, returned) with who made it and why, so the history always adds up to what's on the shelf. Customer credit works the same way. Mistakes are fixed with offsetting entries (a void, a correction), not by erasing history. Only an owner can delete outright, and even that leaves a note in the activity log.</p>
+  </div>
+  <div class="box">
+    <h4>The server decides prices and permissions</h4>
+    <p>Screens show prices and hide buttons for convenience, but the API re-prices every sale and order itself and checks every request against the person's role. A tampered request can't sell below price, oversell stock, or do something a role doesn't allow.</p>
+  </div>
+  <div class="box">
+    <h4>Built for a real counter</h4>
+    <p>Busy hours, staff without barcode scanners, phones and tablets at the counter, mobile money and buying on account — the till has shortcuts for all of them (quick log by type, one-amount baskets broken down later, split payments) without losing accuracy.</p>
+  </div>
+</section>
+
+<!-- ============================== 2 ============================== -->
+<section class="chapter">
+  <h1><span class="num">2</span>Running the shop</h1>
+  <p class="lead">A practical guide to the admin system at <b>admin.belpok.xyz</b>, organised by task. What each person sees depends on their role; anything they can't do is simply not shown.</p>
+
+  <h2>2.1 Signing in</h2>
+  <ul>
+    <li>Sign in with an <b>email address</b>, a <b>phone number</b> (for staff invited by phone — type it any way, e.g. <code>024 123 4567</code> or <code>+233 24 123 4567</code>), or a <b>username</b> (the first owner account).</li>
+    <li>Sessions stay signed in on that device and renew themselves; changing your password signs you out everywhere else.</li>
+    <li>After 10 wrong passwords in 15 minutes, that account is paused for 15 minutes.</li>
+    <li><b>Forgot your password?</b> Staff with an email can request a reset link (valid for 1 hour). Anyone else asks an owner for a new sign-in link from <i>Staff</i>.</li>
+  </ul>
+
+  <h2>2.2 Staff roles</h2>
+  <p>A person can hold several roles and gets everything each allows — for example, inventory manager <i>and</i> sales. Owner and Viewer stand alone.</p>
+  <table>
+    <tr><th>Can…</th><th class="c">Owner</th><th class="c">Inventory manager</th><th class="c">Sales &amp; orders</th><th class="c">Viewer</th></tr>
+    <tr><td>Use the till, void sales</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c no">—</td></tr>
+    <tr><td>Receive stock, adjust stock</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c">adjust only</td><td class="c no">—</td></tr>
+    <tr><td>Create &amp; edit products, prices, photos, categories</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c no">—</td><td class="c no">—</td></tr>
+    <tr><td>Dashboard, sales reports, sales journal</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c no">—</td><td class="c no">—</td></tr>
+    <tr><td>Update online orders</td><td class="c yes">✓</td><td class="c no">—</td><td class="c yes">✓</td><td class="c no">—</td></tr>
+    <tr><td>Customers, wholesale approval, credit payments</td><td class="c yes">✓</td><td class="c no">—</td><td class="c yes">✓</td><td class="c no">—</td></tr>
+    <tr><td>View products, stock, orders, customers</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td></tr>
+    <tr><td>Activity log, change history, staff, shop settings, deleting records</td><td class="c yes">✓</td><td class="c no">—</td><td class="c no">—</td><td class="c no">—</td></tr>
+  </table>
+
+  <h2>2.3 Products and stock</h2>
+  <h3>Receiving a delivery</h3>
+  <p><b>Receive stock</b> (on Products, Inventory or a product's page) is the fast path. It stays open after each item so a whole delivery can be logged in one go.</p>
+  <ul>
+    <li><b>New item:</b> take a photo, type a name and how many came in. It's saved as a <b>draft</b> priced at ₵0 — not on sale anywhere yet. Category, price, size and colour can be filled in now or later.</li>
+    <li><b>Already in the catalogue:</b> search for it, pick the size/colour (or add a new one), enter the quantity.</li>
+  </ul>
+  <h3>A product's life</h3>
+  <table>
+    <tr><th style="width:18%">Status</th><th>Meaning</th></tr>
+    <tr><td><span class="tag">Draft</span></td><td>Being set up. Not on the website, app or till. Fast-received items start here.</td></tr>
+    <tr><td><span class="tag" style="background:#e5f6ee;color:#1f8f5f">Live</span></td><td>Published: on the website, the app and the till. Publishing needs a price.</td></tr>
+    <tr><td><span class="tag" style="background:#eee;color:#555">Archived</span></td><td>Discontinued: off the website and app. Leftover stock can still be sold at the till.</td></tr>
+  </table>
+  <h3>Sizes, photos and stock levels</h3>
+  <ul>
+    <li>Each <b>size/colour</b> is its own SKU (generated automatically) with its own stock, prices and low-stock alert level (default 5).</li>
+    <li><b>Photos:</b> upload several at once; choose the cover photo shoppers see first. JPEG, PNG or WebP.</li>
+    <li><b>Inventory</b> shows stock for every SKU, what's running low (the reorder list), and the full movement history.</li>
+    <li><b>Adjust</b> records a restock, a count correction, a customer return, or a sale made outside the till — always with a reason.</li>
+    <li><b>Repack</b> records loose units organised into factory-style packs (a note; the count doesn't change).</li>
+  </ul>
+
+  <h2>2.4 Prices: in-store, wholesale, pack and online</h2>
+  <table>
+    <tr><th style="width:20%">Price</th><th>Where it's set</th><th>Who pays it</th></tr>
+    <tr><td><b>In-store</b></td><td>The product's price, or a size's own price</td><td>Walk-in customers at the till</td></tr>
+    <tr><td><b>Wholesale</b></td><td>Per size (blank = in-store price)</td><td>Wholesale customers at the till</td></tr>
+    <tr><td><b>Pack</b></td><td>Per size: a price for a whole factory pack, and pieces per pack</td><td>Wholesale customers buying sealed packs</td></tr>
+    <tr><td><b>Online</b></td><td>Automatic: in-store price + the shop's online markup (<i>Shop settings</i>), rounded up to a tidy amount — unless a size has its own fixed online price</td><td>Customers on the website and app</td></tr>
+  </table>
+  <div class="box warn">
+    <h4>Set the online markup</h4>
+    <p>The markup starts at <b>0%</b>, so online and in-store prices are the same until an owner sets it under <b>Shop settings</b>. The page shows a worked example table before saving. Changes reach checkout at once and the website's pages within a minute. Orders already placed keep their price.</p>
+  </div>
+  <p>Wholesale and pack prices are never shown to the public: the website and app only ever receive online prices.</p>
+</section>
+
+<section class="chapter">
+  <h2 style="margin-top:0">2.5 Selling at the till</h2>
+  <p>The <b>Point of sale</b> page has the product grid (search and category chips), the current sale, and today's receipts below.</p>
+  <ol class="steps">
+    <li>Choose <b>Retail</b> or <b>Wholesale</b>. Wholesale asks for the customer first and unlocks wholesale and pack prices.</li>
+    <li>Tap products to add them: pick the size (sold-out sizes are struck through), the price tier, and the quantity. The till won't add more than is in stock.</li>
+    <li>Press <b>Charge</b>. Enter how the customer paid — split across several methods if needed (e.g. part cash, part mobile money). <b>On account</b> appears only for approved wholesale customers and only up to their available credit.</li>
+    <li><b>Complete sale.</b> The API re-prices every line, checks stock and takes it off, and records any credit charge — all at once, or not at all.</li>
+  </ol>
+
+  <h2>2.6 Busy-hour sales</h2>
+  <p>Two shortcuts keep the queue moving when finding exact products would slow things down. Both are tidied up later from <b>To sort out</b> under Today's sales; until then their stock hasn't come off, and the dashboard shows a reminder.</p>
+  <div class="two">
+    <div class="box">
+      <h4>Quick log by type</h4>
+      <p>Record a line by type of item ("Caps"), price and quantity. Later, <b>Identify</b> attaches the exact product (stock comes off then), or <b>Split</b> it if it was really several different products.</p>
+    </div>
+    <div class="box">
+      <h4>One amount</h4>
+      <p>Take the money for a whole mixed basket as a single amount, with an optional note ("2 tees, a cap and socks"). Later, <b>Break down</b> lists what was in it — exact products, or just types — and only saves once the parts add up to exactly what was taken.</p>
+    </div>
+  </div>
+
+  <h2>2.7 Voids, returns and corrections</h2>
+  <table>
+    <tr><th style="width:24%">Situation</th><th>What to do</th></tr>
+    <tr><td>A sale rung up wrongly</td><td><b>Void</b> it (Today's sales or the journal) with a reason. Stock goes back and any credit charge is reversed; the sale stays in the journal marked voided, with who, when and why.</td></tr>
+    <tr><td>A customer returns goods</td><td><b>Adjust stock → Customer return</b> on that size.</td></tr>
+    <tr><td>Stock count doesn't match</td><td><b>Adjust stock → Correction</b> with the difference and a reason.</td></tr>
+    <tr><td>A customer's balance is wrong</td><td>On their page: <b>Correction</b> (up or down, with a reason).</td></tr>
+    <tr><td>Test data, or something that should never have existed</td><td>Owner only: <b>Delete</b> (see 2.12).</td></tr>
+  </table>
+
+  <h2>2.8 Online orders</h2>
+  <ul>
+    <li>Orders from the website and app land as <b>Pending</b>. No payment is taken online: the shop calls the customer to confirm and arrange payment, pickup or delivery.</li>
+    <li>Move each order along — <b>Paid → Packed → Shipped → Delivered</b> — with one click, adding a note (e.g. a mobile money reference) if useful. Every change is recorded in the order's timeline and the activity log.</li>
+    <li><b>Cancelling</b> puts the order's items back in stock, and so does <b>refunding</b> an order that hadn't been shipped yet. A refund after shipping leaves stock alone — record a customer return when the goods actually come back. Reopening a cancelled order takes the stock again, if it's still there.</li>
+    <li>Each line shows the online price charged and what it would have cost in store; the order shows the markup it earned.</li>
+    <li>A warning panel lists orders needing more stock than the system shows — usually a counter sale that wasn't rung up. Check the shelf before packing.</li>
+    <li>Customers using the phone app get a notification when their order moves on (once push notifications are configured — see 5.1).</li>
+  </ul>
+
+  <h2>2.9 Customers and credit</h2>
+  <ul>
+    <li>Customers are created when someone signs up on the website or app, when a guest places an order, or by staff (<b>Add customer</b>) — typically wholesale businesses.</li>
+    <li>A wholesale account must be <b>approved</b> before it can buy on credit. Set its <b>credit limit</b> (0 = cash only).</li>
+    <li>Each wholesale customer has a <b>credit account</b>: owes / limit / available, a usage bar (red past 85%), and every charge, payment and correction with who recorded it.</li>
+    <li><b>Record payment</b> when they pay something off; the dashboard lists who owes the most and for how long (red past 30 days).</li>
+  </ul>
+</section>
+
+<section class="chapter">
+  <h2 style="margin-top:0">2.10 Watching the shop from anywhere</h2>
+  <table>
+    <tr><th style="width:22%">Page</th><th>Use it for</th></tr>
+    <tr><td><b>Dashboard</b></td><td>The last 7, 30 or 90 days at a glance: revenue, items sold, credit owed, low stock, best sellers, latest stock activity, and a reminder of sales still to sort out.</td></tr>
+    <tr><td><b>Sales reports</b></td><td>Today's end-of-day figures, or any period (presets or custom dates) by day, week or month. Where the money came from (cash — what should be in the drawer — mobile money, card, on account, online), voids, credit given and collected, and breakdowns by product, staff member and category. Printable and exportable to CSV.</td></tr>
+    <tr><td><b>Sales journal</b></td><td>Every sale receipt by receipt: when, who rang it up, the customer, each line, how it was paid, and void details. Switch between in-store and online. Filter by period, staff, payment method or status; export every line to CSV.</td></tr>
+    <tr><td><b>Activity log</b> <span class="tag owner">owner</span></td><td>Everything staff did, in one timeline: sales, voids (with reasons), stock changes, product and price edits, order updates, payments on account, staff changes, breakdowns and deletions. Filter by period, person or kind.</td></tr>
+  </table>
+  <p class="small muted">Days run midnight to midnight in Ghana time (Africa/Accra). In-store sales count unless voided; online orders count unless cancelled or refunded.</p>
+
+  <h2>2.11 Managing staff <span class="tag owner">owner</span></h2>
+  <ol class="steps">
+    <li><b>Staff → Invite staff.</b> Enter their name, an email and/or a phone number, and tick their roles.</li>
+    <li>Choose how to send the invite: <b>Email</b> (sent automatically when email is set up, otherwise your email app opens), <b>WhatsApp</b>, <b>SMS</b>, your phone's <b>Share</b> menu, or <b>Copy</b>. The message is written for you, including the link and what to sign in with.</li>
+    <li>They open the link (valid once, for 7 days), choose a password, and they're in. Someone invited by phone only signs in with that number.</li>
+  </ol>
+  <ul>
+    <li><b>Change roles</b> with the pencil next to someone's roles. <b>Switch someone off</b> with the Active toggle: they can't sign in, but their history stays. Owners can't change their own roles or switch themselves off.</li>
+    <li><b>Sign-in link</b> issues a fresh link — for a forgotten password or an expired invite — with the same sending options.</li>
+  </ul>
+
+  <h2>2.12 Deleting test data <span class="tag owner">owner</span></h2>
+  <p>For records that should never have existed — a sale rung up while trying the till, a test order — an owner can delete outright. A reason is required; the activity log keeps a red <b>Deleted</b> entry saying what it was, who deleted it and why.</p>
+  <table>
+    <tr><th style="width:24%">Record</th><th style="width:30%">Where</th><th>What happens</th></tr>
+    <tr><td>Till sale</td><td>Sales journal (open the receipt) or Today's sales</td><td>Gone from the journal and reports; stock back; credit charge off the customer's balance.</td></tr>
+    <tr><td>Online order</td><td>The order's page</td><td>Gone from orders and reports; its items back in stock.</td></tr>
+    <tr><td>Customer</td><td>The customer's page</td><td>Only once they have no orders, sales or credit history. Addresses and website login go too.</td></tr>
+    <tr><td>Stock entry</td><td>Inventory → Movement history</td><td>Only entries made by hand; their effect on stock is undone.</td></tr>
+    <tr><td>Product</td><td>The product's page</td><td>Including its stock history — but not while any sale or order includes it.</td></tr>
+  </table>
+  <p class="small">Deletion is refused, with an explanation, where undoing isn't possible: credit already paid off, received stock since sold, or a product still in a sale.</p>
+
+  <h2>2.13 A daily routine</h2>
+  <div class="two">
+    <div class="box ok"><h4>Opening &amp; during the day</h4><ul class="small"><li>Check the dashboard: low stock, orders needing attention.</li><li>Log deliveries with Receive stock as they arrive.</li><li>Move online orders along as they're paid and packed.</li><li>Use quick log / one amount when busy.</li></ul></div>
+    <div class="box ok"><h4>Closing</h4><ul class="small"><li>Sort out today's quick-logged and one-amount sales.</li><li>Sales reports → Today: count the drawer against <i>Cash</i>.</li><li>Review voids and their reasons.</li><li>Owner: skim the activity log.</li></ul></div>
+  </div>
+</section>
+
+<!-- ============================== 3 ============================== -->
+<section class="chapter">
+  <h1><span class="num">3</span>Technical reference</h1>
+  <p class="lead">How the system is built, for whoever maintains it. The code is commented throughout; this chapter is the map.</p>
+
+  <h2>3.1 Architecture</h2>
+  <figure>
+    <svg viewBox="0 0 680 300" width="100%" font-family="Helvetica Neue, Arial" font-size="11">
+      <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6b6775"/></marker></defs>
+      <g fill="#f1ecf9" stroke="#4b2884" stroke-width="1.2">
+        <rect x="10" y="20" width="170" height="58" rx="8"/><rect x="10" y="110" width="170" height="58" rx="8"/><rect x="10" y="200" width="170" height="58" rx="8"/>
+      </g>
+      <g fill="#2a1550" font-weight="700"><text x="95" y="44" text-anchor="middle">Admin system</text><text x="95" y="134" text-anchor="middle">Web storefront</text><text x="95" y="224" text-anchor="middle">Phone app</text></g>
+      <g fill="#6b6775" font-size="9.5"><text x="95" y="61" text-anchor="middle">React + Vite · Caddy</text><text x="95" y="151" text-anchor="middle">Next.js (server-rendered)</text><text x="95" y="241" text-anchor="middle">Flutter (Android / iOS)</text></g>
+      <rect x="265" y="95" width="160" height="88" rx="10" fill="#4b2884"/>
+      <text x="345" y="128" text-anchor="middle" fill="#fff" font-weight="700" font-size="13">API</text>
+      <text x="345" y="146" text-anchor="middle" fill="#e8e0f5" font-size="9.5">FastAPI · Python</text>
+      <text x="345" y="161" text-anchor="middle" fill="#e8e0f5" font-size="9.5">api.belpok.xyz</text>
+      <g stroke="#6b6775" stroke-width="1.3" marker-end="url(#a)"><path d="M180 49 L262 118"/><path d="M180 139 L262 139"/><path d="M180 229 L262 160"/></g>
+      <g fill="#fff8f4" stroke="#d14e0f" stroke-width="1.2"><rect x="505" y="30" width="165" height="58" rx="8"/><rect x="505" y="111" width="165" height="58" rx="8"/><rect x="505" y="192" width="165" height="58" rx="8"/></g>
+      <g fill="#7a2e08" font-weight="700"><text x="587" y="54" text-anchor="middle">PostgreSQL</text><text x="587" y="135" text-anchor="middle">Photo bucket (S3)</text><text x="587" y="216" text-anchor="middle">Email · Push</text></g>
+      <g fill="#6b6775" font-size="9.5"><text x="587" y="71" text-anchor="middle">all data · migrations</text><text x="587" y="152" text-anchor="middle">served via /images</text><text x="587" y="233" text-anchor="middle">Resend · Firebase (optional)</text></g>
+      <g stroke="#6b6775" stroke-width="1.3" marker-end="url(#a)"><path d="M425 120 L502 66"/><path d="M425 139 L502 139"/><path d="M425 158 L502 214"/></g>
+      <text x="340" y="285" text-anchor="middle" fill="#6b6775" font-size="9.5">All hosted on Railway. Only the API talks to the database, bucket and outside services.</text>
+    </svg>
+    <figcaption>Figure 1 — Every app talks to the API over HTTPS; the API owns the data and the rules.</figcaption>
+  </figure>
+
+  <h2>3.2 Repository layout</h2>
+  <pre>services/api/            FastAPI backend
+  app/                   application code (routers/, models.py, schemas.py, ...)
+  migrations/            SQL migrations, applied in filename order
+  tests/                 pytest suite (138 tests)
+apps/admin-web/          Admin &amp; inventory system (React + Vite + Tailwind)
+apps/web/                Web storefront (Next.js + Tailwind)
+apps/storefront/         Phone app (Flutter)
+packages/belpok_core/    Shared Dart package for the phone app
+deploy/Caddyfile         Serves the built admin app
+.github/workflows/       CI: lint, type-check and tests on pull requests</pre>
+
+  <h2>3.3 The API</h2>
+  <p>Python 3 with <b>FastAPI</b>, <b>SQLAlchemy 2</b> (async, asyncpg driver) and <b>Pydantic</b>. Key files in <code>services/api/app/</code>:</p>
+  <table>
+    <tr><th style="width:28%">File</th><th>Responsibility</th></tr>
+    <tr><td><code>main.py</code></td><td>Creates the app, CORS, registers every router.</td></tr>
+    <tr><td><code>models.py</code> / <code>schemas.py</code></td><td>Database tables (ORM) / request and response shapes.</td></tr>
+    <tr><td><code>deps.py</code></td><td>Who is calling: resolves the token to a staff member or customer; <code>require_role</code> guards.</td></tr>
+    <tr><td><code>security.py</code>, <code>routers/auth.py</code></td><td>Passwords, tokens, sessions, invite/reset links, sign-in throttling.</td></tr>
+    <tr><td><code>pricing.py</code></td><td>In-store vs online prices; what the public catalogue may see.</td></tr>
+    <tr><td><code>erase.py</code></td><td>Owner deletions: undoing stock and credit, recording the deletion.</td></tr>
+    <tr><td><code>shop_time.py</code></td><td>Shop-timezone day boundaries for reports.</td></tr>
+    <tr><td><code>phone.py</code></td><td>Normalising phone numbers for staff sign-in.</td></tr>
+    <tr><td><code>storage.py</code>, <code>email.py</code>, <code>push.py</code></td><td>Photo bucket, transactional email (Resend), push notifications (Firebase).</td></tr>
+    <tr><td><code>migrate.py</code>, <code>cli.py</code></td><td>Migration runner; command-line tools (creating the first owner).</td></tr>
+  </table>
+  <p>Interactive API documentation is generated automatically at <code>/docs</code> on any running API.</p>
+
+  <h2>3.4 Data model</h2>
+  <p>25 tables in PostgreSQL, created by 35 SQL migrations. The main groups:</p>
+  <table>
+    <tr><th style="width:24%">Area</th><th style="width:40%">Tables</th><th>Notes</th></tr>
+    <tr><td>People &amp; sign-in</td><td><code>users</code>, <code>staff</code>, <code>refresh_tokens</code>, <code>one_time_tokens</code>, <code>failed_logins</code></td><td>A user is the login; staff and customers point to it.</td></tr>
+    <tr><td>Catalogue</td><td><code>categories</code>, <code>products</code>, <code>product_variants</code>, <code>product_images</code>, <code>suppliers</code></td><td>Variants (size/colour) hold stock and prices.</td></tr>
+    <tr><td>Stock</td><td><code>stock_movements</code></td><td>Append-only ledger; a trigger keeps <code>stock_quantity</code> in step and refuses negative stock.</td></tr>
+    <tr><td>Till</td><td><code>pos_sales</code>, <code>pos_sale_items</code>, <code>pos_sale_payments</code></td><td>Lines snapshot the price charged.</td></tr>
+    <tr><td>Online</td><td><code>orders</code>, <code>order_items</code>, <code>order_status_history</code></td><td>Lines record online and in-store price.</td></tr>
+    <tr><td>Customers &amp; credit</td><td><code>customers</code>, <code>addresses</code>, <code>customer_credit_ledger</code>, <code>customer_device_tokens</code>, <code>stock_notification_requests</code></td><td>Ledger trigger keeps the balance and enforces the credit limit.</td></tr>
+    <tr><td>Oversight &amp; settings</td><td><code>audit_log</code>, <code>shop_settings</code></td><td>Before/after of admin changes; online pricing.</td></tr>
+  </table>
+  <p class="small">Database triggers are the last line of defence: even if API code had a bug, stock can't go negative and a credit sale can't exceed a customer's limit.</p>
+
+  <h2>3.5 Sign-in and security</h2>
+  <ul>
+    <li>Passwords are hashed with <b>argon2</b>. Access tokens last 15 minutes; refresh tokens last 30 days, are single-use and rotate on every refresh — reuse of an old one signs that person out everywhere.</li>
+    <li>Invite links last 7 days, reset links 1 hour; both work once. Sign-in pauses after 10 failures in 15 minutes.</li>
+    <li>Every staff request checks the person is still active, so switching someone off takes effect immediately.</li>
+    <li>The public catalogue endpoints return only live products and online prices — never wholesale, pack or in-store prices.</li>
+    <li>Secrets live only in Railway's service variables, never in the repository.</li>
+  </ul>
+</section>
+
+<section class="chapter">
+  <h2 style="margin-top:0">3.6 The web storefront (<code>apps/web</code>)</h2>
+  <p><b>Next.js 16</b> with React 19 and Tailwind CSS 4, running as a Node server. Catalogue pages (home, shop, categories, products) are rendered on the server and cached for a minute, so they're fast, indexed by search engines, and show rich previews when shared. Cart, checkout and accounts run in the browser; the cart is kept on the shopper's device.</p>
+  <p>Pages: home, shop (search, filters, sorting — all in the URL), category, product, cart, checkout (guest or signed in; pickup or delivery), order confirmation, account (orders and addresses), sign-in, register, password reset, wholesale, sitemap and robots.</p>
+
+  <h2>3.7 The admin system (<code>apps/admin-web</code>)</h2>
+  <p><b>React 19 + Vite</b>, React Router, TanStack Query (data caching and refresh), Recharts, Tailwind CSS 4. Built to static files served by Caddy. Pages live in <code>src/pages/</code>, shared components in <code>src/components/</code>, and the API client, session and helpers in <code>src/lib/</code>. Data refreshes when the window regains focus, so a tablet left at the counter catches up with sales made elsewhere.</p>
+
+  <h2>3.8 The phone app (<code>apps/storefront</code>)</h2>
+  <p><b>Flutter</b>, with shared models, API client and session in <code>packages/belpok_core</code>. Browsing, cart, checkout and order history against the same API, plus push notifications. Android and iOS projects are configured (app ID <code>com.belpok.storefront</code>); publishing needs your Play Console and Apple Developer accounts — see the README's release section.</p>
+
+  <h2>3.9 Configuration</h2>
+  <h3>API (Railway service variables)</h3>
+  <table>
+    <tr><th style="width:36%">Variable</th><th>Purpose</th></tr>
+    <tr><td><code>ENVIRONMENT</code></td><td><code>production</code> on Railway; <code>local</code> for development.</td></tr>
+    <tr><td><code>DATABASE_URL</code></td><td>Postgres, with the <code>postgresql+asyncpg://</code> scheme.</td></tr>
+    <tr><td><code>JWT_SECRET</code></td><td>Signs access tokens. Long and random; changing it signs everyone out.</td></tr>
+    <tr><td><code>S3_ENDPOINT_URL</code>, <code>S3_BUCKET</code>, <code>S3_ACCESS_KEY_ID</code>, <code>S3_SECRET_ACCESS_KEY</code>, <code>S3_REGION</code></td><td>The product photo bucket.</td></tr>
+    <tr><td><code>CORS_ORIGINS</code></td><td>Every address the web apps are served from.</td></tr>
+    <tr><td><code>ADMIN_APP_URL</code>, <code>STOREFRONT_URL</code></td><td>Where invite and password-reset links point.</td></tr>
+    <tr><td><code>SHOP_TIMEZONE</code></td><td>Report day boundaries (default <code>Africa/Accra</code>).</td></tr>
+    <tr><td><code>RESEND_API_KEY</code>, <code>EMAIL_FROM</code></td><td>Optional: sending invite and reset emails.</td></tr>
+    <tr><td><code>FIREBASE_SERVICE_ACCOUNT_JSON</code></td><td>Optional: push notifications to the phone app.</td></tr>
+    <tr><td><code>ACCESS_TOKEN_MINUTES</code>, <code>REFRESH_TOKEN_DAYS</code></td><td>Optional session lengths (defaults 15 and 30).</td></tr>
+  </table>
+  <h3>Web apps (build-time — changing one needs a redeploy)</h3>
+  <table>
+    <tr><th style="width:36%">Variable</th><th>Purpose</th></tr>
+    <tr><td><code>NEXT_PUBLIC_API_BASE_URL</code></td><td>Storefront: the API address.</td></tr>
+    <tr><td><code>NEXT_PUBLIC_SITE_URL</code></td><td>Storefront: its own address, for links and the sitemap.</td></tr>
+    <tr><td><code>NEXT_PUBLIC_CONTACT_PHONE</code>, <code>…_WHATSAPP</code>, <code>…_EMAIL</code>, <code>NEXT_PUBLIC_SHOP_ADDRESS</code></td><td>Storefront: optional contact details for the footer and wholesale page; unset ones are left out.</td></tr>
+    <tr><td><code>VITE_API_BASE_URL</code>, <code>VITE_STOREFRONT_URL</code></td><td>Admin: the API, and where "View on the shop" links go.</td></tr>
+  </table>
+</section>
+
+<section class="chapter">
+  <h2 style="margin-top:0">3.10 API endpoint reference</h2>
+  <p class="small muted">77 endpoints. "Staff" means any signed-in staff member; role limits follow section 2.2. Full request/response details are at <code>/docs</code>.</p>
+  <table class="api">
+    <tr><th colspan="3">Sign-in</th></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/auth/login · /auth/refresh · /auth/logout</td><td>Start, renew, end a session</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/auth/signup</td><td>Customer creates an account</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/auth/forgot-password · /auth/set-password</td><td>Reset link; set a password from a link</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/auth/change-password</td><td>Change own password (signs out other devices)</td></tr>
+    <tr><th colspan="3">Public catalogue (no sign-in; online prices only)</th></tr>
+    <tr><td><span class="method GET">GET</span></td><td>/public/categories · /public/products</td><td>Categories; products with search, filters, sorting</td></tr>
+    <tr><td><span class="method GET">GET</span></td><td>/public/products/{id} · /public/products/by-slug/{slug}</td><td>One product</td></tr>
+    <tr><td><span class="method GET">GET</span></td><td>/images/{path}</td><td>Product photos</td></tr>
+    <tr><th colspan="3">Products, stock and categories</th></tr>
+    <tr><td><span class="method GET">GET</span></td><td>/products · /products/{id}</td><td>Catalogue (all statuses)</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/products · /products/receive</td><td>Create a product; receive stock (fast path)</td></tr>
+    <tr><td><span class="method PATCH">PATCH</span></td><td>/products/{id}</td><td>Edit, publish, archive</td></tr>
+    <tr><td><span class="method DELETE">DELETE</span></td><td>/products/{id}</td><td>Delete (owner may include stock history)</td></tr>
+    <tr><td><span class="method GET">GET</span>/<span class="method POST">POST</span></td><td>/products/{id}/variants · /products/{id}/images</td><td>Sizes/colours; photos</td></tr>
+    <tr><td><span class="method PATCH">PATCH</span></td><td>/variants/{id}</td><td>A size's prices, alert level, visibility</td></tr>
+    <tr><td><span class="method GET">GET</span></td><td>/variants · /variants/low-stock</td><td>Inventory list; reorder list</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/variants/{id}/notify-when-in-stock</td><td>Customer restock alert</td></tr>
+    <tr><td><span class="method PATCH">PATCH</span>/<span class="method DELETE">DELETE</span></td><td>/images/{id}</td><td>Make cover photo; delete photo</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/uploads/product-photo</td><td>Upload a photo to the bucket</td></tr>
+    <tr><td><span class="method GET">GET</span>/<span class="method POST">POST</span></td><td>/stock-movements</td><td>Movement history; record a movement</td></tr>
+    <tr><td><span class="method DELETE">DELETE</span></td><td>/stock-movements/{id}</td><td>Owner: delete a hand-made entry</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/inventory/rebalance</td><td>Record repacking into packs</td></tr>
+    <tr><td><span class="method GET">GET</span>/<span class="method POST">POST</span>/<span class="method PATCH">PATCH</span>/<span class="method DELETE">DELETE</span></td><td>/categories · /categories/{id}</td><td>Manage categories</td></tr>
+    <tr><th colspan="3">Till</th></tr>
+    <tr><td><span class="method GET">GET</span>/<span class="method POST">POST</span></td><td>/pos-sales</td><td>Journal (filters, <code>needs_details</code>); ring up a sale</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/pos-sales/{id}/void</td><td>Void with a reason</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/pos-sales/{id}/items/{item}/identify · …/break-down</td><td>Name a quick-logged line; split a line into parts</td></tr>
+    <tr><td><span class="method DELETE">DELETE</span></td><td>/pos-sales/{id}</td><td>Owner: delete a sale</td></tr>
+    <tr><th colspan="3">Online orders</th></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/orders/checkout</td><td>Place an order (guest or signed in)</td></tr>
+    <tr><td><span class="method GET">GET</span></td><td>/orders · /orders/{id} · /orders/me · /orders/needs-attention</td><td>Staff list; one order; a customer's own; stock warnings</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/orders/{id}/status</td><td>Move an order along</td></tr>
+    <tr><td><span class="method DELETE">DELETE</span></td><td>/orders/{id}</td><td>Owner: delete an order</td></tr>
+    <tr><th colspan="3">Customers and credit</th></tr>
+    <tr><td><span class="method GET">GET</span>/<span class="method POST">POST</span></td><td>/customers · /customers/{id}</td><td>List, add, view</td></tr>
+    <tr><td><span class="method PATCH">PATCH</span>/<span class="method DELETE">DELETE</span></td><td>/customers/{id}</td><td>Edit; owner: delete</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/customers/{id}/status</td><td>Approve or reject</td></tr>
+    <tr><td><span class="method GET">GET</span>/<span class="method POST">POST</span></td><td>/customers/{id}/credit-ledger · credit-payments · credit-adjustments</td><td>Credit history; payments; corrections</td></tr>
+    <tr><td><span class="method GET">GET</span>/<span class="method POST">POST</span></td><td>/customers/me · /customers/me/addresses · /customers/me/device-tokens</td><td>A customer's own profile, addresses, devices</td></tr>
+    <tr><th colspan="3">Reports, staff and settings</th></tr>
+    <tr><td><span class="method GET">GET</span></td><td>/reports/dashboard · /reports/daily-sales · /reports/sales</td><td>Dashboard; daily chart; full sales report</td></tr>
+    <tr><td><span class="method GET">GET</span></td><td>/reports/activity · /audit-log</td><td>Owner: activity log; change history</td></tr>
+    <tr><td><span class="method GET">GET</span>/<span class="method PATCH">PATCH</span></td><td>/staff · /staff/me · /staff/{id}</td><td>Staff list; own record; roles and active</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/staff/invite · /staff/{id}/invite-link</td><td>Invite (email and/or phone); new sign-in link</td></tr>
+    <tr><td><span class="method GET">GET</span>/<span class="method PATCH">PATCH</span></td><td>/settings</td><td>Online pricing (change: owner)</td></tr>
+    <tr><td><span class="method GET">GET</span></td><td>/health</td><td>Health check for Railway</td></tr>
+  </table>
+</section>
+
+<!-- ============================== 4 ============================== -->
+<section class="chapter">
+  <h1><span class="num">4</span>Hosting and operations</h1>
+
+  <h2>4.1 Railway services</h2>
+  <p>Everything runs in one Railway project, <code>talented-adaptation</code>, deployed from the <code>main</code> branch of the GitHub repository.</p>
+  <table>
+    <tr><th style="width:18%">Service</th><th style="width:26%">Address</th><th>Built from</th></tr>
+    <tr><td><code>belin-pok</code></td><td>api.belpok.xyz</td><td><code>services/api</code> (Nixpacks; <code>railway.json</code> sets start command, health check and migrations)</td></tr>
+    <tr><td><code>web</code></td><td>belpok.xyz, www.belpok.xyz</td><td><code>apps/web/Dockerfile</code></td></tr>
+    <tr><td><code>admin-web</code></td><td>admin.belpok.xyz</td><td><code>apps/admin-web/Dockerfile</code> (repo root as context, for <code>deploy/Caddyfile</code>)</td></tr>
+    <tr><td><code>Postgres</code></td><td>private network only</td><td>Railway database</td></tr>
+    <tr><td><code>product-photos</code></td><td>private</td><td>Railway bucket, served through the API</td></tr>
+  </table>
+  <p class="small">The web services also answer on <code>web-production-a8a25.up.railway.app</code> and <code>admin-web-production-e077.up.railway.app</code>.</p>
+
+  <h2>4.2 How a change goes live</h2>
+  <ol class="steps">
+    <li>Commit and push to <code>main</code>.</li>
+    <li>Railway rebuilds only the services whose files changed (watch paths): API, storefront and admin are independent.</li>
+    <li>For the API, the pre-deploy step runs <code>python -m app.migrate</code> first. A failed migration stops the deploy, and the previous version keeps running.</li>
+    <li>The new version takes over once its health check passes (<code>/health</code> for the API).</li>
+  </ol>
+  <p>Check progress with <code>railway deployment list --service &lt;name&gt;</code> or in the Railway dashboard. To roll back, redeploy an earlier deployment from the dashboard — but note a migration that already ran is not undone by a rollback.</p>
+
+  <h2>4.3 Local development</h2>
+  <pre># Database and API
+createdb belpok
+cd services/api &amp;&amp; python3 -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install -r requirements-dev.txt &amp;&amp; cp .env.example .env    # set DATABASE_URL, JWT_SECRET
+python -m app.migrate
+python -m app.cli create-owner --username admin --password admin
+uvicorn app.main:app --reload                      # http://localhost:8000/docs
+
+# Admin                                            # http://localhost:5173
+cd apps/admin-web &amp;&amp; npm install &amp;&amp; VITE_API_BASE_URL=http://localhost:8000 npm run dev
+
+# Storefront                                       # http://localhost:3000
+cd apps/web &amp;&amp; npm install &amp;&amp; NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 npm run dev</pre>
+  <p class="small">Without bucket settings, photos are kept in memory locally (lost on restart). Without email settings, invite links are logged and still shown in the admin.</p>
+
+  <h2>4.4 Tests and checks</h2>
+  <pre>cd services/api
+ruff check .                     # lint
+python -m pytest -q              # 138 tests; needs DATABASE_URL to a migrated database
+cd apps/admin-web &amp;&amp; npm run build      # type-check + build
+cd apps/web &amp;&amp; npm run typecheck</pre>
+  <p>GitHub Actions runs the API's lint and tests (against a fresh Postgres) and the web type-checks on pull requests. CI never deploys; Railway is the only deploy path.</p>
+
+  <h2>4.5 Common tasks</h2>
+  <table>
+    <tr><th style="width:32%">Task</th><th>How</th></tr>
+    <tr><td>Create the first owner on a fresh database</td><td>Inside the API container (the database is private):<br><code class="small">railway ssh --service belin-pok -- sh -c 'export "$(tr "\0" "\n" &lt; /proc/1/environ | grep "^LD_LIBRARY_PATH=")" &amp;&amp; cd /app &amp;&amp; /opt/venv/bin/python -m app.cli create-owner --username admin --password admin'</code></td></tr>
+    <tr><td>A staff member is locked out</td><td>Admin → Staff → <b>Sign-in link</b>, send it to them.</td></tr>
+    <tr><td>Change the schema</td><td>Add a new file <code>services/api/migrations/YYYYMMDDHHMMSS_what.sql</code>. Never edit one that has already run in production.</td></tr>
+    <tr><td>Change a web app setting</td><td>Edit the service's variable in Railway, then redeploy (they're compiled in).</td></tr>
+    <tr><td>Point links at new domains</td><td>Update <code>ADMIN_APP_URL</code>, <code>STOREFRONT_URL</code> and <code>CORS_ORIGINS</code> on <code>belin-pok</code>.</td></tr>
+  </table>
+
+  <h2>4.6 Backups and recovery</h2>
+  <div class="box warn">
+    <h4>Check that backups are on</h4>
+    <p>All business data lives in the Railway Postgres service, and product photos in the bucket. Confirm in the Railway dashboard that the database has backups enabled and how long they're kept, and occasionally take your own copy (for example with <code>pg_dump</code> through <code>railway connect Postgres</code>). Without a backup, a deleted Railway service or a damaged database can't be recovered.</p>
+  </div>
+</section>
+
+<!-- ============================== 5 ============================== -->
+<section class="chapter">
+  <h1><span class="num">5</span>Status and next steps</h1>
+  <p class="lead">Where things stand on 23 October 2026.</p>
+
+  <h2>5.1 Outstanding setup</h2>
+  <table>
+    <tr><th style="width:34%">Step</th><th>Why it matters</th></tr>
+    <tr><td><b>Point sign-in links at the real domains</b>: set <code>ADMIN_APP_URL=https://admin.belpok.xyz</code> and <code>STOREFRONT_URL=https://belpok.xyz</code> on <code>belin-pok</code></td><td>The domains are live, but invite and reset links still use the temporary <code>*.up.railway.app</code> addresses. They work, but look less trustworthy to the person receiving them.</td></tr>
+    <tr><td><b>Set the online markup</b> (Admin → Shop settings)</td><td>It's 0% until set, so online prices equal in-store prices.</td></tr>
+    <tr><td><b>Email sending</b>: a Resend account with belpok.xyz verified; set <code>RESEND_API_KEY</code></td><td>Not configured. Invites can still go by WhatsApp/SMS, but customers can't reset forgotten passwords by email until this is done.</td></tr>
+    <tr><td><b>Push notifications</b>: a Firebase project; set <code>FIREBASE_SERVICE_ACCOUNT_JSON</code></td><td>Not configured. Needed for order updates and restock alerts in the phone app.</td></tr>
+    <tr><td><b>Shop contact details</b> on the <code>web</code> service</td><td>Phone, WhatsApp, email and address appear in the footer and wholesale page only once set.</td></tr>
+    <tr><td><b>Publish the phone app</b></td><td>Needs your Play Console / Apple Developer accounts and signing keys.</td></tr>
+    <tr><td><b>Delete the old Supabase project</b></td><td>Nothing uses it any more.</td></tr>
+    <tr><td><b>Confirm database backups</b></td><td>See 4.6.</td></tr>
+  </table>
+
+  <h2>5.2 Known limitations</h2>
+  <ul>
+    <li><b>No online payment.</b> Orders are confirmed and paid by arrangement with the customer.</li>
+    <li>A one-amount basket counts as <b>1 item</b> in "items sold" until it's broken down.</li>
+    <li>Issuing a new sign-in link doesn't cancel older unused links; each still works once until it expires (or until any of them is used).</li>
+    <li>Wholesale customers buy in person; there's no self-serve wholesale ordering online.</li>
+    <li>Cost prices aren't recorded, so the system reports revenue, not profit.</li>
+  </ul>
+
+  <h2>5.3 Recommended next features</h2>
+  <p>In order of value for an owner monitoring the shop from a distance:</p>
+  <table>
+    <tr><th style="width:5%">#</th><th style="width:30%">Feature</th><th>Benefit</th></tr>
+    <tr><td>1</td><td>Cost prices and profit</td><td>Record what stock cost when received; profit per product, day and staff member (owner-only).</td></tr>
+    <tr><td>2</td><td>End-of-day cash-up</td><td>Staff count the drawer at close; the system records any shortfall and who closed.</td></tr>
+    <tr><td>3</td><td>Discounts with reasons</td><td>Haggling recorded properly — who gave how much and why — instead of showing as mismatches.</td></tr>
+    <tr><td>4</td><td>Receipts</td><td>Printable receipts for a thermal printer, plus WhatsApp/SMS copies.</td></tr>
+    <tr><td>5</td><td>Returns linked to the sale</td><td>Refunds tied to the original receipt, closing a common way money goes missing.</td></tr>
+    <tr><td>6</td><td>Barcode labels and scanning</td><td>Faster till, fewer quick-logged lines.</td></tr>
+    <tr><td>7</td><td>Suppliers and reordering</td><td>Who you buy from, what you paid, reorder lists from low-stock levels.</td></tr>
+    <tr><td>8</td><td>Online payment</td><td>Mobile money/card at checkout (e.g. Paystack).</td></tr>
+  </table>
+  <div class="box">
+    <h4>Tax</h4>
+    <p>If the business is VAT-registered, check with an accountant what Ghana Revenue Authority E-VAT invoicing requires before building receipts and invoices.</p>
+  </div>
+</section>
+
+</body>
+</html>
