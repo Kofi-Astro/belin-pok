@@ -169,7 +169,7 @@ async def _resolve_lines(
         if product.status == ProductStatus.draft:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"{product.name} is still a draft -- publish it before selling it",
+                detail=f"{product.name} is still a draft — publish it before selling it",
             )
         retail_price = variant.price_override if variant.price_override is not None else float(product.base_price)
 
@@ -444,7 +444,7 @@ async def identify_pos_sale_item(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"SKU {variant.sku} only has {variant.stock_quantity} in stock, needs {item.quantity} -- "
+                f"SKU {variant.sku} only has {variant.stock_quantity} in stock, needs {item.quantity} — "
                 "record a stock correction first if this SKU wasn't fully tracked yet"
             ),
         )

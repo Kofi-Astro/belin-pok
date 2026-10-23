@@ -50,7 +50,7 @@ async def rebalance_inventory(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"SKU {variant.sku} only has {variant.stock_quantity} units on hand -- "
+                    f"SKU {variant.sku} only has {variant.stock_quantity} units on hand — "
                     f"not enough for {line.pack_count} pack(s) of {variant.pack_size}"
                 ),
             )

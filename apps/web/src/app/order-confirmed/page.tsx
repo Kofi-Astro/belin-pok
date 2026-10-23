@@ -1,0 +1,82 @@
+"use client";
+
+import { CheckCircle2 } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+import { LAST_ORDER_KEY } from "@/lib/cart";
+import { formatPrice, imageUrl } from "@/lib/format";
+import type { Order } from "@/lib/types";
+
+export default function OrderConfirmedPage() {
+  const [order, setOrder] = useState<Order | null | undefined>(undefined);
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(LAST_ORDER_KEY);
+      setOrder(saved ? (JSON.parse(saved) as Order) : null);
+    } catch {
+      setOrder(null);
+    }
+  }, []);
+
+  if (order === undefined) return <div className="min-h-[50vh]" />;
+
+  if (order === null) {
+    return (
+      <div className="container-page py-20 text-center">
+        <h1 className="text-2xl font-extrabold">No recent order to show</h1>
+        <p className="mt-2 text-muted">Signed-in customers can see every order in their account.</p>
+        <Link href="/account" className="btn-dark mt-6">
+          Go to my account
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container-page max-w-3xl py-16">
+      <div className="text-center">
+        <CheckCircle2 className="mx-auto h-14 w-14 text-success" />
+        <h1 className="mt-5 text-3xl font-extrabold tracking-tight sm:text-4xl">Thank you — order received</h1>
+        <p className="mt-3 text-muted">
+          Order <span className="font-bold text-ink">{order.order_number}</span>. We&apos;ll contact you shortly to confirm it
+          and arrange payment{order.fulfillment_method === "delivery" ? " and delivery" : " and pickup"}.
+        </p>
+      </div>
+
+      <div className="mt-12 rounded-3xl border border-line bg-white p-6 sm:p-8">
+        <ul className="divide-y divide-line">
+          {order.items.map((item) => (
+            <li key={item.id} className="flex items-center gap-4 py-4">
+              <div className="relative h-20 w-16 shrink-0 overflow-hidden rounded-xl bg-brand-50">
+                {item.image_storage_path && <Image src={imageUrl(item.image_storage_path)} alt="" fill sizes="64px" className="object-cover" />}
+              </div>
+              <div className="flex-1 text-sm">
+                <p className="font-bold">{item.product_name}</p>
+                <p className="text-muted">
+                  {[item.variant_color, item.variant_size].filter(Boolean).join(" · ")} × {item.quantity}
+                </p>
+              </div>
+              <p className="font-bold">{formatPrice(item.line_total)}</p>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-4 flex justify-between border-t border-line pt-4 text-lg">
+          <span className="font-bold">Total</span>
+          <span className="font-extrabold">{formatPrice(order.total)}</span>
+        </div>
+      </div>
+
+      <div className="mt-10 flex flex-wrap justify-center gap-3">
+        <Link href="/shop" className="btn-dark">
+          Keep shopping
+        </Link>
+        <Link href="/register" className="btn-outline">
+          Create an account to track orders
+        </Link>
+      </div>
+    </div>
+  );
+}

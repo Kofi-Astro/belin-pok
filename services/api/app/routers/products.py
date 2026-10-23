@@ -288,7 +288,7 @@ async def receive_stock(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Couldn't save this item -- its generated SKU already exists. Try a slightly different name.",
+            detail="Couldn't save this item — its generated SKU already exists. Try a slightly different name.",
         ) from exc
 
     if old_quantity == 0 and not created_variant:
@@ -390,7 +390,7 @@ async def delete_product(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This product has order or stock history and can't be deleted -- archive it instead.",
+            detail="This product has order or stock history and can't be deleted — archive it instead.",
         ) from exc
 
     db.add(

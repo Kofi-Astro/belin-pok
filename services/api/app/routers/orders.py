@@ -103,7 +103,7 @@ async def checkout(
             if existing_customer.auth_user_id is not None:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="A customer with this email already exists -- sign in instead",
+                    detail="A customer with this email already exists — sign in instead",
                 )
             customer = existing_customer
         else:
@@ -121,7 +121,7 @@ async def checkout(
                 await db.rollback()
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="A customer with this email already exists -- sign in instead",
+                    detail="A customer with this email already exists — sign in instead",
                 ) from exc
 
     # A pickup order has nowhere to ship, so it's the one case where

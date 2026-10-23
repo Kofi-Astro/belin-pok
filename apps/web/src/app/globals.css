@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+/* Brand tokens -- the same purple/orange/gold as the logo and the Flutter
+   apps (apps/storefront/lib/theme.dart), so web and phone feel like one
+   shop. Tailwind v4 turns each --color-* into utilities (bg-brand-700,
+   text-accent, ...). */
+@theme {
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-950: #1d0f38;
+  --color-brand-900: #2a1550;
+  --color-brand-800: #3a1d6b;
+  --color-brand-700: #4b2884;
+  --color-brand-600: #5b33a0;
+  --color-brand-100: #ebe4f6;
+  --color-brand-50: #f5f1fb;
+
+  --color-accent: #d14e0f;
+  --color-accent-dark: #b2420c;
+  --color-accent-50: #fdf1ea;
+  --color-gold: #d4a017;
+
+  --color-canvas: #faf7f2;
+  --color-ink: #1c1724;
+  --color-muted: #6e6478;
+  --color-line: #e8e2da;
+
+  --color-success: #2e8a5f;
+  --color-danger: #c8382f;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Shared building blocks, declared as Tailwind utilities (v4's @utility)
+   so they can be combined with other classes and with each other -- e.g.
+   btn-primary builds on btn. Kept as named classes because they appear on
+   nearly every page. */
+@utility container-page {
+  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold tracking-wide transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-accent text-white hover:bg-accent-dark;
+}
+@utility btn-dark {
+  @apply btn bg-brand-900 text-white hover:bg-brand-800;
+}
+@utility btn-outline {
+  @apply btn border border-ink/15 bg-white text-ink hover:border-ink/40;
+}
+
+@utility field {
+  @apply w-full rounded-xl border border-line bg-white px-4 py-3 text-sm text-ink placeholder:text-muted/70 focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none;
+}
+@utility label {
+  @apply mb-1.5 block text-xs font-bold tracking-wide text-ink/80 uppercase;
+}
+
+@utility eyebrow {
+  @apply text-xs font-bold tracking-[0.18em] text-accent uppercase;
+}

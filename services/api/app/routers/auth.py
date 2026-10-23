@@ -174,7 +174,7 @@ async def _check_not_throttled(db: AsyncSession, identifier: str) -> None:
     if recent_failures >= _MAX_FAILED_LOGINS:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many incorrect attempts -- wait 15 minutes and try again",
+            detail="Too many incorrect attempts — wait 15 minutes and try again",
         )
 
 
@@ -214,7 +214,7 @@ async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)) -
         .with_for_update()
     )
     if row is None or row.expires_at <= datetime.now(UTC):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired -- sign in again")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired — sign in again")
     if row.rotated_at is not None:
         # This token was already exchanged once, and refresh tokens are
         # single-use -- so it's either a stale tab or a copied token being
@@ -222,11 +222,11 @@ async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)) -
         # the genuine owner just signs in again; a thief loses access.
         await revoke_all_sessions(db, row.user_id)
         await db.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired -- sign in again")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired — sign in again")
     if row.revoked_at is not None:
         # Signed out (or signed out everywhere by a password change or
         # deactivation) -- just refused, nothing suspicious about it.
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired -- sign in again")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired — sign in again")
 
     user = await db.get(User, row.user_id)
     await _ensure_may_sign_in(db, user)
@@ -287,7 +287,7 @@ async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Dep
             user.email,
             "Reset your Belin-Pok password",
             "Someone (hopefully you) asked to reset your Belin-Pok password.\n\n"
-            f"Choose a new one here -- the link works once, for the next hour:\n{link}\n\n"
+            f"Choose a new one here — the link works once, for the next hour:\n{link}\n\n"
             "If this wasn't you, you can ignore this email; your password hasn't changed.",
         )
     return {"detail": "If that email has an account, a reset link is on its way."}
@@ -307,7 +307,7 @@ async def set_password_with_token(
     if row is None or row.used_at is not None or row.expires_at <= datetime.now(UTC):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This link has expired or was already used -- ask for a new one",
+            detail="This link has expired or was already used — ask for a new one",
         )
 
     user = await db.get(User, row.user_id)
@@ -343,7 +343,7 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)) -> 
     email = payload.email.strip()
     if await db.scalar(select(User.id).where(User.email == email)) is not None:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists -- sign in instead"
+            status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists — sign in instead"
         )
 
     user = User(email=email, password_hash=hash_password(payload.password))
@@ -367,7 +367,7 @@ async def signup(payload: SignupRequest, db: AsyncSession = Depends(get_db)) -> 
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="This email is already on file with the shop -- contact us to set up your account",
+            detail="This email is already on file with the shop — contact us to set up your account",
         ) from exc
 
     tokens = await issue_tokens(db, user)
