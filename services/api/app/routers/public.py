@@ -6,15 +6,15 @@ keeps this catalog customer-safe."""
 from enum import StrEnum
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import exists, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_db
 from app.models import Category, Product, ProductStatus, ProductVariant
 from app.routers.categories import UNCATEGORIZED_SLUG
-from app.schemas import CategoryRead, ProductRead, ProductWithVariants
+from app.schemas import CategoryRead, ProductWithVariants
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -51,8 +51,17 @@ _SORT_COLUMNS = {
 }
 
 
-@router.get("/products", response_model=list[ProductRead])
+# Only active variants are ever shown publicly -- a discontinued size/colour
+# disappears the same way a draft product does.
+_PUBLIC_PRODUCT_LOAD = (
+    selectinload(Product.variants.and_(ProductVariant.is_active.is_(True))),
+    selectinload(Product.images),
+)
+
+
+@router.get("/products", response_model=list[ProductWithVariants])
 async def list_public_products(
+    response: Response,
     db: AsyncSession = Depends(get_db),
     category_id: UUID | None = None,
     search: str | None = Query(default=None, min_length=1, max_length=200),
@@ -63,14 +72,11 @@ async def list_public_products(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Product]:
-    stmt = (
-        select(Product)
-        .where(Product.status == ProductStatus.active)
-        .options(selectinload(Product.images))
-        .order_by(*_SORT_COLUMNS[sort])
-        .limit(limit)
-        .offset(offset)
-    )
+    """The catalog listing. Each product comes with its active variants, so
+    a product card can show "Sold out" or a price range without a request
+    per product. X-Total-Count carries the number of matching products
+    across all pages, for pagination."""
+    stmt = select(Product).where(Product.status == ProductStatus.active)
     if category_id is not None:
         stmt = stmt.where(Product.category_id == category_id)
     if search:
@@ -88,8 +94,28 @@ async def list_public_products(
             )
         )
 
-    result = await db.scalars(stmt)
+    response.headers["X-Total-Count"] = str(await db.scalar(select(func.count()).select_from(stmt.subquery())))
+    result = await db.scalars(
+        stmt.options(*_PUBLIC_PRODUCT_LOAD).order_by(*_SORT_COLUMNS[sort]).limit(limit).offset(offset)
+    )
     return list(result)
+
+
+@router.get("/products/by-slug/{slug}", response_model=ProductWithVariants)
+async def get_public_product_by_slug(slug: str, db: AsyncSession = Depends(get_db)) -> Product:
+    """Same as GET /public/products/{product_id}, by the product's slug --
+    what the web storefront's readable URLs (/products/black-oversized-tee)
+    resolve through. Registered before the {product_id} route so "by-slug"
+    is never parsed as an id."""
+    stmt = (
+        select(Product)
+        .where(Product.slug == slug, Product.status == ProductStatus.active)
+        .options(*_PUBLIC_PRODUCT_LOAD)
+    )
+    product = await db.scalar(stmt)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    return product
 
 
 @router.get("/products/{product_id}", response_model=ProductWithVariants)

@@ -41,6 +41,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Paginated lists report their total in this header; browsers hide
+    # non-standard response headers from cross-origin JavaScript unless
+    # they're listed here.
+    expose_headers=["X-Total-Count"],
 )
 
 app.include_router(health.router)

@@ -571,6 +571,29 @@ class Order(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
+    # Read-side relationships, loaded explicitly (see _ORDER_LOAD in
+    # app/routers/orders.py) so an order can be shown with who placed it,
+    # where it's going, and how it got to its current status -- without
+    # the apps making a request per order to piece that together.
+    customer: Mapped["Customer"] = relationship()
+    shipping_address: Mapped["Address | None"] = relationship(foreign_keys=[shipping_address_id])
+    status_history: Mapped[list["OrderStatusHistory"]] = relationship(
+        order_by="OrderStatusHistory.created_at", viewonly=True
+    )
+
+    # Flattened onto the order for OrderWithItems -- the customer record
+    # itself has credit/approval details that don't belong in an order view.
+    @property
+    def customer_name(self) -> str:
+        return self.customer.full_name
+
+    @property
+    def customer_email(self) -> str | None:
+        return self.customer.email
+
+    @property
+    def customer_phone(self) -> str | None:
+        return self.customer.phone
 
 
 class OrderItem(Base):
@@ -594,6 +617,41 @@ class OrderItem(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     order: Mapped["Order"] = relationship(back_populates="items")
+    variant: Mapped["ProductVariant"] = relationship()
+
+    # What the line actually *was*, for showing an order to a person (a
+    # bare variant_id means nothing to a customer or a packer). Read live
+    # from the variant/product, so a later rename shows the new name --
+    # unit_price above is the snapshot that matters for money.
+    @property
+    def product_id(self) -> uuid.UUID:
+        return self.variant.product_id
+
+    @property
+    def product_name(self) -> str:
+        return self.variant.product.name
+
+    @property
+    def product_slug(self) -> str:
+        return self.variant.product.slug
+
+    @property
+    def variant_sku(self) -> str:
+        return self.variant.sku
+
+    @property
+    def variant_size(self) -> str:
+        return self.variant.size
+
+    @property
+    def variant_color(self) -> str | None:
+        return self.variant.color
+
+    @property
+    def image_storage_path(self) -> str | None:
+        images = self.variant.product.images
+        primary = next((img for img in images if img.is_primary), images[0] if images else None)
+        return primary.storage_path if primary else None
 
 
 class OrderStatusHistory(Base):

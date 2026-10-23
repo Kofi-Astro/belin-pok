@@ -140,6 +140,17 @@ class LowStockVariantRead(ProductVariantRead):
     image_storage_path: str | None
 
 
+class InventoryVariantRead(ProductVariantRead):
+    """One row of the admin's stock table (GET /variants): a variant plus
+    enough about its product to recognize and filter it."""
+
+    product_name: str
+    product_status: ProductStatus
+    category_id: uuid.UUID
+    category_name: str
+    image_storage_path: str | None
+
+
 # ---------- product images ----------
 
 
@@ -669,6 +680,23 @@ class OrderItemRead(BaseModel):
     quantity: int
     unit_price: float
     line_total: float
+    # Joined in from the variant/product (see OrderItem's properties in
+    # app/models.py), so an order can be displayed without extra lookups.
+    product_id: uuid.UUID
+    product_name: str
+    product_slug: str
+    variant_sku: str
+    variant_size: str
+    variant_color: str | None
+    image_storage_path: str | None
+
+
+class OrderStatusHistoryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: OrderStatus
+    note: str | None
+    created_at: datetime
 
 
 class OrderRead(BaseModel):
@@ -692,6 +720,11 @@ class OrderRead(BaseModel):
 
 class OrderWithItems(OrderRead):
     items: list[OrderItemRead] = []
+    customer_name: str
+    customer_email: str | None
+    customer_phone: str | None
+    shipping_address: AddressRead | None = None
+    status_history: list[OrderStatusHistoryRead] = []
 
 
 class OrderStatusUpdate(BaseModel):

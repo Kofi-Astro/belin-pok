@@ -50,9 +50,7 @@ def _bearer(tokens: dict) -> dict:
 
 
 def _token_from_link(link: str) -> str:
-    # The token sits in the URL fragment's query ("/#/set-password?token=..."),
-    # since the apps use hash routing -- see create_one_time_link.
-    return parse_qs(urlparse(urlparse(link).fragment).query)["token"][0]
+    return parse_qs(urlparse(link).query)["token"][0]
 
 
 # ---------- bootstrap owner + sign-in ----------
@@ -187,7 +185,7 @@ async def test_invited_staff_sets_password_from_link_and_link_is_single_use(fres
         )
         assert invite.status_code == 201, invite.text
         link = invite.json()["invite_link"]
-        assert link.startswith(get_settings().admin_app_url.rstrip("/") + "/#/set-password?token=")
+        assert link.startswith(get_settings().admin_app_url.rstrip("/") + "/set-password?token=")
 
         # No password yet, so they can't sign in until they use the link.
         assert (await _login(ac, email, "anything-at-all")).status_code == 401
@@ -259,7 +257,7 @@ async def test_forgot_password_answers_the_same_and_reset_link_works(fresh_clien
 
         # A customer's reset link points at the storefront, not the admin app.
         link = next(word for word in sent[0][1].split() if "token=" in word)
-        assert link.startswith(get_settings().storefront_url.rstrip("/") + "/#/reset-password?token=")
+        assert link.startswith(get_settings().storefront_url.rstrip("/") + "/reset-password?token=")
         reset = await ac.post(
             "/auth/set-password", json={"token": _token_from_link(link), "new_password": "remembered-now"}
         )

@@ -39,6 +39,20 @@ from app.schemas import CheckoutCreate, OrderStatusUpdate, OrderWithItems
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
+# Everything OrderWithItems reads: each line's variant -> product -> photos
+# (for its name/size/picture), plus the customer, delivery address and
+# status history. Loaded up front with selectinload because async
+# SQLAlchemy can't lazy-load a relationship on attribute access.
+_ORDER_LOAD = (
+    selectinload(Order.items)
+    .selectinload(OrderItem.variant)
+    .selectinload(ProductVariant.product)
+    .selectinload(Product.images),
+    selectinload(Order.customer),
+    selectinload(Order.shipping_address),
+    selectinload(Order.status_history),
+)
+
 _write_roles = require_role(StaffRole.owner, StaffRole.order_fulfillment)
 
 
@@ -198,7 +212,9 @@ async def checkout(
 
     await db.commit()
 
-    stmt = select(Order).where(Order.id == order.id).options(selectinload(Order.items))
+    # populate_existing: this order is already in the session from
+    # earlier in the request, and its lines were added after it was loaded.
+    stmt = select(Order).where(Order.id == order.id).options(*_ORDER_LOAD).execution_options(populate_existing=True)
     return await db.scalar(stmt)
 
 
@@ -210,7 +226,7 @@ async def list_my_orders(
     stmt = (
         select(Order)
         .where(Order.customer_id == customer.id)
-        .options(selectinload(Order.items))
+        .options(*_ORDER_LOAD)
         .order_by(Order.created_at.desc())
     )
     result = await db.scalars(stmt)
@@ -230,7 +246,7 @@ async def list_orders(
 ) -> list[Order]:
     stmt = (
         select(Order)
-        .options(selectinload(Order.items))
+        .options(*_ORDER_LOAD)
         .order_by(Order.created_at.desc())
         .limit(limit)
         .offset(offset)
@@ -266,7 +282,7 @@ async def orders_needing_attention(db: AsyncSession = Depends(get_db)) -> list[O
         select(Order)
         .where(Order.status.in_([OrderStatus.pending, OrderStatus.paid]))
         .where(Order.id.in_(at_risk_order_ids))
-        .options(selectinload(Order.items))
+        .options(*_ORDER_LOAD)
         .order_by(Order.created_at.desc())
     )
     result = await db.scalars(stmt)
@@ -275,7 +291,7 @@ async def orders_needing_attention(db: AsyncSession = Depends(get_db)) -> list[O
 
 @router.get("/{order_id}", response_model=OrderWithItems, dependencies=[Depends(get_current_staff)])
 async def get_order(order_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Order:
-    stmt = select(Order).where(Order.id == order_id).options(selectinload(Order.items))
+    stmt = select(Order).where(Order.id == order_id).options(*_ORDER_LOAD)
     order = await db.scalar(stmt)
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
@@ -314,5 +330,11 @@ async def update_order_status(
             f"Your order #{order.order_number} is now {payload.status.value}.",
         )
 
-    stmt = select(Order).where(Order.id == order_id).options(selectinload(Order.items))
+    # populate_existing: status_history just gained a row in this session.
+    stmt = (
+        select(Order)
+        .where(Order.id == order_id)
+        .options(*_ORDER_LOAD)
+        .execution_options(populate_existing=True)
+    )
     return await db.scalar(stmt)

@@ -6,8 +6,8 @@ in app/routers/public.py that only ever shows status='active' products."""
 import re
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -83,8 +83,9 @@ async def _check_publishable(db: AsyncSession, product: Product) -> None:
         )
 
 
-@router.get("", response_model=list[ProductRead], dependencies=[Depends(get_current_staff)])
+@router.get("", response_model=list[ProductWithVariants], dependencies=[Depends(get_current_staff)])
 async def list_products(
+    response: Response,
     db: AsyncSession = Depends(get_db),
     category_id: uuid.UUID | None = None,
     status_filter: ProductStatus | None = Query(default=None, alias="status"),
@@ -92,13 +93,11 @@ async def list_products(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[Product]:
-    stmt = (
-        select(Product)
-        .options(selectinload(Product.images))
-        .order_by(Product.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    """Every product, including drafts and archived, newest first -- with
+    all its variants (active or not), so the admin's product table can show
+    total stock and a variant count per row. X-Total-Count carries the
+    number of matching products across all pages."""
+    stmt = select(Product)
     if category_id is not None:
         stmt = stmt.where(Product.category_id == category_id)
     if status_filter is not None:
@@ -106,7 +105,13 @@ async def list_products(
     if search:
         stmt = stmt.where(Product.name.ilike(f"%{search}%"))
 
-    result = await db.scalars(stmt)
+    response.headers["X-Total-Count"] = str(await db.scalar(select(func.count()).select_from(stmt.subquery())))
+    result = await db.scalars(
+        stmt.options(selectinload(Product.images), selectinload(Product.variants))
+        .order_by(Product.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     return list(result)
 
 
