@@ -642,6 +642,18 @@ def _money(amount: float) -> str:
     return f"GH₵{amount:,.2f}"
 
 
+def _sale_summary(items: int, unsorted: int) -> str:
+    """The activity log's headline for a counter sale: "Sold 3 items",
+    "Rang up a basket as one amount", or both."""
+    parts = []
+    if items:
+        parts.append(f"Sold {items} item{'s' if items != 1 else ''}")
+    if unsorted:
+        basket = "a basket" if unsorted == 1 else f"{unsorted} baskets"
+        parts.append(f"rang up {basket} as one amount" if items else f"Rang up {basket} as one amount")
+    return " and ".join(parts) or "Sold nothing"
+
+
 @router.get("/activity", response_model=list[ActivityRead])
 async def activity_log(
     db: AsyncSession = Depends(get_db),
@@ -710,7 +722,10 @@ async def activity_log(
         for sale in sales:
             sale_lines = lines.get(sale.id, [])
             total = sum(float(r.line_total) for r in sale_lines)
-            items = sum(r.quantity for r in sale_lines)
+            # An unsorted line (a basket rung up as one amount) is one line
+            # but an unknown number of items, so it isn't counted as "1 item".
+            unsorted = sum(1 for r in sale_lines if not r.name and not r.category)
+            items = sum(r.quantity for r in sale_lines if r.name or r.category)
             what = ", ".join(
                 f"{r.name} ({r.size}) ×{r.quantity}"
                 if r.name
@@ -727,7 +742,7 @@ async def activity_log(
                         kind="sale",
                         staff_id=sale.staff_id,
                         staff_name=who(sale.staff_id),
-                        summary=f"Sold {items} item{'s' if items != 1 else ''}{to}",
+                        summary=_sale_summary(items, unsorted) + to,
                         detail=what + (" — later voided" if sale.status == "voided" else ""),
                         amount=total,
                         reference_type="pos_sale",

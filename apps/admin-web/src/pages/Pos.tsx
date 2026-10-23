@@ -1,11 +1,14 @@
-// The till. Build a cart (tap a product, pick size and price tier, or
-// quick-log by category when there's no time to find the exact SKU), then
+// The till. Build a cart (tap a product, pick size and price tier;
+// quick-log by category when there's no time to find the exact SKU; or,
+// when the shop is packed, ring up a whole basket as one amount), then
 // check out once with one or more payments. POST /pos-sales records the
 // sale, deducts stock and charges any credit as one transaction; the
 // server re-prices every line and refuses a payment total that doesn't
 // match, so the prices here are a preview of exactly what it computes.
+// Quick-logged and one-amount lines are sorted out later, from the
+// "To sort out" list under Today's sales.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Building2, ChevronDown, Minus, PackageSearch, Plus, Receipt, ScanBarcode, Search, Trash2, X, Zap } from "lucide-react";
+import { Ban, Building2, ChevronDown, Minus, PackageSearch, Plus, Receipt, ScanBarcode, Search, ShoppingBasket, Split, Trash2, X, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Thumb } from "@/components/bits";
@@ -13,7 +16,7 @@ import { Modal, useToast } from "@/components/overlay";
 import { useInvalidateStock } from "@/components/StockModals";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, FormError, IconButton, Input, PageHeader, Select, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
-import { money, primaryImage, sortVariants, timeAgo, titleCase, totalStock, variantLabel } from "@/lib/format";
+import { money, primaryImage, saleItemName, sortVariants, timeAgo, titleCase, totalStock, variantLabel } from "@/lib/format";
 import { useCategories, useDebounced } from "@/lib/queries";
 import type { Category, Customer, PaymentMethod, PosSale, PosSaleItem, PriceTier, Product, Variant } from "@/lib/types";
 
@@ -21,7 +24,9 @@ type Mode = "retail" | "wholesale";
 
 type CartLine =
   | { key: string; kind: "item"; product: Product; variant: Variant; tier: PriceTier; quantity: number }
-  | { key: string; kind: "quick"; category: Category; unitPrice: number; tier: PriceTier; quantity: number; note: string };
+  | { key: string; kind: "quick"; category: Category; unitPrice: number; tier: PriceTier; quantity: number; note: string }
+  // A whole basket as one amount -- always quantity 1; broken down later.
+  | { key: string; kind: "unsorted"; unitPrice: number; tier: PriceTier; quantity: 1; note: string };
 
 // --- pricing: mirrors _resolve_lines in services/api/app/routers/pos_sales.py ---
 
@@ -39,7 +44,7 @@ function maxQuantity(v: Variant, tier: PriceTier): number {
   return tier === "pack" ? Math.floor(v.stock_quantity / (v.pack_size ?? 1)) : v.stock_quantity;
 }
 
-const lineUnit = (l: CartLine) => (l.kind === "quick" ? l.unitPrice : unitPrice(l.product, l.variant, l.tier));
+const lineUnit = (l: CartLine) => (l.kind === "item" ? unitPrice(l.product, l.variant, l.tier) : l.unitPrice);
 const lineTotal = (l: CartLine) => Math.round(lineUnit(l) * l.quantity * 100) / 100;
 
 const METHODS: { value: PaymentMethod; label: string }[] = [
@@ -60,6 +65,7 @@ export function PosPage() {
   const [categoryId, setCategoryId] = useState("");
   const [picking, setPicking] = useState<Product | null>(null);
   const [quickLogging, setQuickLogging] = useState(false);
+  const [lumping, setLumping] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
 
   const products = useQuery({
@@ -89,11 +95,15 @@ export function PosPage() {
       return [...current, line];
     });
 
+  // Quantity 0 removes the line. A one-amount line has no quantity to
+  // change -- it can only be removed.
   const setQty = (key: string, q: number) =>
     setCart((c) =>
       c
-        .map((l) => (l.key === key ? { ...l, quantity: l.kind === "item" ? Math.min(q, maxQuantity(l.variant, l.tier)) : q } : l))
-        .filter((l) => l.quantity > 0),
+        .filter((l) => l.key !== key || q > 0)
+        .map((l) =>
+          l.key !== key || l.kind === "unsorted" ? l : { ...l, quantity: l.kind === "item" ? Math.min(q, maxQuantity(l.variant, l.tier)) : q },
+        ),
     );
 
   return (
@@ -127,6 +137,9 @@ export function PosPage() {
             </div>
             <Button variant="secondary" icon={Zap} className="h-11" onClick={() => setQuickLogging(true)}>
               Quick log by type
+            </Button>
+            <Button variant="secondary" icon={ShoppingBasket} className="h-11" onClick={() => setLumping(true)}>
+              One amount
             </Button>
           </div>
           <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
@@ -221,17 +234,25 @@ export function PosPage() {
                       <Thumb path={primaryImage(l.product)?.storage_path} size={40} />
                     ) : (
                       <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                        <Zap className="h-4 w-4" />
+                        {l.kind === "quick" ? <Zap className="h-4 w-4" /> : <ShoppingBasket className="h-4 w-4" />}
                       </span>
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{l.kind === "item" ? l.product.name : `${l.category.name} (quick log)`}</p>
+                      <p className="truncate text-sm font-semibold">
+                        {l.kind === "item" ? l.product.name : l.kind === "quick" ? `${l.category.name} (quick log)` : "Unsorted sale"}
+                      </p>
                       <p className="text-xs text-muted">
-                        {l.kind === "item" ? variantLabel(l.variant) : l.note || "Product to be identified"} ·{" "}
-                        {l.tier === "pack" && l.kind === "item" ? `pack of ${l.variant.pack_size}` : l.tier} · {money(lineUnit(l))}
+                        {l.kind === "unsorted" ? (
+                          l.note || "To break down later"
+                        ) : (
+                          <>
+                            {l.kind === "item" ? variantLabel(l.variant) : l.note || "Product to be identified"} ·{" "}
+                            {l.tier === "pack" && l.kind === "item" ? `pack of ${l.variant.pack_size}` : l.tier} · {money(lineUnit(l))}
+                          </>
+                        )}
                       </p>
                       <div className="mt-2 flex items-center justify-between">
-                        <div className="inline-flex items-center rounded-lg border border-line">
+                        <div className={`inline-flex items-center rounded-lg border border-line ${l.kind === "unsorted" ? "invisible" : ""}`}>
                           <button type="button" className="p-1.5 text-muted hover:text-ink" onClick={() => setQty(l.key, l.quantity - 1)} aria-label="Fewer">
                             <Minus className="h-3.5 w-3.5" />
                           </button>
@@ -294,6 +315,7 @@ export function PosPage() {
 
       {picking && <VariantPicker product={picking} mode={mode} onClose={() => setPicking(null)} onAdd={(l) => (addLine(l), setPicking(null))} />}
       <QuickLogModal open={quickLogging} onClose={() => setQuickLogging(false)} mode={mode} onAdd={(l) => (addLine(l), setQuickLogging(false))} />
+      <OneAmountModal open={lumping} onClose={() => setLumping(false)} mode={mode} onAdd={(l) => (addLine(l), setLumping(false))} />
       <CustomerPicker
         open={pickingCustomer}
         onClose={() => {
@@ -477,6 +499,49 @@ function QuickLogModal({ open, onClose, mode, onAdd }: { open: boolean; onClose:
   );
 }
 
+/** For a packed shop: take the money for a whole basket now, as one line,
+ * and say what was in it later ("Break down" under To sort out). */
+function OneAmountModal({ open, onClose, mode, onAdd }: { open: boolean; onClose: () => void; mode: Mode; onAdd: (l: CartLine) => void }) {
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+
+  const add = (e: React.FormEvent) => {
+    e.preventDefault();
+    onAdd({ key: nextKey(), kind: "unsorted", unitPrice: Math.round(Number(amount) * 100) / 100, quantity: 1, note: note.trim(), tier: mode === "wholesale" ? "wholesale" : "retail" });
+    setAmount("");
+    setNote("");
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="sm"
+      title="Ring up as one amount"
+      description="Busy? Take the money for the whole basket now and break it down into the items later, from To sort out below. Stock comes off then."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form="one-amount">
+            Add to sale
+          </Button>
+        </>
+      }
+    >
+      <form id="one-amount" onSubmit={add} className="space-y-4">
+        <Field label="Amount for everything (GH₵)">
+          <Input autoFocus type="number" required min={0.01} step="0.01" className="h-12 text-lg font-semibold" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        </Field>
+        <Field label="What's in it (optional)" hint="A few words help whoever breaks it down.">
+          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. 2 tees, a cap, socks" />
+        </Field>
+      </form>
+    </Modal>
+  );
+}
+
 function CustomerPicker({ open, onClose, onPick }: { open: boolean; onClose: () => void; onPick: (c: Customer) => void }) {
   const [search, setSearch] = useState("");
   const debounced = useDebounced(search);
@@ -560,7 +625,9 @@ function CheckoutModal({
         items: cart.map((l) =>
           l.kind === "item"
             ? { variant_id: l.variant.id, price_tier: l.tier, quantity: l.quantity }
-            : { category_id: l.category.id, price_tier: l.tier, quantity: l.quantity, unit_price: l.unitPrice, note: l.note || null },
+            : l.kind === "quick"
+              ? { category_id: l.category.id, price_tier: l.tier, quantity: l.quantity, unit_price: l.unitPrice, note: l.note || null }
+              : { price_tier: l.tier, quantity: 1, unit_price: l.unitPrice, note: l.note || null },
         ),
         payments: payments.filter((p) => Number(p.amount) > 0).map((p) => ({ method: p.method, amount: Number(p.amount) })),
       });
@@ -625,23 +692,29 @@ function CheckoutModal({
   );
 }
 
-/** Today's receipts: expand to see lines and payments; void a mistaken
- * sale; attach the exact product to a quick-logged line. */
+/** Today's receipts, plus any older sale with lines still to sort out:
+ * expand to see lines and payments; void a mistaken sale; attach the exact
+ * product to a quick-logged line, or break a one-amount (or mixed
+ * quick-logged) line down into what was really in it. */
 function TodaysSales() {
   const toast = useToast();
   const qc = useQueryClient();
   const invalidate = useInvalidateStock();
   const sales = useQuery({ queryKey: ["pos-sales"], queryFn: () => api.get<PosSale[]>("/pos-sales", { limit: 100 }) });
+  // Fetched on its own so nothing waiting to be sorted out drops off the
+  // list just because it's older than the latest 100 receipts.
+  const toSort = useQuery({ queryKey: ["pos-sales", "to-sort"], queryFn: () => api.get<PosSale[]>("/pos-sales", { needs_details: true, limit: 200 }) });
   const [open, setOpen] = useState<string | null>(null);
   const [voiding, setVoiding] = useState<PosSale | null>(null);
   const [identifying, setIdentifying] = useState<{ sale: PosSale; item: PosSaleItem } | null>(null);
+  const [breaking, setBreaking] = useState<{ sale: PosSale; item: PosSaleItem } | null>(null);
 
   const today = useMemo(() => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     return (sales.data ?? []).filter((s) => new Date(s.created_at) >= start);
   }, [sales.data]);
-  const unidentified = (sales.data ?? []).filter((s) => s.status !== "voided" && s.items.some((i) => !i.variant_id));
+  const unidentified = toSort.data ?? [];
   const takings = today.filter((s) => s.status !== "voided").reduce((n, s) => n + s.total, 0);
 
   const [voidReason, setVoidReason] = useState("");
@@ -657,13 +730,13 @@ function TodaysSales() {
     onError: (e) => toast.error(e),
   });
 
-  const list = [...today, ...unidentified.filter((s) => !today.includes(s))];
+  const list = [...today, ...unidentified.filter((s) => !today.some((t) => t.id === s.id))];
 
   return (
     <Card className="mt-8">
       <CardHeader
         title="Today's sales"
-        description={`${today.filter((s) => s.status !== "voided").length} receipts · ${money(takings)} taken today${unidentified.length ? ` · ${unidentified.length} with lines to identify` : ""}`}
+        description={`${today.filter((s) => s.status !== "voided").length} receipts · ${money(takings)} taken today${unidentified.length ? ` · ${unidentified.length} to sort out` : ""}`}
       />
       {!list.length ? (
         <EmptyState icon={Receipt} title="No sales yet today" />
@@ -673,11 +746,9 @@ function TodaysSales() {
             <li key={s.id}>
               <button type="button" onClick={() => setOpen(open === s.id ? null : s.id)} className="flex w-full items-center gap-4 px-5 py-3 text-left text-sm hover:bg-canvas">
                 <span className="w-24 text-muted">{timeAgo(s.created_at)}</span>
-                <span className="min-w-0 flex-1 truncate">
-                  {s.items.map((i) => i.product_name ?? `${i.category_name} (quick log)`).join(", ")}
-                </span>
+                <span className="min-w-0 flex-1 truncate">{s.items.map(saleItemName).join(", ")}</span>
                 {s.customer_name && <Badge tone="brand">{s.customer_name}</Badge>}
-                {s.items.some((i) => !i.variant_id) && s.status !== "voided" && <Badge tone="amber">To identify</Badge>}
+                {s.items.some((i) => !i.variant_id) && s.status !== "voided" && <Badge tone="amber">To sort out</Badge>}
                 {s.status === "voided" && <Badge tone="red">Voided</Badge>}
                 <span className={`tabular w-24 text-right font-semibold ${s.status === "voided" ? "text-muted line-through" : ""}`}>{money(s.total)}</span>
               </button>
@@ -690,19 +761,33 @@ function TodaysSales() {
                           <>
                             {i.product_name} <span className="text-muted">· {[i.variant_size, i.variant_color].filter(Boolean).join(" · ")}</span>
                           </>
-                        ) : (
+                        ) : i.category_name ? (
                           <>
                             {i.category_name} <span className="text-muted">· quick log{i.note ? ` — ${i.note}` : ""}</span>
+                          </>
+                        ) : (
+                          <>
+                            Unsorted sale <span className="text-muted">· one amount{i.note ? ` — ${i.note}` : ""}</span>
                           </>
                         )}
                       </span>
                       <span className="text-muted">
-                        {i.quantity} × {money(i.unit_price)} · {i.price_tier}
+                        {i.variant_id || i.category_id ? `${i.quantity} × ${money(i.unit_price)} · ${i.price_tier}` : money(i.line_total)}
                       </span>
                       {!i.variant_id && s.status !== "voided" && (
-                        <Button size="sm" variant="secondary" onClick={() => setIdentifying({ sale: s, item: i })}>
-                          Identify
-                        </Button>
+                        <span className="flex gap-2">
+                          {i.category_id && (
+                            <Button size="sm" variant="secondary" onClick={() => setIdentifying({ sale: s, item: i })}>
+                              Identify
+                            </Button>
+                          )}
+                          {/* A quick-logged line can be split if it was really several different products. */}
+                          {(!i.category_id || i.quantity > 1) && (
+                            <Button size="sm" variant={i.category_id ? "ghost" : "secondary"} icon={Split} onClick={() => setBreaking({ sale: s, item: i })}>
+                              {i.category_id ? "Split" : "Break down"}
+                            </Button>
+                          )}
+                        </span>
                       )}
                     </div>
                   ))}
@@ -751,6 +836,7 @@ function TodaysSales() {
         </div>
       </Modal>
       {identifying && <IdentifyModal sale={identifying.sale} item={identifying.item} onClose={() => setIdentifying(null)} />}
+      {breaking && <BreakDownModal sale={breaking.sale} item={breaking.item} onClose={() => setBreaking(null)} />}
     </Card>
   );
 }
@@ -812,6 +898,272 @@ function IdentifyModal({ sale, item, onClose }: { sale: PosSale; item: PosSaleIt
           </Button>
         </div>
       )}
+    </Modal>
+  );
+}
+
+// --- breaking a line down -------------------------------------------------
+//
+// A one-amount ("unsorted") line, or a quick-logged line that turned out to
+// be several different products, gets replaced by what was really in it.
+// POST /pos-sales/{id}/items/{item_id}/break-down does the work; the rules
+// it enforces, mirrored here so the button only lights up when they hold:
+//   - the parts must add up to exactly what the line charged (the money was
+//     already taken -- a breakdown only says what it paid for);
+//   - a part names an exact product (its stock comes off now), or, if even
+//     that isn't known, a type of item (it stays a quick-logged line to
+//     identify later);
+//   - there must be enough stock of each product named.
+
+/** One part of the breakdown, as it's being edited. Prices are kept as the
+ * text typed so a half-typed "12." doesn't get rewritten under the cursor. */
+type Part =
+  | { key: string; kind: "product"; product: Product; variant: Variant; quantity: number; price: string }
+  | { key: string; kind: "type"; category: Category; quantity: number; price: string; note: string };
+
+/** Money as whole pesewas, so sums compare exactly (0.1 + 0.2 === 0.3). */
+const toPesewas = (cedis: number) => Math.round(cedis * 100);
+const partPesewas = (p: Part) => toPesewas(Number(p.price) || 0) * p.quantity;
+
+function BreakDownModal({ sale, item, onClose }: { sale: PosSale; item: PosSaleItem; onClose: () => void }) {
+  const toast = useToast();
+  const qc = useQueryClient();
+  const invalidate = useInvalidateStock();
+  const categories = useCategories();
+  const [parts, setParts] = useState<Part[]>([]);
+  const [search, setSearch] = useState("");
+  const debounced = useDebounced(search);
+  // The product whose sizes are showing, waiting for one to be picked.
+  const [choosing, setChoosing] = useState<Product | null>(null);
+  const [typeId, setTypeId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // A quick-logged line already says what type of item it was, so start the
+  // search there; a one-amount basket could be anything in the shop.
+  const results = useQuery({
+    queryKey: ["products", "break-down", debounced, item.category_id],
+    queryFn: () => api.list<Product>("/products", { search: debounced, category_id: item.category_id, limit: 12 }),
+  });
+
+  const target = toPesewas(item.line_total);
+  const allocated = parts.reduce((n, p) => n + partPesewas(p), 0);
+  // Positive: still to account for. Negative: the parts come to too much.
+  const remaining = target - allocated;
+  // Units of each size already in the breakdown, so the stock shown (and
+  // the most that can be added) accounts for parts already listed.
+  const used = (variantId: string) => parts.reduce((n, p) => n + (p.kind === "product" && p.variant.id === variantId ? p.quantity : 0), 0);
+  const ready = parts.length > 0 && remaining === 0 && parts.every((p) => p.quantity > 0 && Number(p.price) > 0);
+
+  /** Starting price for a newly added product: what the till would have
+   * charged for it (wholesale if the original line was wholesale), unless
+   * that's more than what's left, in which case whatever is left. */
+  const suggestedPrice = (product: Product, variant: Variant) => {
+    const list = item.price_tier === "wholesale" ? (variant.wholesale_price ?? retailPrice(product, variant)) : retailPrice(product, variant);
+    const left = remaining / 100;
+    return (left > 0 && list > left ? left : list).toFixed(2);
+  };
+
+  const addProduct = (product: Product, variant: Variant) => {
+    setParts((current) => {
+      // Picking the same size twice adds one more of it rather than a
+      // second row -- the server would merge them for stock anyway.
+      const existing = current.find((p) => p.kind === "product" && p.variant.id === variant.id);
+      if (existing) return current.map((p) => (p === existing ? { ...p, quantity: p.quantity + 1 } : p));
+      return [...current, { key: nextKey(), kind: "product", product, variant, quantity: 1, price: suggestedPrice(product, variant) }];
+    });
+    setChoosing(null);
+  };
+
+  const addType = () => {
+    const category = categories.data?.find((c) => c.id === typeId);
+    if (!category) return;
+    // Nothing to price a type of item from, so offer whatever is left.
+    setParts((current) => [...current, { key: nextKey(), kind: "type", category, quantity: 1, price: remaining > 0 ? (remaining / 100).toFixed(2) : "", note: "" }]);
+    setTypeId("");
+  };
+
+  const update = (key: string, change: Partial<{ quantity: number; price: string; note: string }>) =>
+    setParts((current) => current.map((p) => (p.key === key ? ({ ...p, ...change } as Part) : p)));
+
+  /** Re-prices one part so the breakdown balances: its price each becomes
+   * (its own total + what's left) / its quantity. Only offered when that
+   * divides evenly to the pesewa, so it never leaves a stray pesewa. */
+  const absorbRest = (p: Part) => {
+    const total = partPesewas(p) + remaining;
+    if (total <= 0 || total % p.quantity !== 0) return null;
+    return () => update(p.key, { price: (total / p.quantity / 100).toFixed(2) });
+  };
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`/pos-sales/${sale.id}/items/${item.id}/break-down`, {
+        parts: parts.map((p) =>
+          p.kind === "product"
+            ? { variant_id: p.variant.id, quantity: p.quantity, unit_price: Number(p.price), price_tier: item.price_tier === "wholesale" ? "wholesale" : "retail" }
+            : { category_id: p.category.id, quantity: p.quantity, unit_price: Number(p.price), price_tier: item.price_tier === "wholesale" ? "wholesale" : "retail", note: p.note.trim() || null },
+        ),
+      });
+      // Stock moved, and the sale's lines changed (it may also have left
+      // the "to sort out" list), so refresh both.
+      await Promise.all([invalidate(), qc.invalidateQueries({ queryKey: ["pos-sales"] })]);
+      toast.success(parts.some((p) => p.kind === "product") ? "Sale broken down — stock deducted" : "Sale broken down");
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={item.category_id ? `Split ${item.quantity} × ${item.category_name}` : "Break down this sale"}
+      description={`${money(item.line_total)} rung up ${timeAgo(sale.created_at)}${sale.staff_name ? ` by ${sale.staff_name}` : ""}${item.note ? ` — “${item.note}”` : ""}`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button disabled={!ready} loading={busy} onClick={() => void submit()}>
+            Save breakdown
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        <FormError message={error} />
+
+        {/* What's been accounted for so far. */}
+        {parts.length > 0 && (
+          <ul className="divide-y divide-line rounded-lg border border-line">
+            {parts.map((p) => {
+              const fill = remaining !== 0 ? absorbRest(p) : null;
+              const max = p.kind === "product" ? p.variant.stock_quantity - used(p.variant.id) + p.quantity : undefined;
+              return (
+                <li key={p.key} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
+                  {p.kind === "product" ? (
+                    <Thumb path={primaryImage(p.product)?.storage_path} size={36} />
+                  ) : (
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                      <Zap className="h-4 w-4" />
+                    </span>
+                  )}
+                  <div className="min-w-40 flex-1">
+                    <p className="font-semibold">{p.kind === "product" ? p.product.name : `${p.category.name} (quick log)`}</p>
+                    {p.kind === "product" ? (
+                      <p className="text-xs text-muted">
+                        {variantLabel(p.variant)} · {p.variant.stock_quantity} in stock
+                      </p>
+                    ) : (
+                      // A type of item stays to be identified later; a note helps.
+                      <Input className="mt-1 h-8 text-xs" placeholder="Note (optional), e.g. colour or size" value={p.note} onChange={(e) => update(p.key, { note: e.target.value })} />
+                    )}
+                  </div>
+                  <label className="flex items-center gap-1.5 text-xs text-muted">
+                    Qty
+                    <Input
+                      type="number"
+                      min={1}
+                      max={max}
+                      className="h-9 w-16"
+                      value={p.quantity}
+                      onChange={(e) => update(p.key, { quantity: Math.max(1, Math.min(max ?? Infinity, Math.floor(Number(e.target.value) || 1))) })}
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs text-muted">
+                    Each ₵
+                    <Input type="number" min={0.01} step="0.01" className="h-9 w-24" value={p.price} onChange={(e) => update(p.key, { price: e.target.value })} />
+                  </label>
+                  <span className="tabular w-24 text-right font-semibold">{money(partPesewas(p) / 100)}</span>
+                  <span className="flex w-full justify-end gap-1 sm:w-auto">
+                    {fill && (
+                      <Button size="sm" variant="ghost" onClick={fill}>
+                        Use the rest
+                      </Button>
+                    )}
+                    <IconButton icon={Trash2} label="Remove part" onClick={() => setParts(parts.filter((x) => x.key !== p.key))} className="hover:text-red-600" />
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {/* Running balance: the same green/amber bar as the checkout. */}
+        <div className={`flex justify-between rounded-lg px-3 py-2 text-sm font-semibold ${remaining === 0 && parts.length ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
+          <span>{remaining === 0 && parts.length ? "All accounted for" : remaining > 0 ? "Still to account for" : "Parts come to more than was taken"}</span>
+          <span className="tabular">{money(Math.abs(remaining) / 100)}</span>
+        </div>
+
+        {/* Adding parts: an exact product, or just a type of item. */}
+        <div className="grid gap-5 md:grid-cols-[1fr_15rem]">
+          <div>
+            <p className="mb-2 text-xs font-semibold text-ink/80">Add a product</p>
+            {!choosing ? (
+              <>
+                <div className="relative mb-2">
+                  <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted" />
+                  <Input autoFocus className="pl-9" placeholder={`Search ${item.category_name ?? "products"}…`} value={search} onChange={(e) => setSearch(e.target.value)} />
+                </div>
+                <ul className="max-h-56 divide-y divide-line overflow-y-auto rounded-lg border border-line">
+                  {results.data?.rows.map((p) => (
+                    <li key={p.id}>
+                      <button type="button" onClick={() => setChoosing(p)} className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-canvas">
+                        <Thumb path={primaryImage(p)?.storage_path} size={32} />
+                        <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
+                        <span className="text-xs text-muted">{totalStock(p)} in stock</span>
+                      </button>
+                    </li>
+                  ))}
+                  {results.data?.rows.length === 0 && <li className="p-3 text-sm text-muted">No products match.</li>}
+                </ul>
+              </>
+            ) : (
+              // Second step: which size. Sizes with nothing left to give
+              // (counting parts already listed) are disabled.
+              <div className="space-y-3 rounded-lg border border-line p-3">
+                <p className="text-sm font-semibold">{choosing.name}</p>
+                <div className="flex flex-wrap gap-2">
+                  {sortVariants(choosing.variants.filter((v) => v.is_active)).map((v) => {
+                    const left = v.stock_quantity - used(v.id);
+                    return (
+                      <Button key={v.id} size="sm" variant="secondary" disabled={left <= 0} onClick={() => addProduct(choosing, v)}>
+                        {variantLabel(v)} ({left})
+                      </Button>
+                    );
+                  })}
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => setChoosing(null)}>
+                  Back to search
+                </Button>
+              </div>
+            )}
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-semibold text-ink/80">Or just the type of item</p>
+            <p className="mb-2 text-xs text-muted">Not sure of the exact product? Log the type now and identify it later.</p>
+            <div className="flex gap-2">
+              <Select value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+                <option value="">Choose…</option>
+                {categories.data?.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+              <Button variant="secondary" icon={Plus} disabled={!typeId} onClick={addType}>
+                Add
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
     </Modal>
   );
 }

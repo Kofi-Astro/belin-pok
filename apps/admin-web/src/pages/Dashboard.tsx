@@ -79,8 +79,8 @@ export function DashboardPage() {
         <div className="mb-6 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>
-            <b>{d.unidentified_item_count}</b> quick-logged sale {d.unidentified_item_count === 1 ? "line still needs" : "lines still need"} the
-            exact product attached, so stock for them hasn&apos;t been deducted yet.
+            <b>{d.unidentified_item_count}</b> sale {d.unidentified_item_count === 1 ? "line still needs" : "lines still need"} sorting out
+            (quick-logged or rung up as one amount), so stock for them hasn&apos;t been deducted yet.
           </span>
           <Link to="/pos" className="ml-auto font-semibold whitespace-nowrap underline">
             Review

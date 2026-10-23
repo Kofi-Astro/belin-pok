@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "./session";
-import type { Product, ProductImage, Variant } from "./types";
+import type { PosSaleItem, Product, ProductImage, Variant } from "./types";
 
 const cedis = new Intl.NumberFormat("en-GH", { style: "currency", currency: "GHS" });
 export const money = (n: number) => cedis.format(n);
@@ -26,6 +26,17 @@ export const imageUrl = (storagePath: string) => `${API_BASE_URL}/images/${stora
 export const primaryImage = (p: { images: ProductImage[] }) => p.images.find((i) => i.is_primary) ?? p.images[0];
 
 export const variantPrice = (p: Pick<Product, "base_price">, v: Variant) => v.price_override ?? p.base_price;
+
+/** A till line's name: the product, or for a line still to be sorted out,
+ * its type ("Caps (quick log)"), or for a whole basket rung up as one
+ * amount "Unsorted sale" plus its note if it has one -- the note is all
+ * that tells one basket from another in a list (see the break-down step
+ * on the POS page). */
+export function saleItemName(i: Pick<PosSaleItem, "product_name" | "category_name" | "note">): string {
+  if (i.product_name) return i.product_name;
+  if (i.category_name) return `${i.category_name} (quick log)`;
+  return i.note ? `Unsorted sale (${i.note})` : "Unsorted sale";
+}
 
 export const variantLabel = (v: Pick<Variant, "size" | "color">) => (v.color ? `${v.size} · ${v.color}` : v.size);
 

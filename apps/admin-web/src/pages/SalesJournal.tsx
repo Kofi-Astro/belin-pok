@@ -12,7 +12,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { downloadCsv } from "@/lib/csv";
 import { OrderStatusBadge } from "@/components/bits";
-import { dateTime, money, titleCase } from "@/lib/format";
+import { dateTime, money, saleItemName, titleCase } from "@/lib/format";
 import { describePeriod, type Period, type Preset, presetRange } from "@/lib/period";
 import type { Order, PosSale, Staff } from "@/lib/types";
 
@@ -73,7 +73,7 @@ export function SalesJournalPage() {
           s.id.slice(0, 8).toUpperCase(),
           s.staff_name,
           s.customer_name ?? "Walk-in",
-          i.product_name ?? `${i.category_name} (quick log)`,
+          saleItemName(i),
           i.variant_size,
           i.variant_color,
           i.price_tier,
@@ -212,11 +212,12 @@ export function SalesJournalPage() {
                         <Td className="text-muted">{s.customer_name ?? "Walk-in"}</Td>
                         <Td>
                           <p className="max-w-80 truncate">
-                            {s.items.map((i) => `${i.product_name ?? i.category_name} ×${i.quantity}`).join(", ")}
+                            {s.items.map((i) => `${saleItemName(i)} ×${i.quantity}`).join(", ")}
                           </p>
                           <p className="text-xs text-muted">
                             {count} item{count === 1 ? "" : "s"}
-                            {s.items.some((i) => !i.variant_id) && " · includes quick-logged lines"}
+                            {/* Lines that don't name a product yet: their stock hasn't come off. */}
+                            {s.items.some((i) => !i.variant_id) && " · has lines to sort out"}
                           </p>
                         </Td>
                         <Td className="text-muted">{s.payments.map((p) => METHOD_LABELS[p.method]).join(" + ")}</Td>
@@ -258,8 +259,9 @@ export function SalesJournalPage() {
                                             </>
                                           ) : (
                                             <>
-                                              <span className="font-medium text-amber-800">{i.category_name} (quick log)</span>
-                                              {i.note && <span className="text-muted"> — “{i.note}”</span>}
+                                              <span className="font-medium text-amber-800">{saleItemName(i)}</span>
+                                              {/* An unsorted line's note is already part of its name. */}
+                                              {i.note && i.category_name && <span className="text-muted"> — “{i.note}”</span>}
                                             </>
                                           )}
                                         </td>
