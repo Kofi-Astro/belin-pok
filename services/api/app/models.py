@@ -3,10 +3,12 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    ARRAY,
     CheckConstraint,
     FetchedValue,
     ForeignKey,
     Numeric,
+    String,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import ENUM as PgEnum
@@ -262,10 +264,24 @@ class Staff(Base):
     # Null only for a username-only account (e.g. the bootstrap owner).
     email: Mapped[str | None] = mapped_column(CIText(), unique=True)
     full_name: Mapped[str]
-    role: Mapped[StaffRole] = mapped_column(_pg_enum(StaffRole, "staff_role"), default=StaffRole.viewer)
+    # One or more StaffRole values (as text): what this person can do is the
+    # union of everything their roles allow. 'owner' and 'viewer' always
+    # stand alone (enforced by a CHECK constraint in the migration).
+    roles: Mapped[list[str]] = mapped_column(ARRAY(String), default=lambda: [StaffRole.viewer.value])
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    @property
+    def role_set(self) -> set[StaffRole]:
+        return {StaffRole(r) for r in self.roles}
+
+    @property
+    def role(self) -> StaffRole:
+        """The most senior of this person's roles -- for display where one
+        label is needed; permission checks use role_set."""
+        order = [StaffRole.owner, StaffRole.inventory_manager, StaffRole.order_fulfillment, StaffRole.viewer]
+        return next(r for r in order if r in self.role_set)
 
 
 class Category(Base):

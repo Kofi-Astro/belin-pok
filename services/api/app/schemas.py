@@ -518,6 +518,20 @@ class SignupRequest(BaseModel):
 # ---------- staff ----------
 
 
+def _check_roles(roles: list[StaffRole]) -> list[StaffRole]:
+    """A non-empty, de-duplicated set of roles. Owner already allows
+    everything and Viewer is read-only, so neither combines with others;
+    inventory_manager and order_fulfillment combine freely."""
+    unique = list(dict.fromkeys(roles))
+    if not unique:
+        raise ValueError("Choose at least one role")
+    if len(unique) > 1 and StaffRole.owner in unique:
+        raise ValueError("Owner already includes every permission -- it can't be combined with other roles")
+    if len(unique) > 1 and StaffRole.viewer in unique:
+        raise ValueError("Viewer is read-only -- it can't be combined with other roles")
+    return unique
+
+
 class StaffRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -525,6 +539,9 @@ class StaffRead(BaseModel):
     # Null only for a username-only account (the bootstrap owner).
     email: str | None
     full_name: str
+    # Everything this person can do is the union of these.
+    roles: list[StaffRole]
+    # The most senior of `roles`, for anywhere one label is shown.
     role: StaffRole
     is_active: bool
     created_at: datetime
@@ -533,7 +550,15 @@ class StaffRead(BaseModel):
 class StaffInvite(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     full_name: str = Field(min_length=1, max_length=200)
-    role: StaffRole = StaffRole.viewer
+    roles: list[StaffRole] | None = None
+    # Single-role form, still accepted; `roles` wins when both are given.
+    role: StaffRole | None = None
+
+    @model_validator(mode="after")
+    def _resolve_roles(self) -> "StaffInvite":
+        # An explicitly empty list is a mistake to report, not "use the default".
+        self.roles = _check_roles(self.roles if self.roles is not None else [self.role or StaffRole.viewer])
+        return self
 
 
 class StaffInviteRead(StaffRead):
@@ -547,8 +572,18 @@ class StaffInviteRead(StaffRead):
 
 class StaffUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=200)
+    roles: list[StaffRole] | None = None
+    # Single-role form, still accepted.
     role: StaffRole | None = None
     is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def _resolve_roles(self) -> "StaffUpdate":
+        if self.roles is None and self.role is not None:
+            self.roles = [self.role]
+        if self.roles is not None:
+            self.roles = _check_roles(self.roles)
+        return self
 
 
 # ---------- customers ----------

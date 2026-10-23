@@ -621,6 +621,11 @@ _STOCK_VERBS = {
 }
 
 
+def _roles_label(values: dict) -> str:
+    roles = values.get("roles") or ([values["role"]] if values.get("role") else [])
+    return " + ".join(r.replace("_", " ") for r in roles) or "staff"
+
+
 def _money(amount: float) -> str:
     return f"GH₵{amount:,.2f}"
 
@@ -781,7 +786,7 @@ async def activity_log(
                 "product.delete": f"Deleted {name}",
                 "product.update": f"Changed {name}",
                 "inventory.rebalance": f"Repacked {new.get('units_packed')} units into {new.get('pack_count')} pack(s)",
-                "staff.invite": f"Invited {person} as {str(new.get('role', '')).replace('_', ' ')}",
+                "staff.invite": f"Invited {person} as {_roles_label(new)}",
                 "staff.update": f"Changed {person}'s account",
                 "staff.invite_link": f"Issued a new sign-in link for {person}",
             }.get(e.action, e.action)

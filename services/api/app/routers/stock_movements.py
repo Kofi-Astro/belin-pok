@@ -53,7 +53,7 @@ async def list_stock_movements(
             ProductVariant.size.label("variant_size"),
             ProductVariant.color.label("variant_color"),
             Staff.full_name.label("performed_by_name"),
-            Staff.role.label("performed_by_role"),
+            Staff.roles.label("performed_by_roles"),
             unit_price.label("unit_price"),
         )
         .join(ProductVariant, ProductVariant.id == StockMovement.variant_id)
@@ -74,7 +74,15 @@ async def list_stock_movements(
                 "variant_size": row.variant_size,
                 "variant_color": row.variant_color,
                 "performed_by_name": row.performed_by_name,
-                "performed_by_role": row.performed_by_role,
+                # The most senior role, as one label for the activity feed.
+                "performed_by_role": next(
+                    (
+                        r
+                        for r in ("owner", "inventory_manager", "order_fulfillment", "viewer")
+                        if r in (row.performed_by_roles or [])
+                    ),
+                    None,
+                ),
                 "unit_price": float(row.unit_price),
             }
         )
@@ -92,9 +100,7 @@ async def create_stock_movement(
     # Lock the variant row for the rest of this transaction so two
     # concurrent movements on the same variant can't both pass this check
     # and take stock negative between them.
-    variant = await db.scalar(
-        select(ProductVariant).where(ProductVariant.id == payload.variant_id).with_for_update()
-    )
+    variant = await db.scalar(select(ProductVariant).where(ProductVariant.id == payload.variant_id).with_for_update())
     if variant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
 
@@ -144,9 +150,7 @@ async def notify_back_in_stock_subscribers(
 
     customer_ids = {request.customer_id for request in pending}
     tokens = list(
-        await db.scalars(
-            select(CustomerDeviceToken.token).where(CustomerDeviceToken.customer_id.in_(customer_ids))
-        )
+        await db.scalars(select(CustomerDeviceToken.token).where(CustomerDeviceToken.customer_id.in_(customer_ids)))
     )
 
     # Subscriptions are consumed by the restock event itself, regardless of

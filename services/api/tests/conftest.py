@@ -35,7 +35,7 @@ async def fake_staff() -> AsyncGenerator[Staff, None]:
     async with async_session_factory() as session:
         session.add(User(id=staff_id, email=email))
         await session.flush()
-        staff = Staff(id=staff_id, email=email, full_name="Test Owner", role=StaffRole.owner, is_active=True)
+        staff = Staff(id=staff_id, email=email, full_name="Test Owner", roles=[StaffRole.owner.value], is_active=True)
         session.add(staff)
         await session.commit()
 

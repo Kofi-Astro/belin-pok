@@ -24,7 +24,12 @@ _owner_only = require_role(StaffRole.owner)
 def _snapshot(staff: Staff) -> dict:
     """What audit_log records about a staff member -- shown in the owner's
     activity log (who was invited, whose role changed, who was deactivated)."""
-    return {"full_name": staff.full_name, "email": staff.email, "role": staff.role.value, "is_active": staff.is_active}
+    return {
+        "full_name": staff.full_name,
+        "email": staff.email,
+        "roles": list(staff.roles),
+        "is_active": staff.is_active,
+    }
 
 
 def _audit(db: AsyncSession, actor: Staff, action: str, target: Staff, old: dict | None, new: dict | None) -> None:
@@ -82,7 +87,7 @@ async def invite_staff(
             detail="Someone with this email already has an account",
         ) from exc
 
-    new_staff = Staff(id=user.id, email=email, full_name=payload.full_name, role=payload.role)
+    new_staff = Staff(id=user.id, email=email, full_name=payload.full_name, roles=[r.value for r in payload.roles])
     db.add(new_staff)
     link = await create_one_time_link(db, user, OneTimeTokenPurpose.invite)
     _audit(db, owner, "staff.invite", new_staff, None, _snapshot(new_staff))
@@ -129,8 +134,19 @@ async def update_staff(
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found")
 
-    before = _snapshot(target)
     changes = payload.model_dump(exclude_unset=True)
+    changes.pop("role", None)  # folded into `roles` by StaffUpdate
+    if "roles" in changes:
+        changes["roles"] = [r.value for r in payload.roles]
+    # An owner changing their own roles or switching themselves off would
+    # lock the shop out of its own admin -- another owner has to do it.
+    if target.id == owner.id and ("roles" in changes or changes.get("is_active") is False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You can't change your own roles or deactivate yourself",
+        )
+
+    before = _snapshot(target)
     for field, value in changes.items():
         setattr(target, field, value)
     if changes:

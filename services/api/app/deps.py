@@ -84,10 +84,12 @@ async def get_optional_customer(
 
 def require_role(*allowed_roles: StaffRole) -> Callable:
     async def _check(staff: Staff = Depends(get_current_staff)) -> Staff:
-        if staff.role not in allowed_roles:
+        # Any one of the person's roles being allowed is enough -- someone
+        # who is both inventory manager and sales staff can do both jobs.
+        if not staff.role_set & set(allowed_roles):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Role '{staff.role.value}' is not permitted to perform this action",
+                detail="Your role doesn't allow this action -- ask an owner if you need it",
             )
         return staff
 

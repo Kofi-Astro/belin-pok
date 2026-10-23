@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 
 import { api } from "./api";
 import { ApiError, session } from "./session";
-import type { Staff } from "./types";
+import type { Staff, StaffRole } from "./types";
 
 type Status = "loading" | "signedOut" | "signedIn";
 
@@ -34,12 +34,13 @@ const none: Permissions = { isOwner: false, manageCatalog: false, adjustStock: f
 
 function permissionsFor(staff: Staff | null): Permissions {
   if (!staff) return none;
-  const r = staff.role;
+  // A person can hold several roles; they get everything any of them allows.
+  const has = (r: StaffRole) => staff.roles.includes(r);
   return {
-    isOwner: r === "owner",
-    manageCatalog: r === "owner" || r === "inventory_manager",
-    adjustStock: r === "owner" || r === "inventory_manager" || r === "order_fulfillment",
-    manageOrders: r === "owner" || r === "order_fulfillment",
+    isOwner: has("owner"),
+    manageCatalog: has("owner") || has("inventory_manager"),
+    adjustStock: has("owner") || has("inventory_manager") || has("order_fulfillment"),
+    manageOrders: has("owner") || has("order_fulfillment"),
   };
 }
 

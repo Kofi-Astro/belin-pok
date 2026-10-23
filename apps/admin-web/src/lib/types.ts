@@ -8,6 +8,9 @@ export type Staff = {
   id: string;
   email: string | null;
   full_name: string;
+  // What they can do is the union of these. Owner and Viewer stand alone.
+  roles: StaffRole[];
+  // The most senior of `roles`, for a single label.
   role: StaffRole;
   is_active: boolean;
   created_at: string;

@@ -108,7 +108,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <Avatar name={staff.full_name} className="bg-white/15 text-white" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-white">{staff.full_name}</p>
-              <p className="truncate text-xs text-white/50">{titleCase(staff.role)}</p>
+              <p className="truncate text-xs text-white/50">{staff.roles.map(titleCase).join(" + ")}</p>
             </div>
           </div>
           <div className="mt-1 grid grid-cols-2 gap-1">

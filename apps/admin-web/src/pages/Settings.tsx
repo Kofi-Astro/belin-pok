@@ -4,7 +4,7 @@ import { Copy, Link2, Pencil, Plus, Tags, Trash2, UserPlus } from "lucide-react"
 import { useEffect, useState } from "react";
 
 import { ConfirmDialog, Modal, useToast } from "@/components/overlay";
-import { Avatar, Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, FormError, IconButton, Input, PageHeader, PageLoading, Select, Table, Td, Textarea, Th, Toggle } from "@/components/ui";
+import { Avatar, Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, FormError, IconButton, Input, PageHeader, PageLoading, Table, Td, Textarea, Th, Toggle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { date, slugify, titleCase } from "@/lib/format";
@@ -192,6 +192,38 @@ const ROLES: { value: StaffRole; label: string; description: string }[] = [
   { value: "viewer", label: "Viewer", description: "Can look, can't change anything" },
 ];
 const roleLabel = (r: StaffRole) => ROLES.find((x) => x.value === r)?.label ?? titleCase(r);
+const rolesLabel = (roles: StaffRole[]) => roles.map(roleLabel).join(" + ");
+
+/** Tick one or more roles. Inventory manager and Sales & orders combine
+ * (someone who runs stock and also serves customers gets both); Owner
+ * already includes everything and Viewer is read-only, so ticking either
+ * clears the rest -- the same rules the API enforces. */
+function RolePicker({ value, onChange, disabled }: { value: StaffRole[]; onChange: (roles: StaffRole[]) => void; disabled?: boolean }) {
+  const toggle = (r: StaffRole) => {
+    if (value.includes(r)) return onChange(value.filter((x) => x !== r));
+    if (r === "owner" || r === "viewer") return onChange([r]);
+    onChange([...value.filter((x) => x !== "owner" && x !== "viewer"), r]);
+  };
+  return (
+    <div className="grid gap-2">
+      {ROLES.map((r) => {
+        const on = value.includes(r.value);
+        return (
+          <label
+            key={r.value}
+            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${on ? "border-brand-500 bg-brand-50" : "border-line hover:border-ink/20"} ${disabled ? "pointer-events-none opacity-60" : ""}`}
+          >
+            <input type="checkbox" checked={on} disabled={disabled} onChange={() => toggle(r.value)} className="mt-0.5 h-4 w-4 accent-brand-600" />
+            <span>
+              <span className="block text-sm font-semibold">{r.label}</span>
+              <span className="text-xs text-muted">{r.description}</span>
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 
 export function StaffPage() {
   const qc = useQueryClient();
@@ -200,9 +232,11 @@ export function StaffPage() {
   const staff = useQuery({ queryKey: ["staff"], queryFn: () => api.get<Staff[]>("/staff") });
   const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<{ name: string; url: string } | null>(null);
+  const [editing, setEditing] = useState<Staff | null>(null);
+  const [editRoles, setEditRoles] = useState<StaffRole[]>([]);
 
   const update = useMutation({
-    mutationFn: ({ id, ...body }: { id: string; role?: StaffRole; is_active?: boolean }) => api.patch(`/staff/${id}`, body),
+    mutationFn: ({ id, ...body }: { id: string; roles?: StaffRole[]; is_active?: boolean }) => api.patch(`/staff/${id}`, body),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["staff"] });
       toast.success("Saved");
@@ -261,13 +295,23 @@ export function StaffPage() {
                     </div>
                   </Td>
                   <Td>
-                    <Select className="h-9 w-48" disabled={isMe} value={s.role} onChange={(e) => update.mutate({ id: s.id, role: e.target.value as StaffRole })}>
-                      {ROLES.map((r) => (
-                        <option key={r.value} value={r.value}>
-                          {r.label}
-                        </option>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {s.roles.map((r) => (
+                        <Badge key={r} tone={r === "owner" ? "brand" : "neutral"}>
+                          {roleLabel(r)}
+                        </Badge>
                       ))}
-                    </Select>
+                      {!isMe && (
+                        <IconButton
+                          icon={Pencil}
+                          label="Change roles"
+                          onClick={() => {
+                            setEditing(s);
+                            setEditRoles(s.roles);
+                          }}
+                        />
+                      )}
+                    </div>
                   </Td>
                   <Td className="text-muted">{date(s.created_at)}</Td>
                   <Td>
@@ -295,6 +339,28 @@ export function StaffPage() {
         ))}
       </div>
       <InviteModal open={inviting} onClose={() => setInviting(false)} onInvited={(name, url) => setLink({ name, url })} />
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={`Roles for ${editing?.full_name ?? ""}`}
+        description="Tick everything they do. They get every permission of each role ticked."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!editRoles.length}
+              loading={update.isPending}
+              onClick={() => editing && update.mutate({ id: editing.id, roles: editRoles }, { onSuccess: () => setEditing(null) })}
+            >
+              Save roles
+            </Button>
+          </>
+        }
+      >
+        <RolePicker value={editRoles} onChange={setEditRoles} />
+      </Modal>
       <LinkModal link={link} onClose={() => setLink(null)} />
     </>
   );
@@ -302,7 +368,7 @@ export function StaffPage() {
 
 function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () => void; onInvited: (name: string, url: string) => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ full_name: "", email: "", role: "order_fulfillment" as StaffRole });
+  const [form, setForm] = useState({ full_name: "", email: "", roles: ["order_fulfillment"] as StaffRole[] });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -313,7 +379,7 @@ function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () 
     try {
       const r = await api.post<Staff & { invite_link: string }>("/staff/invite", { ...form, full_name: form.full_name.trim(), email: form.email.trim() });
       await qc.invalidateQueries({ queryKey: ["staff"] });
-      setForm({ full_name: "", email: "", role: "order_fulfillment" });
+      setForm({ full_name: "", email: "", roles: ["order_fulfillment"] });
       onClose();
       onInvited(r.full_name, r.invite_link);
     } catch (err) {
@@ -334,7 +400,7 @@ function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () 
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" form="invite-form" loading={busy}>
+          <Button type="submit" form="invite-form" loading={busy} disabled={!form.roles.length}>
             Send invite
           </Button>
         </>
@@ -348,15 +414,10 @@ function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () 
         <Field label="Email" hint="They'll sign in with this.">
           <Input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         </Field>
-        <Field label="Role" hint={ROLES.find((r) => r.value === form.role)?.description}>
-          <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as StaffRole })}>
-            {ROLES.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <div>
+          <p className="mb-1.5 text-xs font-semibold text-ink/80">What will they do? (tick all that apply)</p>
+          <RolePicker value={form.roles} onChange={(roles) => setForm({ ...form, roles })} />
+        </div>
       </form>
     </Modal>
   );
@@ -436,7 +497,7 @@ export function AccountPage() {
             </div>
             <div className="flex justify-between">
               <dt className="text-muted">Role</dt>
-              <dd className="font-medium">{staff && roleLabel(staff.role)}</dd>
+              <dd className="font-medium">{staff && rolesLabel(staff.roles)}</dd>
             </div>
           </dl>
         </Card>

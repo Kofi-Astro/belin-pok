@@ -26,9 +26,7 @@ from app.models import Staff, StaffRole, User
 from app.security import hash_password
 
 
-async def create_owner(
-    username: str, password: str, *, email: str | None, full_name: str, force_change: bool
-) -> User:
+async def create_owner(username: str, password: str, *, email: str | None, full_name: str, force_change: bool) -> User:
     """Creates the owner account; raises ValueError if the username/email
     is already taken, rather than silently resetting someone's password."""
     async with async_session_factory() as session:
@@ -49,7 +47,7 @@ async def create_owner(
         )
         session.add(user)
         await session.flush()
-        session.add(Staff(id=user.id, email=email, full_name=full_name, role=StaffRole.owner, is_active=True))
+        session.add(Staff(id=user.id, email=email, full_name=full_name, roles=[StaffRole.owner.value], is_active=True))
         await session.commit()
         return user
 
