@@ -36,8 +36,8 @@ This repo is being built in phases:
 ## Repo layout
 
 ```text
-apps/admin/          Flutter Web admin dashboard (+ Dockerfile/railway.json for hosting)
-apps/storefront/      Flutter Web public storefront (+ Dockerfile/railway.json for hosting)
+apps/admin/          Flutter Web admin dashboard (+ Dockerfile for hosting)
+apps/storefront/      Flutter Web public storefront (+ Dockerfile for hosting)
 packages/belpok_core/ Shared Dart package: models, API client + sign-in session, theme
 services/api/         FastAPI backend
 services/api/migrations/ SQL migrations (schema + seed data), applied by app/migrate.py
@@ -117,10 +117,20 @@ an owner can still copy an invite link from the Staff screen.
 
 A brand-new database has no users, and staff are normally invited by an
 owner -- so the first owner is created from a shell with the API's
-environment (locally, or `railway run` / a Railway service shell):
+environment. Locally:
 
 ```bash
 python -m app.cli create-owner --username admin --password admin
+```
+
+In production, run it inside the API container (the database is only
+reachable on Railway's private network, so `railway run` from your own
+machine can't connect). The `LD_LIBRARY_PATH` line copies the running
+app's library path into the SSH session -- without it, SQLAlchemy's async
+support fails to load (`libstdc++.so.6: cannot open shared object file`):
+
+```bash
+railway ssh --service belin-pok -- sh -c 'export "$(tr "\0" "\n" < /proc/1/environ | grep "^LD_LIBRARY_PATH=")" && cd /app && /opt/venv/bin/python -m app.cli create-owner --username admin --password admin'
 ```
 
 That account must choose a new password the first time it signs in
@@ -281,14 +291,14 @@ below), not files in the repo. The Flutter apps have no secrets -- only
 ## Deployment
 
 Everything runs in one Railway project, deployed by Railway's native
-GitHub integration from `main` -- `.github/workflows/*.yml` only lint/test
+GitHub integration from `main` (project `talented-adaptation`) -- `.github/workflows/*.yml` only lint/test
 on PRs and never deploy, so there's exactly one deploy path.
 
 | Domain | Railway service | Source |
 | --- | --- | --- |
 | `belpok.xyz`, `www.belpok.xyz` | storefront | `apps/storefront/` |
 | `admin.belpok.xyz` | admin | `apps/admin/` |
-| `api.belpok.xyz` | api | `services/api/` |
+| `api.belpok.xyz` | belin-pok | `services/api/` |
 | -- | Postgres | Railway database |
 | -- | Bucket | Railway bucket for product photos |
 
@@ -315,15 +325,20 @@ migrations. Variables (see `services/api/.env.example` for all of them):
 
 ### Admin and storefront services
 
-Each is built from its own Dockerfile (Flutter SDK to compile, Caddy to
-serve -- see `deploy/Caddyfile`). The Docker build needs
-`packages/belpok_core` as well as the app, so these services build from
-the repo root:
+Each is built from its own Dockerfile (Flutter installed from its git tag
+to compile, Caddy to serve -- see `deploy/Caddyfile`). The Docker build
+needs `packages/belpok_core` as well as the app, so these services build
+from the repo root. Railway no longer accepts a `railway.json` config file
+for newly created services, so these settings live on the services
+themselves (Settings tab):
 
 | Setting | admin | storefront |
 | --- | --- | --- |
+| Source | `Kofi-Astro/belin-pok`, branch `main` | same |
 | Root Directory | *(blank -- repo root)* | *(blank -- repo root)* |
-| Config file path | `apps/admin/railway.json` | `apps/storefront/railway.json` |
+| Dockerfile path | `apps/admin/Dockerfile` | `apps/storefront/Dockerfile` |
+| Watch paths | `apps/admin/**`, `packages/belpok_core/**`, `deploy/**` | `apps/storefront/**`, `packages/belpok_core/**`, `deploy/**` |
+| Healthcheck path | `/` | `/` |
 | Variable `API_BASE_URL` | `https://api.belpok.xyz` | `https://api.belpok.xyz` |
 
 `API_BASE_URL` is read at **build** time (it's compiled into the app), so
@@ -334,8 +349,8 @@ changing it needs a redeploy.
 1. Create the Railway services above (Postgres, Bucket, api, admin,
    storefront) and set their variables. Deploy; the API's pre-deploy step
    builds the schema.
-2. Create the first owner: `railway run --service api python -m app.cli create-owner --username admin --password admin`
-   (or from the api service's shell).
+2. Create the first owner (see "The first owner account" above for the
+   exact `railway ssh` command).
 3. Test on the raw `*.up.railway.app` URLs: sign in as admin (you'll be
    asked for a new password), receive an item with a photo, publish it,
    check it on the storefront, place a test order.

@@ -1,7 +1,7 @@
 # Builds apps/admin for the web and serves it with Caddy, as a Railway
 # service. The build context is the repo root (the app needs
-# packages/belpok_core too) -- see apps/admin/railway.json and the README's
-# Deployment section for the Railway service settings this assumes.
+# packages/belpok_core too) -- see the README's Deployment section for the
+# Railway service settings this assumes.
 
 FROM debian:bookworm-slim AS build
 
