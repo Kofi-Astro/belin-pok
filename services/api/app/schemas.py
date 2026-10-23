@@ -34,6 +34,7 @@ from app.models import (
     StaffRole,
     StockMovementType,
 )
+from app.phone import normalize_phone
 
 
 class HealthResponse(BaseModel):
@@ -572,8 +573,10 @@ class StaffRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    # Null only for a username-only account (the bootstrap owner).
+    # Null for a username-only account (the bootstrap owner) or someone
+    # invited by phone only.
     email: str | None
+    phone: str | None = None
     full_name: str
     # Everything this person can do is the union of these.
     roles: list[StaffRole]
@@ -584,7 +587,11 @@ class StaffRead(BaseModel):
 
 
 class StaffInvite(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
+    # An email, a phone number, or both: the invite link is sent to
+    # whichever the owner chooses (email by the API; SMS/WhatsApp from the
+    # owner's own phone), and they sign in with either.
+    email: str | None = Field(default=None, max_length=320)
+    phone: str | None = Field(default=None, max_length=40)
     full_name: str = Field(min_length=1, max_length=200)
     roles: list[StaffRole] | None = None
     # Single-role form, still accepted; `roles` wins when both are given.
@@ -592,6 +599,18 @@ class StaffInvite(BaseModel):
 
     @model_validator(mode="after")
     def _resolve_roles(self) -> "StaffInvite":
+        self.email = (self.email or "").strip() or None
+        if self.email is not None and "@" not in self.email:
+            raise ValueError("That email address doesn't look right")
+        if self.phone is not None and self.phone.strip():
+            normalised = normalize_phone(self.phone)
+            if normalised is None:
+                raise ValueError("That phone number doesn't look right")
+            self.phone = normalised
+        else:
+            self.phone = None
+        if self.email is None and self.phone is None:
+            raise ValueError("Give an email address or a phone number to invite them with")
         # An explicitly empty list is a mistake to report, not "use the default".
         self.roles = _check_roles(self.roles if self.roles is not None else [self.role or StaffRole.viewer])
         return self
@@ -604,6 +623,9 @@ class StaffInviteRead(StaffRead):
     sent over WhatsApp works just as well."""
 
     invite_link: str
+    # Whether the API actually emailed it (false with no email address, or
+    # email sending not set up) -- so the admin can say so honestly.
+    email_sent: bool = False
 
 
 class StaffUpdate(BaseModel):

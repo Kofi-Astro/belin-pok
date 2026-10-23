@@ -173,7 +173,8 @@ class User(Base):
 
     username and email are both optional, but at least one is always set
     (a CHECK constraint in the migration): the bootstrap owner signs in
-    with a username, everyone else with their email. Both are citext in
+    with a username, everyone else with their email -- or their phone
+    number, for staff invited by SMS/WhatsApp without an email. Both are citext in
     Postgres, so "Admin" and "admin" are the same account.
     """
 
@@ -182,6 +183,8 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username: Mapped[str | None] = mapped_column(CIText(), unique=True)
     email: Mapped[str | None] = mapped_column(CIText(), unique=True)
+    # Staff invited by phone sign in with it; stored normalised (app/phone.py).
+    phone: Mapped[str | None] = mapped_column(unique=True)
     # Null until an invited staff member sets one via their invite link.
     password_hash: Mapped[str | None]
     must_change_password: Mapped[bool] = mapped_column(default=False)
@@ -263,6 +266,8 @@ class Staff(Base):
     )
     # Null only for a username-only account (e.g. the bootstrap owner).
     email: Mapped[str | None] = mapped_column(CIText(), unique=True)
+    # Contact number (normalised), also their sign-in if they have no email.
+    phone: Mapped[str | None]
     full_name: Mapped[str]
     # One or more StaffRole values (as text): what this person can do is the
     # union of everything their roles allow. 'owner' and 'viewer' always

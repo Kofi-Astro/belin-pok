@@ -43,6 +43,7 @@ from app.models import (
     Staff,
     User,
 )
+from app.phone import normalize_phone
 from app.schemas import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -187,8 +188,12 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> To
     await _check_not_throttled(db, identifier)
 
     # username and email are both citext, so this match is
-    # case-insensitive on the Postgres side ("Admin" finds "admin").
-    user = await db.scalar(select(User).where(or_(User.username == identifier, User.email == identifier)))
+    # case-insensitive on the Postgres side ("Admin" finds "admin"). A
+    # phone number is matched in its normalised form, however it was typed.
+    matches = [User.username == identifier, User.email == identifier]
+    if (phone := normalize_phone(identifier)) is not None:
+        matches.append(User.phone == phone)
+    user = await db.scalar(select(User).where(or_(*matches)))
     if user is None or not verify_password(user.password_hash, payload.password):
         db.add(FailedLogin(identifier=identifier))
         await db.commit()
@@ -300,9 +305,7 @@ async def set_password_with_token(
     """Redeems an invite or reset link: sets the password and signs the
     person straight in, so accepting an invite lands them in the app."""
     row = await db.scalar(
-        select(OneTimeToken)
-        .where(OneTimeToken.token_hash == hash_opaque_token(payload.token))
-        .with_for_update()
+        select(OneTimeToken).where(OneTimeToken.token_hash == hash_opaque_token(payload.token)).with_for_update()
     )
     if row is None or row.used_at is not None or row.expires_at <= datetime.now(UTC):
         raise HTTPException(
@@ -317,9 +320,7 @@ async def set_password_with_token(
     # password is set, an older invite/reset email lying around shouldn't
     # still be able to change it.
     await db.execute(
-        update(OneTimeToken)
-        .where(OneTimeToken.user_id == user.id, OneTimeToken.used_at.is_(None))
-        .values(used_at=now)
+        update(OneTimeToken).where(OneTimeToken.user_id == user.id, OneTimeToken.used_at.is_(None)).values(used_at=now)
     )
     user.password_hash = hash_password(payload.new_password)
     user.must_change_password = False

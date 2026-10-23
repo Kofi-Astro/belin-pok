@@ -27,6 +27,7 @@ def _snapshot(staff: Staff) -> dict:
     return {
         "full_name": staff.full_name,
         "email": staff.email,
+        "phone": staff.phone,
         "roles": list(staff.roles),
         "is_active": staff.is_active,
     }
@@ -51,8 +52,12 @@ async def list_staff(db: AsyncSession = Depends(get_db), _staff: Staff = Depends
     return list(result)
 
 
-async def _send_invite_email(staff: Staff, link: str) -> None:
-    await send_email(
+async def _send_invite_email(staff: Staff, link: str) -> bool:
+    """Emails the link, if they have an email address. Returns whether it
+    actually went (see app/email.py -- sending is optional)."""
+    if not staff.email:
+        return False
+    return await send_email(
         staff.email,
         "You've been invited to Belin-Pok",
         f"Hi {staff.full_name},\n\n"
@@ -68,15 +73,16 @@ async def invite_staff(
     owner: Staff = Depends(_owner_only),
 ) -> StaffInviteRead:
     """Creates a staff member's login (with no password yet) and their
-    `staff` row together, then emails them a link to set a password.
+    `staff` row together, then emails them a link to set a password if
+    they have an email address.
 
-    The same link is also returned to the owner in the response: email is
-    optional (see app/email.py), and even when it's set up, sending a
-    link over WhatsApp is often quicker than waiting on an inbox. Until
-    the link is used, the account simply can't sign in.
+    The same link is also returned to the owner in the response, to pass
+    on however suits: email is optional (see app/email.py), and a link
+    sent by WhatsApp or SMS from the owner's phone is often quicker -- the
+    admin offers all of these. Someone invited by phone only signs in with
+    their phone number. Until the link is used, the account can't sign in.
     """
-    email = payload.email.strip()
-    user = User(email=email)
+    user = User(email=payload.email, phone=payload.phone)
     db.add(user)
     try:
         await db.flush()
@@ -84,18 +90,24 @@ async def invite_staff(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Someone with this email already has an account",
+            detail="Someone with this email or phone number already has an account",
         ) from exc
 
-    new_staff = Staff(id=user.id, email=email, full_name=payload.full_name, roles=[r.value for r in payload.roles])
+    new_staff = Staff(
+        id=user.id,
+        email=payload.email,
+        phone=payload.phone,
+        full_name=payload.full_name,
+        roles=[r.value for r in payload.roles],
+    )
     db.add(new_staff)
     link = await create_one_time_link(db, user, OneTimeTokenPurpose.invite)
     _audit(db, owner, "staff.invite", new_staff, None, _snapshot(new_staff))
     await db.commit()
     await db.refresh(new_staff)
 
-    await _send_invite_email(new_staff, link)
-    return StaffInviteRead(**StaffRead.model_validate(new_staff).model_dump(), invite_link=link)
+    sent = await _send_invite_email(new_staff, link)
+    return StaffInviteRead(**StaffRead.model_validate(new_staff).model_dump(), invite_link=link, email_sent=sent)
 
 
 @router.post("/{staff_id}/invite-link", response_model=StaffInviteRead)
@@ -118,9 +130,8 @@ async def reissue_invite_link(
     link = await create_one_time_link(db, user, OneTimeTokenPurpose.invite)
     _audit(db, owner, "staff.invite_link", target, None, _snapshot(target))
     await db.commit()
-    if target.email:
-        await _send_invite_email(target, link)
-    return StaffInviteRead(**StaffRead.model_validate(target).model_dump(), invite_link=link)
+    sent = await _send_invite_email(target, link)
+    return StaffInviteRead(**StaffRead.model_validate(target).model_dump(), invite_link=link, email_sent=sent)
 
 
 @router.patch("/{staff_id}", response_model=StaffRead)
