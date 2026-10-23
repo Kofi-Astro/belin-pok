@@ -54,6 +54,8 @@ export type Variant = {
   wholesale_price: number | null;
   pack_price: number | null;
   pack_size: number | null;
+  // Fixed online price; null = in-store price + the shop's online markup.
+  online_price: number | null;
   stock_quantity: number;
   low_stock_threshold: number;
   is_active: boolean;
@@ -153,6 +155,8 @@ export type OrderItem = {
   quantity: number;
   unit_price: number;
   line_total: number;
+  // What the same item cost in store when ordered (null for older orders).
+  in_store_unit_price: number | null;
   product_id: string;
   product_name: string;
   variant_sku: string;
@@ -261,6 +265,7 @@ export type SalesTotals = {
   by_method: Record<PaymentMethod, number>;
   voided_count: number;
   voided_amount: number;
+  online_markup_earned: number;
   credit_given: number;
   credit_collected: number;
 };
@@ -332,4 +337,10 @@ export type Activity = {
   amount: number | null;
   reference_type: string | null;
   reference_id: string | null;
+};
+
+export type ShopSettings = {
+  online_markup_percent: number;
+  online_price_rounding: number;
+  updated_at: string;
 };

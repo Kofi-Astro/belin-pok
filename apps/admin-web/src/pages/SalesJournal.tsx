@@ -2,7 +2,7 @@
 // up, who bought, each item with quantity and price, how it was paid, and
 // for voided sales who voided it, when and why. Filterable, exportable.
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Ban, ChevronDown, ChevronRight, Download, Receipt } from "lucide-react";
+import { Ban, ChevronDown, ChevronRight, Download, Globe, Receipt, Store } from "lucide-react";
 import { Fragment, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
@@ -11,9 +11,10 @@ import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Se
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { downloadCsv } from "@/lib/csv";
+import { OrderStatusBadge } from "@/components/bits";
 import { dateTime, money, titleCase } from "@/lib/format";
 import { describePeriod, type Period, type Preset, presetRange } from "@/lib/period";
-import type { PosSale, Staff } from "@/lib/types";
+import type { Order, PosSale, Staff } from "@/lib/types";
 
 const PAGE_SIZE = 50;
 const METHOD_LABELS: Record<string, string> = { cash: "Cash", mobile_money: "MoMo", card: "Card", credit: "On account" };
@@ -24,6 +25,8 @@ export function SalesJournalPage() {
   // A link from the report carries explicit dates (?from&to); otherwise a preset.
   const preset: Preset = params.get("from") ? "custom" : ((params.get("preset") as Preset) ?? "today");
   const period: Period = preset === "custom" ? { from: params.get("from")!, to: params.get("to") ?? params.get("from")! } : presetRange(preset);
+  // In-store receipts (the till) or online orders (website / phone app).
+  const channel = params.get("channel") === "online" ? "online" : "store";
   const staffId = params.get("staff") ?? "";
   const status = params.get("status") ?? "";
   const method = params.get("method") ?? "";
@@ -50,6 +53,7 @@ export function SalesJournalPage() {
     queryKey: ["pos-sales", "journal", query, page],
     queryFn: () => api.list<PosSale>("/pos-sales", { ...query, limit: PAGE_SIZE, offset: page * PAGE_SIZE }),
     placeholderData: keepPreviousData,
+    enabled: channel === "store",
   });
 
   const exportCsv = async () => {
@@ -88,15 +92,47 @@ export function SalesJournalPage() {
   const data = sales.data;
   const pageTotal = (data?.rows ?? []).filter((s) => s.status !== "voided").reduce((n, s) => n + s.total, 0);
 
+  const channelSwitch = (
+    <div className="flex rounded-lg border border-line bg-white p-0.5 shadow-xs">
+      {(
+        [
+          ["store", Store, "In store"],
+          ["online", Globe, "Online"],
+        ] as const
+      ).map(([value, Icon, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => update({ channel: value === "online" ? "online" : "", staff: "", method: "", status: "" })}
+          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-semibold ${channel === value ? "bg-brand-700 text-white" : "text-muted hover:text-ink"}`}
+        >
+          <Icon className="h-4 w-4" /> {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (channel === "online") {
+    return (
+      <>
+        <PageHeader title="Sales journal" description={`Online orders (website and phone app) — ${describePeriod(period)}.`} actions={channelSwitch} />
+        <OnlineOrders period={period} preset={preset} onPeriod={setPeriod} />
+      </>
+    );
+  }
+
   return (
     <>
       <PageHeader
         title="Sales journal"
-        description={`Every counter sale, receipt by receipt — ${describePeriod(period)}.`}
+        description={`Every in-store sale, receipt by receipt — ${describePeriod(period)}.`}
         actions={
-          <Button variant="secondary" icon={Download} onClick={() => void exportCsv()}>
-            Export CSV
-          </Button>
+          <>
+            {channelSwitch}
+            <Button variant="secondary" icon={Download} onClick={() => void exportCsv()}>
+              Export CSV
+            </Button>
+          </>
         }
       />
 
@@ -276,5 +312,159 @@ export function SalesJournalPage() {
         )}
       </Card>
     </>
+  );
+}
+
+
+/** Online orders in the journal's period: who ordered, what, how they're
+ * getting it, where the order is up to, and the online markup each line
+ * carried over its in-store price. */
+function OnlineOrders({ period, preset, onPeriod }: { period: Period; preset: Preset; onPeriod: (p: Preset, r: Period) => void }) {
+  const [page, setPage] = useState(0);
+  const [open, setOpen] = useState<string | null>(null);
+  const query = { date_from: period.from, date_to: period.to };
+  const orders = useQuery({
+    queryKey: ["orders", "journal", query, page],
+    queryFn: () => api.list<Order>("/orders", { ...query, limit: PAGE_SIZE, offset: page * PAGE_SIZE }),
+    placeholderData: keepPreviousData,
+  });
+  const markupOf = (o: Order) =>
+    o.items.reduce((n, i) => n + (i.in_store_unit_price !== null ? (i.unit_price - i.in_store_unit_price) * i.quantity : 0), 0);
+
+  const exportCsv = async () => {
+    const rows: Order[] = [];
+    for (let offset = 0; ; offset += 200) {
+      const page = await api.list<Order>("/orders", { ...query, limit: 200, offset });
+      rows.push(...page.rows);
+      if (rows.length >= page.total || page.rows.length === 0) break;
+    }
+    downloadCsv(`online-orders-${period.from}-to-${period.to}.csv`, [
+      ["Date & time", "Order", "Customer", "Phone", "Fulfilment", "Status", "Item", "Size", "Colour", "Qty", "Online price", "In-store price", "Line total"],
+      ...rows.flatMap((o) =>
+        o.items.map((i) => [
+          new Date(o.created_at).toLocaleString("en-GH"),
+          o.order_number,
+          o.customer_name,
+          o.customer_phone,
+          o.fulfillment_method,
+          o.status,
+          i.product_name,
+          i.variant_size,
+          i.variant_color,
+          i.quantity,
+          i.unit_price,
+          i.in_store_unit_price,
+          i.line_total,
+        ]),
+      ),
+    ]);
+  };
+
+  const data = orders.data;
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
+        <PeriodPicker preset={preset} period={period} onChange={onPeriod} />
+        {orders.isFetching && <Spinner className="h-4 w-4" />}
+        {data && (
+          <span className="ml-auto text-sm text-muted">
+            {data.total} order{data.total === 1 ? "" : "s"}
+          </span>
+        )}
+        <Button size="sm" variant="secondary" icon={Download} onClick={() => void exportCsv()}>
+          CSV
+        </Button>
+      </div>
+      {orders.isError ? (
+        <div className="p-4">
+          <ErrorState error={orders.error} />
+        </div>
+      ) : !data?.rows.length ? (
+        <EmptyState icon={Globe} title="No online orders in this period" />
+      ) : (
+        <>
+          <Table>
+            <thead>
+              <tr>
+                <Th className="w-8" />
+                <Th>When</Th>
+                <Th>Customer</Th>
+                <Th>Items</Th>
+                <Th>Fulfilment</Th>
+                <Th>Status</Th>
+                <Th className="text-right">Total</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((o) => {
+                const isOpen = open === o.id;
+                const markup = markupOf(o);
+                return (
+                  <Fragment key={o.id}>
+                    <tr onClick={() => setOpen(isOpen ? null : o.id)} className="cursor-pointer hover:bg-canvas/70">
+                      <Td className="text-muted">{isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</Td>
+                      <Td className="whitespace-nowrap">
+                        <p className="font-medium">{dateTime(o.created_at)}</p>
+                        <p className="font-mono text-[11px] text-muted">{o.order_number}</p>
+                      </Td>
+                      <Td>
+                        <p className="font-medium">{o.customer_name}</p>
+                        <p className="text-xs text-muted">{o.customer_phone ?? o.customer_email ?? ""}</p>
+                      </Td>
+                      <Td>
+                        <p className="max-w-80 truncate">{o.items.map((i) => `${i.product_name} ×${i.quantity}`).join(", ")}</p>
+                      </Td>
+                      <Td className="text-muted">{o.fulfillment_method === "pickup" ? "Pickup" : "Delivery"}</Td>
+                      <Td>
+                        <OrderStatusBadge status={o.status} />
+                      </Td>
+                      <Td className="text-right">
+                        <span className="tabular font-semibold">{money(o.total)}</span>
+                        {markup > 0 && <span className="block text-xs text-muted">+{money(markup)} online</span>}
+                      </Td>
+                    </tr>
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={7} className="border-b border-line bg-canvas/50 px-6 py-5">
+                          <table className="w-full text-sm">
+                            <thead className="text-xs text-muted">
+                              <tr>
+                                <th className="py-1 text-left font-medium">Item</th>
+                                <th className="py-1 text-right font-medium">Qty</th>
+                                <th className="py-1 text-right font-medium">Online each</th>
+                                <th className="py-1 text-right font-medium">In store each</th>
+                                <th className="py-1 text-right font-medium">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {o.items.map((i) => (
+                                <tr key={i.id} className="border-t border-line">
+                                  <td className="py-2">
+                                    <span className="font-medium">{i.product_name}</span>
+                                    <span className="text-muted"> · {[i.variant_size, i.variant_color].filter(Boolean).join(" · ")}</span>
+                                  </td>
+                                  <td className="tabular py-2 text-right">{i.quantity}</td>
+                                  <td className="tabular py-2 text-right">{money(i.unit_price)}</td>
+                                  <td className="tabular py-2 text-right text-muted">{i.in_store_unit_price !== null ? money(i.in_store_unit_price) : "—"}</td>
+                                  <td className="tabular py-2 text-right font-medium">{money(i.line_total)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <Link to={`/orders/${o.id}`} className="mt-3 inline-block text-xs font-semibold text-brand-700 hover:underline">
+                            Open order
+                          </Link>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </Table>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={data.total} onPage={setPage} />
+        </>
+      )}
+    </Card>
   );
 }

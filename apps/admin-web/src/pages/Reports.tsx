@@ -58,7 +58,7 @@ export function ReportsPage() {
     ]);
   const exportProducts = () =>
     downloadCsv(`products-sold-${r.date_from}-to-${r.date_to}.csv`, [
-      ["Product", "Size", "Colour", "SKU", "Category", "Qty (counter)", "Qty (online)", "Qty total", "Revenue"],
+      ["Product", "Size", "Colour", "SKU", "Category", "Qty (in store)", "Qty (online)", "Qty total", "Revenue"],
       ...r.by_product.map((p) => [p.product_name, p.size, p.color, p.sku, p.category_name, p.counter_quantity, p.online_quantity, p.quantity, p.revenue]),
     ]);
 
@@ -66,7 +66,7 @@ export function ReportsPage() {
     <>
       <PageHeader
         title={singleDay ? `Sales report — ${describePeriod(period)}` : "Sales report"}
-        description={singleDay ? "End-of-day figures: everything sold at the counter and online." : describePeriod(period)}
+        description={singleDay ? "End-of-day figures: everything sold in store and online." : describePeriod(period)}
         actions={
           <div className="no-print flex flex-wrap items-center gap-2">
             <PeriodPicker preset={preset} period={period} onChange={setPeriod} />
@@ -89,11 +89,11 @@ export function ReportsPage() {
         <StatCard
           label="Total sales"
           value={money(t.revenue)}
-          sub={`Counter ${money(t.counter_revenue)} · Online ${money(t.online_revenue)}`}
+          sub={`In store ${money(t.counter_revenue)} · Online ${money(t.online_revenue)}`}
           icon={Banknote}
         />
         <StatCard label="Receipts" value={t.receipts} sub={`Average ${money(t.average_receipt)} · ${t.online_orders} online order${t.online_orders === 1 ? "" : "s"}`} icon={Receipt} tone="green" />
-        <StatCard label="Items sold" value={compactNumber(t.items_sold)} sub="Counter and online" icon={ShoppingBag} tone="amber" />
+        <StatCard label="Items sold" value={compactNumber(t.items_sold)} sub="In store and online" icon={ShoppingBag} tone="amber" />
         <StatCard
           label="Voided"
           value={t.voided_count ? money(t.voided_amount) : "None"}
@@ -105,7 +105,7 @@ export function ReportsPage() {
 
       {/* How the money came in -- what the till should hold vs. what's owed. */}
       <Card className="mt-6">
-        <CardHeader title="Where the money came from" description="Counter takings by how customers paid, plus online orders." />
+        <CardHeader title="Where the money came from" description="In-store takings by how customers paid, plus online orders." />
         <div className="grid divide-y divide-line sm:grid-cols-5 sm:divide-x sm:divide-y-0">
           {(["cash", "mobile_money", "card", "credit"] as const).map((m) => (
             <div key={m} className="px-5 py-4">
@@ -118,7 +118,9 @@ export function ReportsPage() {
           <div className="px-5 py-4">
             <p className="text-xs font-semibold tracking-wide text-muted uppercase">Online orders</p>
             <p className="tabular mt-1 text-xl font-bold">{money(t.online_revenue)}</p>
-            <p className="text-xs text-muted">Paid on pickup / delivery</p>
+            <p className="text-xs text-muted">
+              {t.online_markup_earned > 0 ? `Incl. ${money(t.online_markup_earned)} online markup` : "Paid on pickup / delivery"}
+            </p>
           </div>
         </div>
         {(t.credit_collected > 0 || t.credit_given > 0) && (
@@ -141,7 +143,7 @@ export function ReportsPage() {
                 <Tooltip formatter={(v, name) => [money(Number(v)), name]} contentStyle={{ borderRadius: 10, border: "1px solid #e6e4ea", fontSize: 12 }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 {/* No animation: it would also be caught half-drawn when printing. */}
-                <Bar dataKey="counter_revenue" name="Counter" stackId="a" fill="#5b33a0" isAnimationActive={false} />
+                <Bar dataKey="counter_revenue" name="In store" stackId="a" fill="#5b33a0" isAnimationActive={false} />
                 <Bar dataKey="online_revenue" name="Online" stackId="a" fill="#d14e0f" radius={[4, 4, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
@@ -176,7 +178,7 @@ export function ReportsPage() {
           </thead>
           <tbody>
             {r.periods.map((p) => {
-              const drill = `/sales?from=${p.start}&to=${p.end}`;
+              const drill = `/sales?from=${p.start}&to=${p.end}`; // in-store receipts for that period
               return (
                 <tr key={p.start} className={p.revenue === 0 && p.voided_count === 0 ? "text-muted" : ""}>
                   <Td className="font-medium whitespace-nowrap">
@@ -233,7 +235,7 @@ export function ReportsPage() {
           <Card>
             <CardHeader
               title="What sold"
-              description="Every item, with how many went at the counter and online."
+              description="Every item, with how many sold in store and online."
               actions={
                 <Button size="sm" variant="secondary" icon={Download} className="no-print" onClick={exportProducts}>
                   CSV
@@ -248,7 +250,7 @@ export function ReportsPage() {
                   <tr>
                     <Th>Item</Th>
                     <Th>Category</Th>
-                    <Th className="text-right">Counter</Th>
+                    <Th className="text-right">In store</Th>
                     <Th className="text-right">Online</Th>
                     <Th className="text-right">Qty</Th>
                     <Th className="text-right">Revenue</Th>
@@ -285,9 +287,9 @@ export function ReportsPage() {
 
         {tab === "staff" && (
           <Card>
-            <CardHeader title="Who sold what" description="Counter sales by the staff member who rang them up. Online orders have no cashier." />
+            <CardHeader title="Who sold what" description="In-store sales by the staff member who rang them up. Online orders have no cashier." />
             {r.by_staff.length === 0 ? (
-              <EmptyState icon={Receipt} title="No counter sales in this period" />
+              <EmptyState icon={Receipt} title="No in-store sales in this period" />
             ) : (
               <Table>
                 <thead>
@@ -353,7 +355,7 @@ export function ReportsPage() {
         )}
       </div>
       <p className="mt-6 text-xs text-muted">
-        Counter sales count unless voided; online orders count unless cancelled or refunded. Days run midnight to midnight, {r.timezone.replace("_", " ")} time.
+        In-store sales count unless voided; online orders count unless cancelled or refunded. Days run midnight to midnight, {r.timezone.replace("_", " ")} time.
       </p>
     </>
   );

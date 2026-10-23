@@ -41,6 +41,8 @@ function link(e: Activity): string | null {
       return "/inventory?tab=movements";
     case "staff":
       return "/staff";
+    case "shop_settings":
+      return "/settings";
     default:
       return null;
   }

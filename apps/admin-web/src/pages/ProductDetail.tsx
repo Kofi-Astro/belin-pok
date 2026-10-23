@@ -29,6 +29,7 @@ import {
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { dateTime, imageUrl, money, sortVariants, titleCase, totalStock, variantLabel } from "@/lib/format";
+import { onlinePrice, useShopSettings } from "@/lib/pricing";
 import { useCategories } from "@/lib/queries";
 import type { AuditEntry, Product, Variant } from "@/lib/types";
 
@@ -41,6 +42,7 @@ export function ProductDetailPage() {
   const qc = useQueryClient();
   const { can } = useAuth();
   const product = useQuery({ queryKey: ["product", id], queryFn: () => api.get<Product>(`/products/${id}`) });
+  const shopSettings = useShopSettings();
 
   const [adjusting, setAdjusting] = useState<Variant | null>(null);
   const [editingVariant, setEditingVariant] = useState<Variant | "new" | null>(null);
@@ -146,7 +148,8 @@ export function ProductDetailPage() {
                 <thead>
                   <tr>
                     <Th>Variant</Th>
-                    <Th className="text-right">Retail</Th>
+                    <Th className="text-right">In store</Th>
+                    <Th className="text-right">Online</Th>
                     <Th className="text-right">Wholesale</Th>
                     <Th className="text-right">Pack</Th>
                     <Th>Stock</Th>
@@ -165,6 +168,17 @@ export function ProductDetailPage() {
                         <p className="mt-0.5 font-mono text-[11px] text-muted">{v.sku}</p>
                       </Td>
                       <Td className="tabular text-right">{money(v.price_override ?? p.base_price)}</Td>
+                      <Td className="tabular text-right whitespace-nowrap">
+                        {(() => {
+                          const online = onlinePrice(p, v, shopSettings.data);
+                          return online === null ? "…" : (
+                            <span title={v.online_price !== null ? "Fixed online price" : "In-store price + online markup"}>
+                              {money(online)}
+                              {v.online_price !== null && <span className="ml-1 text-[10px] font-semibold text-brand-600 uppercase">fixed</span>}
+                            </span>
+                          );
+                        })()}
+                      </Td>
                       <Td className="tabular text-right">{v.wholesale_price !== null ? money(v.wholesale_price) : <span className="text-muted">—</span>}</Td>
                       <Td className="tabular text-right whitespace-nowrap">
                         {v.pack_price !== null ? (
@@ -298,7 +312,7 @@ function DetailsCard({ product, editable, onSaved }: { product: Product; editabl
             ))}
           </Select>
         </Field>
-        <Field label="Base price (GH₵)" hint="Used by every size without its own retail price.">
+        <Field label="In-store price (GH₵)" hint="What the till charges, for every size without its own price. Online adds the shop's markup.">
           <Input disabled={!editable} type="number" min={0} step="0.01" value={form.base_price} onChange={set("base_price")} />
         </Field>
         <Field label="Brand" className="sm:col-span-2">
@@ -349,6 +363,7 @@ function VariantModal({
     wholesale_price: "",
     pack_price: "",
     pack_size: "",
+    online_price: "",
     low_stock_threshold: "5",
     is_active: true,
   });
@@ -366,6 +381,7 @@ function VariantModal({
       wholesale_price: blank(v?.wholesale_price),
       pack_price: blank(v?.pack_price),
       pack_size: blank(v?.pack_size),
+      online_price: blank(v?.online_price),
       low_stock_threshold: blank(v?.low_stock_threshold ?? 5),
       is_active: v?.is_active ?? true,
     });
@@ -385,6 +401,7 @@ function VariantModal({
       wholesale_price: num(form.wholesale_price),
       pack_price: num(form.pack_price),
       pack_size: num(form.pack_size),
+      online_price: num(form.online_price),
       low_stock_threshold: Number(form.low_stock_threshold || 0),
       is_active: form.is_active,
     };
@@ -439,11 +456,14 @@ function VariantModal({
             />
           </div>
         </Field>
-        <Field label="Retail price (GH₵)" hint={`Blank = product price (${money(product.base_price)})`}>
+        <Field label="In-store price (GH₵)" hint={`Blank = product price (${money(product.base_price)})`}>
           <Input type="number" min={0} step="0.01" value={form.price_override} onChange={set("price_override")} />
         </Field>
         <Field label="Wholesale price (GH₵)" hint="Per unit. Blank = retail price.">
           <Input type="number" min={0} step="0.01" value={form.wholesale_price} onChange={set("wholesale_price")} />
+        </Field>
+        <Field label="Online price (GH₵)" hint="Blank = in-store price + the shop's online markup (Shop settings).">
+          <Input type="number" min={0} step="0.01" value={form.online_price} onChange={set("online_price")} />
         </Field>
         <Field label="Pack price (GH₵)" hint="For a whole factory pack.">
           <Input type="number" min={0} step="0.01" value={form.pack_price} onChange={set("pack_price")} />

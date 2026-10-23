@@ -10,6 +10,7 @@ import { Button, Card, EmptyState, ErrorState, Field, FormError, Input, PageHead
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { date, money, primaryImage, slugify, totalStock } from "@/lib/format";
+import { applyMarkup, useShopSettings } from "@/lib/pricing";
 import { useCategories, useDebounced } from "@/lib/queries";
 import type { Product, ProductStatus } from "@/lib/types";
 
@@ -25,6 +26,7 @@ export function ProductsPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
   const categories = useCategories();
+  const shopSettings = useShopSettings();
   const [search, setSearch] = useState("");
   const debounced = useDebounced(search);
   const [categoryId, setCategoryId] = useState("");
@@ -46,7 +48,13 @@ export function ProductsPage() {
     const min = Math.min(p.base_price, ...prices);
     const max = Math.max(p.base_price, ...prices);
     if (p.base_price === 0 && p.status === "draft") return <span className="text-amber-700">No price yet</span>;
-    return min === max ? money(min) : `${money(min)} – ${money(max)}`;
+    const s = shopSettings.data;
+    return (
+      <>
+        {min === max ? money(min) : `${money(min)} – ${money(max)}`}
+        {s && s.online_markup_percent > 0 && <span className="block text-xs font-normal text-muted">Online from {money(applyMarkup(min, s))}</span>}
+      </>
+    );
   };
 
   return (
@@ -133,7 +141,7 @@ export function ProductsPage() {
                   <Th>Product</Th>
                   <Th>Category</Th>
                   <Th>Status</Th>
-                  <Th className="text-right">Price</Th>
+                  <Th className="text-right">In-store price</Th>
                   <Th className="text-right">Stock</Th>
                   <Th>Updated</Th>
                 </tr>

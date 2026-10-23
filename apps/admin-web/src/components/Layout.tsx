@@ -12,6 +12,7 @@ import {
   ScanBarcode,
   Settings,
   Shirt,
+  SlidersHorizontal,
   Tags,
   UserCog,
   Users,
@@ -58,7 +59,10 @@ const NAV: { heading: string; items: NavItem[] }[] = [
   },
   {
     heading: "Team",
-    items: [{ to: "/staff", label: "Staff", icon: UserCog, show: (c) => c.isOwner }],
+    items: [
+      { to: "/staff", label: "Staff", icon: UserCog, show: (c) => c.isOwner },
+      { to: "/settings", label: "Shop settings", icon: SlidersHorizontal, show: (c) => c.isOwner },
+    ],
   },
 ];
 

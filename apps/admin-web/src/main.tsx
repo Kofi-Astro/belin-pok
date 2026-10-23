@@ -20,6 +20,7 @@ import { ProductDetailPage } from "@/pages/ProductDetail";
 import { ProductsPage } from "@/pages/Products";
 import { ReportsPage } from "@/pages/Reports";
 import { SalesJournalPage } from "@/pages/SalesJournal";
+import { ShopSettingsPage } from "@/pages/ShopSettings";
 import { AccountPage, CategoriesPage, StaffPage } from "@/pages/Settings";
 
 // Data is cached briefly and refetched when the window regains focus, so a
@@ -72,6 +73,7 @@ const router = createBrowserRouter([
           { path: "categories", element: <CategoriesPage /> },
           { path: "staff", element: <StaffPage /> },
           { path: "account", element: <AccountPage /> },
+          { path: "settings", element: <ShopSettingsPage /> },
           { path: "*", element: <Home /> },
         ],
       },

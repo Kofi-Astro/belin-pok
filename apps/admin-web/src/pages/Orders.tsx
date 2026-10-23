@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from "react-router";
 
 import { OrderStatusBadge, Thumb } from "@/components/bits";
 import { useToast } from "@/components/overlay";
-import { Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, PageHeader, PageLoading, Pagination, Select, Spinner, Table, Td, Th } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, PageHeader, PageLoading, Pagination, Select, Spinner, Table, Td, Th } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { dateTime, money, timeAgo, titleCase } from "@/lib/format";
@@ -174,6 +174,7 @@ export function OrderDetailPage() {
         title={
           <span className="flex items-center gap-3">
             {o.order_number} <OrderStatusBadge status={o.status} />
+            <Badge tone="blue">Online order</Badge>
           </span>
         }
         description={`Placed ${dateTime(o.created_at)}`}
@@ -203,8 +204,11 @@ export function OrderDetailPage() {
                       {[i.variant_size, i.variant_color].filter(Boolean).join(" · ")} · SKU {i.variant_sku}
                     </p>
                   </div>
-                  <span className="tabular text-muted">
+                  <span className="tabular text-right text-muted">
                     {i.quantity} × {money(i.unit_price)}
+                    {i.in_store_unit_price !== null && i.in_store_unit_price !== i.unit_price && (
+                      <span className="block text-xs">in store {money(i.in_store_unit_price)}</span>
+                    )}
                   </span>
                   <span className="tabular w-24 text-right font-semibold">{money(i.line_total)}</span>
                 </li>
@@ -219,6 +223,14 @@ export function OrderDetailPage() {
                 <span>Total</span>
                 <span className="tabular">{money(o.total)}</span>
               </div>
+              {(() => {
+                const markup = o.items.reduce((n, i) => n + (i.in_store_unit_price !== null ? (i.unit_price - i.in_store_unit_price) * i.quantity : 0), 0);
+                return markup > 0 ? (
+                  <p className="pt-1 text-xs text-muted">
+                    Includes {money(markup)} online markup — the same items would cost {money(o.total - markup)} in store.
+                  </p>
+                ) : null;
+              })()}
             </div>
           </Card>
 
