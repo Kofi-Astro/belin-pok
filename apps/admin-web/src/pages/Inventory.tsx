@@ -1,3 +1,11 @@
+// Inventory: stock on hand for every SKU (each size/colour of each
+// product), what's running low, and the full history of stock changes.
+// Stock never changes by editing a number -- every change is a recorded
+// movement (received, sold, adjusted, returned...) with who made it, so
+// the history always adds up to what's on hand.
+//
+// The tab is kept in the URL (?tab=low, ?tab=movements) so the dashboard
+// and activity log can link straight to it.
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ArrowDownRight, ArrowUpRight, Boxes, PackageCheck, PackagePlus, Search } from "lucide-react";
 import { useState } from "react";
@@ -13,6 +21,7 @@ import { dateTime, money, titleCase, variantLabel } from "@/lib/format";
 import { useCategories, useDebounced } from "@/lib/queries";
 import type { InventoryRow, LowStockRow, StockMovement } from "@/lib/types";
 
+// Rows per page (stock lists are scanned quickly, so more per page).
 const PAGE_SIZE = 50;
 type Tab = "stock" | "movements" | "low";
 
@@ -21,6 +30,7 @@ export function InventoryPage() {
   const tab = (params.get("tab") as Tab) || "stock";
   const { can } = useAuth();
   const [receiving, setReceiving] = useState(false);
+  // Fetched up here so the "Running low" tab can show its count.
   const low = useQuery({ queryKey: ["low-stock"], queryFn: () => api.get<LowStockRow[]>("/variants/low-stock") });
 
   return (
@@ -53,6 +63,8 @@ export function InventoryPage() {
   );
 }
 
+// Every SKU with its stock, filterable by search, category and level.
+// initialStock lets a link pre-filter it (e.g. ?stock=out).
 function StockLevels({ initialStock }: { initialStock: string }) {
   const { can } = useAuth();
   const categories = useCategories();
@@ -61,6 +73,7 @@ function StockLevels({ initialStock }: { initialStock: string }) {
   const [categoryId, setCategoryId] = useState("");
   const [stock, setStock] = useState(initialStock);
   const [page, setPage] = useState(0);
+  // The row whose Adjust or Repack dialog is open, if any.
   const [adjusting, setAdjusting] = useState<InventoryRow | null>(null);
   const [repacking, setRepacking] = useState<InventoryRow | null>(null);
 
@@ -133,6 +146,7 @@ function StockLevels({ initialStock }: { initialStock: string }) {
                         </Link>
                         <p className="text-xs text-muted">
                           {variantLabel(r)}
+                          {/* Drafts hold stock too (fast-received items), but aren't on sale yet. */}
                           {r.product_status === "draft" && " · draft"}
                         </p>
                       </div>
@@ -145,6 +159,8 @@ function StockLevels({ initialStock }: { initialStock: string }) {
                     <StockBadge variant={r} />
                   </Td>
                   <Td className="text-right whitespace-nowrap">
+                    {/* Repack is offered only for sizes sold in packs, with at least one
+                       pack's worth of loose units on hand. */}
                     {can.manageCatalog && r.pack_size && r.stock_quantity >= r.pack_size && (
                       <Button size="sm" variant="ghost" onClick={() => setRepacking(r)}>
                         Repack
@@ -180,6 +196,7 @@ function RepackModal({ row, onClose }: { row: InventoryRow | null; onClose: () =
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   if (!row) return null;
+  // The most whole packs the units on hand can make.
   const max = Math.floor(row.stock_quantity / (row.pack_size ?? 1));
 
   const save = async (e: React.FormEvent) => {
@@ -230,6 +247,8 @@ function RepackModal({ row, onClose }: { row: InventoryRow | null; onClose: () =
   );
 }
 
+// SKUs at or below their low-stock alert level (set per size on the
+// product page), lowest first -- the reorder list.
 function LowStock({ rows, loading }: { rows: LowStockRow[] | undefined; loading: boolean }) {
   const { can } = useAuth();
   const [adjusting, setAdjusting] = useState<LowStockRow | null>(null);
@@ -285,6 +304,8 @@ function LowStock({ rows, loading }: { rows: LowStockRow[] | undefined; loading:
   );
 }
 
+// Every stock movement, newest first: what changed, by how much, who did
+// it and why. Sales show the price they went at.
 function Movements() {
   const [page, setPage] = useState(0);
   // The movement log has no total count, so "next" is offered whenever a
@@ -327,6 +348,7 @@ function Movements() {
                     </p>
                   </Td>
                   <Td>
+                    {/* Blue: sales; amber: adjustments; green: stock coming in. */}
                     <Badge tone={m.movement_type === "sale" ? "blue" : m.movement_type === "adjustment" ? "amber" : "green"}>
                       {titleCase(m.movement_type)}
                     </Badge>
@@ -338,6 +360,7 @@ function Movements() {
                       {m.quantity_change}
                     </span>
                   </Td>
+                  {/* Online orders take stock without a staff member doing it. */}
                   <Td className="text-muted">{m.performed_by_name ?? (m.reference_type === "order" ? "Online order" : "—")}</Td>
                   <Td className="max-w-56 truncate text-muted">
                     {m.reason ?? (m.unit_price !== null && m.movement_type === "sale" ? `@ ${money(m.unit_price)}` : "")}

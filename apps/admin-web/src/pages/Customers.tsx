@@ -1,3 +1,13 @@
+// Customers: everyone the shop sells to and keeps a record of --
+//   - retail shoppers who made an account on the website or app,
+//   - guests (an online order without an account creates a customer from
+//     the name and phone given at checkout),
+//   - wholesale businesses, which staff add here, approve, and can let buy
+//     "on account" (credit) up to a limit.
+// Two screens: the searchable list (CustomersPage) and one customer
+// (CustomerDetailPage) with their credit account and online orders.
+// Adding/editing customers, approving them and recording payments needs
+// the manageOrders permission (owner or order fulfilment).
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Banknote, Check, Plus, Scale, Search, Users, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -32,11 +42,13 @@ import { date, dateTime, money, titleCase } from "@/lib/format";
 import { useDebounced } from "@/lib/queries";
 import type { Customer, CustomerType, LedgerEntry, Order } from "@/lib/types";
 
+// Customers per page in the list.
 const PAGE_SIZE = 25;
 
 export function CustomersPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
+  // Filters: "" means any. Changing any of them goes back to page 1.
   const [type, setType] = useState<CustomerType | "">("");
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
@@ -65,6 +77,7 @@ export function CustomersPage() {
       />
       <Card>
         <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
+          {/* Type tabs: All / Retail / Wholesale. */}
           <div className="flex rounded-lg bg-canvas p-0.5">
             {(["", "retail", "wholesale"] as const).map((t) => (
               <button
@@ -127,6 +140,7 @@ export function CustomersPage() {
                     <Td>
                       <CustomerStatusBadge status={c.status} />
                     </Td>
+                    {/* What they owe on account -- only ever non-zero for wholesale. */}
                     <Td className={`tabular text-right font-semibold ${c.outstanding_balance > 0 ? "text-amber-700" : "text-muted"}`}>
                       {c.outstanding_balance > 0 ? money(c.outstanding_balance) : "—"}
                     </Td>
@@ -159,11 +173,14 @@ function CustomerFormModal({
 }) {
   const toast = useToast();
   const qc = useQueryClient();
+  // Form fields as strings (what inputs hold); converted when saved.
   const blank = { full_name: "", business_name: "", phone: "", email: "", customer_type: "retail" as CustomerType, credit_limit: "", tax_id: "", notes: "" };
   const [form, setForm] = useState(blank);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Each time the dialog opens: fill it from the customer being edited, or
+  // start blank for a new one.
   useEffect(() => {
     if (!open) return;
     setError(null);
@@ -190,6 +207,9 @@ function CustomerFormModal({
     e.preventDefault();
     setBusy(true);
     setError(null);
+    // Fields that can be both set on creation and edited later. Blank
+    // optional fields are sent as null rather than "". Email and type are
+    // only set when creating (see the API's CustomerUpdate).
     const shared = {
       full_name: form.full_name.trim(),
       business_name: form.business_name.trim() || null,
@@ -202,6 +222,7 @@ function CustomerFormModal({
       const saved = customer
         ? await api.patch<Customer>(`/customers/${customer.id}`, shared)
         : await api.post<Customer>("/customers", { ...shared, email: form.email.trim() || null, customer_type: form.customer_type });
+      // Refresh the list and this customer's page with the saved details.
       await qc.invalidateQueries({ queryKey: ["customers"] });
       await qc.invalidateQueries({ queryKey: ["customer", saved.id] });
       toast.success(customer ? "Customer updated" : "Customer added");
@@ -234,6 +255,7 @@ function CustomerFormModal({
         <div className="sm:col-span-2">
           <FormError message={error} />
         </div>
+        {/* Retail or wholesale -- chosen once, when the customer is created. */}
         {!customer && (
           <div className="grid grid-cols-2 rounded-lg bg-canvas p-1 text-sm font-semibold sm:col-span-2">
             {(["retail", "wholesale"] as const).map((t) => (
@@ -257,6 +279,7 @@ function CustomerFormModal({
             <Input type="email" value={form.email} onChange={set("email")} />
           </Field>
         )}
+        {/* Credit terms only apply to wholesale accounts. */}
         {form.customer_type === "wholesale" && (
           <>
             <Field label="Credit limit (GH₵)" hint="0 means cash only.">
@@ -275,12 +298,16 @@ function CustomerFormModal({
   );
 }
 
+// One customer: header actions (approve / reject / edit), the credit
+// account for wholesale customers, their online orders, and details.
 export function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const toast = useToast();
   const { can } = useAuth();
   const customer = useQuery({ queryKey: ["customer", id], queryFn: () => api.get<Customer>(`/customers/${id}`) });
+  // The credit ledger: every charge, payment and correction to what this
+  // customer owes, newest first. Only wholesale customers have one.
   const ledger = useQuery({
     queryKey: ["ledger", id],
     queryFn: () => api.get<LedgerEntry[]>(`/customers/${id}/credit-ledger`, { limit: 100 }),
@@ -288,8 +315,11 @@ export function CustomerDetailPage() {
   });
   const orders = useQuery({ queryKey: ["orders", { customer: id }], queryFn: () => api.list<Order>("/orders", { customer_id: id, limit: 20 }) });
   const [editing, setEditing] = useState(false);
+  // Which ledger dialog is open, if any (see LedgerModal).
   const [ledgerAction, setLedgerAction] = useState<"payment" | "adjustment" | null>(null);
 
+  // Approve or reject an account. Approving a wholesale customer is what
+  // lets them buy on credit at the till.
   const setStatus = useMutation({
     mutationFn: (status: string) => api.post<Customer>(`/customers/${id}/status`, { status }),
     onSuccess: async (c) => {
@@ -303,6 +333,7 @@ export function CustomerDetailPage() {
   if (customer.isPending) return <PageLoading />;
   if (customer.isError) return <ErrorState error={customer.error} />;
   const c = customer.data;
+  // Credit left to use, and how much of the limit is used (for the bar).
   const available = Math.max(0, c.credit_limit - c.outstanding_balance);
   const usedPct = c.credit_limit > 0 ? Math.min(100, (c.outstanding_balance / c.credit_limit) * 100) : 0;
 
@@ -361,6 +392,7 @@ export function CustomerDetailPage() {
                   )
                 }
               />
+              {/* Owes / Credit limit / Available, side by side. */}
               <div className="grid grid-cols-3 border-b border-line">
                 {[
                   ["Owes", money(c.outstanding_balance), c.outstanding_balance > 0 ? "text-amber-700" : ""],
@@ -376,6 +408,8 @@ export function CustomerDetailPage() {
               {c.credit_limit > 0 && (
                 <div className="px-5 pt-4 pb-4">
                   <div className="h-2 overflow-hidden rounded-full bg-canvas">
+                    {/* Turns red past 85% -- close to the limit, so the next credit sale
+                       may be refused. */}
                     <div className={`h-full rounded-full ${usedPct > 85 ? "bg-red-500" : "bg-brand-600"}`} style={{ width: `${usedPct}%` }} />
                   </div>
                   <p className="mt-1 text-xs text-muted">{usedPct.toFixed(0)}% of limit used</p>
@@ -406,6 +440,8 @@ export function CustomerDetailPage() {
                           {e.performed_by_name && <span className="block text-xs">by {e.performed_by_name}</span>}
                         </Td>
                         <Td className={`tabular text-right font-semibold ${e.entry_type === "payment" ? "text-emerald-700" : ""}`}>
+                          {/* Payments always reduce the balance; corrections can go either way;
+                             charges (credit sales) add to it. */}
                           {e.entry_type === "payment" ? "−" : e.amount < 0 ? "−" : "+"}
                           {money(Math.abs(e.amount))}
                         </Td>
@@ -469,6 +505,10 @@ export function CustomerDetailPage() {
 }
 
 /** Record a payment (always reduces what's owed) or a signed correction. */
+// Both are recorded in the customer's credit ledger with who did it, and
+// the API keeps the running balance (outstanding_balance) in step. A
+// correction needs a reason, since it changes what's owed without money
+// changing hands; the owner sees it in the activity log.
 function LedgerModal({ customer, kind, onClose }: { customer: Customer; kind: "payment" | "adjustment" | null; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -478,6 +518,7 @@ function LedgerModal({ customer, kind, onClose }: { customer: Customer; kind: "p
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Start fresh each time a dialog opens.
   useEffect(() => {
     setAmount("");
     setReason("");
@@ -493,6 +534,8 @@ function LedgerModal({ customer, kind, onClose }: { customer: Customer; kind: "p
     try {
       if (kind === "payment") await api.post(`/customers/${customer.id}/credit-payments`, { amount: n, reason: reason.trim() || null });
       else await api.post(`/customers/${customer.id}/credit-adjustments`, { amount: direction === "increase" ? n : -n, reason: reason.trim() });
+      // The balance shows on this page, the list and the dashboard's
+      // debtors panel -- refresh them all.
       await Promise.all(["customer", "ledger", "customers", "dashboard"].map((k) => qc.invalidateQueries({ queryKey: [k] })));
       toast.success(kind === "payment" ? `Payment of ${money(n)} recorded` : "Correction recorded");
       onClose();

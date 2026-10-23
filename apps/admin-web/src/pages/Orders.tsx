@@ -1,3 +1,13 @@
+// Online orders -- the ones placed on the website or the phone app (counter
+// sales are on the Point of sale page). Two screens:
+//   - OrdersPage: the list, filterable by status and searchable, with a
+//     warning panel for orders the shelf may not be able to fill;
+//   - OrderDetailPage: one order -- its lines (online price, and the
+//     in-store price it would have been), customer, delivery, timeline,
+//     and moving it along (paid -> packed -> shipped -> delivered).
+// Status changes go through POST /orders/{id}/status, which records who
+// made them (the owner sees these in the activity log) and notifies the
+// customer's phone if they use the app.
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, ClipboardList, Mail, MapPin, Phone, Search, Store, Truck } from "lucide-react";
 import { useState } from "react";
@@ -12,7 +22,10 @@ import { dateTime, money, timeAgo, titleCase } from "@/lib/format";
 import { useDebounced } from "@/lib/queries";
 import type { Order, OrderStatus } from "@/lib/types";
 
+// Orders per page in the list.
 const PAGE_SIZE = 25;
+// Every status, for the "set any status" dropdown (including cancelling
+// or refunding, which aren't part of the usual flow).
 const STATUSES: OrderStatus[] = ["pending", "paid", "packed", "shipped", "delivered", "cancelled", "refunded"];
 
 // The usual next step from each status, offered as the one-click action.
@@ -23,13 +36,18 @@ export function OrdersPage() {
   const [status, setStatus] = useState<OrderStatus | "">("");
   const [search, setSearch] = useState("");
   const debounced = useDebounced(search);
+  // 0-based page; reset to 0 whenever the filter or search changes.
   const [page, setPage] = useState(0);
 
   const orders = useQuery({
     queryKey: ["orders", { status, debounced, page }],
     queryFn: () => api.list<Order>("/orders", { status, search: debounced, limit: PAGE_SIZE, offset: page * PAGE_SIZE }),
+    // Keep showing the current page while the next one loads, instead of
+    // flashing an empty table.
     placeholderData: keepPreviousData,
   });
+  // Unfulfilled orders needing more of something than the system thinks
+  // is on hand -- a sign that stock went out without being recorded.
   const attention = useQuery({ queryKey: ["orders", "attention"], queryFn: () => api.get<Order[]>("/orders/needs-attention") });
 
   return (
@@ -63,6 +81,8 @@ export function OrdersPage() {
 
       <Card>
         <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
+          {/* Status filter tabs ("" = all). Cancelled/refunded are left off to keep
+             the bar short; they still show under All. */}
           <div className="flex flex-wrap rounded-lg bg-canvas p-0.5">
             {(["", "pending", "paid", "packed", "shipped", "delivered"] as const).map((s) => (
               <button
@@ -113,6 +133,7 @@ export function OrdersPage() {
                     </Td>
                     <Td>
                       <div className="flex -space-x-2">
+                        {/* Up to four overlapping thumbnails, then "+N". */}
                         {o.items.slice(0, 4).map((i) => (
                           <Thumb key={i.id} path={i.image_storage_path} size={32} className="ring-2 ring-white" />
                         ))}
@@ -136,17 +157,23 @@ export function OrdersPage() {
   );
 }
 
+// One order. Anyone signed in can view it; moving it along needs the
+// manageOrders permission (owner or order fulfilment).
 export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const toast = useToast();
   const { can } = useAuth();
   const order = useQuery({ queryKey: ["order", id], queryFn: () => api.get<Order>(`/orders/${id}`) });
+  // The status picked in the "Update status" card, and its optional note
+  // (e.g. a mobile money reference), recorded in the order's timeline.
   const [next, setNext] = useState<OrderStatus | "">("");
   const [note, setNote] = useState("");
 
   const update = useMutation({
     mutationFn: (status: OrderStatus) => api.post<Order>(`/orders/${id}/status`, { status, note: note.trim() || null }),
+    // The API returns the updated order: show it straight away, then refresh
+    // the lists (counts and filters may have changed).
     onSuccess: async (o) => {
       qc.setQueryData(["order", id], o);
       await qc.invalidateQueries({ queryKey: ["orders"] });
@@ -160,6 +187,7 @@ export function OrderDetailPage() {
   if (order.isPending) return <PageLoading />;
   if (order.isError) return <ErrorState error={order.error} />;
   const o = order.data;
+  // The one-click "Mark as ..." in the header: the usual next step, if any.
   const suggested = NEXT[o.status];
   const addr = o.shipping_address;
 
@@ -206,6 +234,10 @@ export function OrderDetailPage() {
                   </div>
                   <span className="tabular text-right text-muted">
                     {i.quantity} × {money(i.unit_price)}
+                    {/* Online orders are charged the online price (in-store price plus the
+                       shop's markup -- Admin → Shop settings). The in-store price is
+                       recorded on each line at checkout, shown here when it differs.
+                       Null for orders placed before online pricing existed. */}
                     {i.in_store_unit_price !== null && i.in_store_unit_price !== i.unit_price && (
                       <span className="block text-xs">in store {money(i.in_store_unit_price)}</span>
                     )}
@@ -223,6 +255,7 @@ export function OrderDetailPage() {
                 <span>Total</span>
                 <span className="tabular">{money(o.total)}</span>
               </div>
+              {/* What the online markup added to this order, in total. */}
               {(() => {
                 const markup = o.items.reduce((n, i) => n + (i.in_store_unit_price !== null ? (i.unit_price - i.in_store_unit_price) * i.quantity : 0), 0);
                 return markup > 0 ? (
@@ -298,6 +331,7 @@ export function OrderDetailPage() {
 
           <Card>
             <CardHeader title="Timeline" />
+            {/* Every status change, oldest first, each with its note. */}
             <ol className="space-y-4 p-5 text-sm">
               <li className="relative border-l-2 border-line pl-4">
                 <span className="absolute top-1.5 -left-[5px] h-2 w-2 rounded-full bg-gray-400" />

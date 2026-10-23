@@ -2,6 +2,8 @@
 // hand: they read better than generated OpenAPI types, and a mismatch shows
 // up immediately in the screens that use them.
 
+// What a staff member may do -- see ROLES in pages/Settings.tsx for the
+// plain-words version and lib/auth.tsx for what each unlocks in the UI.
 export type StaffRole = "owner" | "inventory_manager" | "order_fulfillment" | "viewer";
 
 export type Staff = {
@@ -16,6 +18,9 @@ export type Staff = {
   created_at: string;
 };
 
+// What sign-in and refresh return. must_change_password: the account was
+// created with a temporary password (e.g. the first admin), so the admin
+// sends them to choose their own before anything else.
 export type TokenPair = {
   access_token: string;
   refresh_token: string;
@@ -23,6 +28,7 @@ export type TokenPair = {
   must_change_password: boolean;
 };
 
+// parent_id is unused for now (categories are a flat list).
 export type Category = {
   id: string;
   name: string;
@@ -32,8 +38,12 @@ export type Category = {
   display_order: number;
 };
 
+// draft: being set up, not sold anywhere. active: on the website, app and
+// till. archived: off the website; leftover stock can still be sold at
+// the till.
 export type ProductStatus = "draft" | "active" | "archived";
 
+// storage_path -> URL with imageUrl() in lib/format.ts.
 export type ProductImage = {
   id: string;
   product_id: string;
@@ -43,6 +53,11 @@ export type ProductImage = {
   is_primary: boolean;
 };
 
+// One size/colour of a product -- the unit that's stocked and sold.
+// Prices, all in-store unless said otherwise (null = not set):
+//   price_override   this size's own retail price (else the product's)
+//   wholesale_price  per unit for approved wholesale customers
+//   pack_price       for a whole factory pack of pack_size pieces
 export type Variant = {
   id: string;
   product_id: string;
@@ -56,11 +71,15 @@ export type Variant = {
   pack_size: number | null;
   // Fixed online price; null = in-store price + the shop's online markup.
   online_price: number | null;
+  // stock_quantity is only ever changed by stock movements. is_active:
+  // false hides this size from the website and till.
   stock_quantity: number;
   low_stock_threshold: number;
   is_active: boolean;
 };
 
+// base_price: the in-store price of any size without price_override.
+// A ₵0 draft is a fast-received item still waiting for its real price.
 export type Product = {
   id: string;
   name: string;
@@ -76,6 +95,7 @@ export type Product = {
   variants: Variant[];
 };
 
+// A variant with its product's details, for the inventory lists.
 export type InventoryRow = Variant & {
   product_name: string;
   product_status: ProductStatus;
@@ -86,8 +106,15 @@ export type InventoryRow = Variant & {
 
 export type LowStockRow = Variant & { product_name: string; image_storage_path: string | null };
 
+// Why stock changed: restock (a delivery), sale (till or online; a
+// voided sale's reversal is also a "sale" movement, with a positive
+// change), adjustment (count corrections, damage, loss), return (a
+// customer bringing something back), initial (opening stock).
 export type MovementType = "restock" | "sale" | "adjustment" | "return" | "initial";
 
+// One change to stock. quantity_change is signed (+ in, - out).
+// reference_type/_id link it to what caused it (a till sale, an online
+// order...). unit_price is the price for sales.
 export type StockMovement = {
   id: string;
   variant_id: string;
@@ -105,11 +132,15 @@ export type StockMovement = {
   unit_price: number | null;
 };
 
+// What Receive stock returns: the product and variant the delivery went
+// to, and whether either had to be created for it.
 export type StockIntakeResult = { product: Product; variant: Variant; created_product: boolean; created_variant: boolean };
 
 export type CustomerType = "retail" | "wholesale";
 export type CustomerStatus = "pending" | "approved" | "rejected";
 
+// is_wholesale_verified: an approved wholesale account -- the only kind
+// allowed to buy on credit. outstanding_balance: what they owe now.
 export type Customer = {
   id: string;
   full_name: string;
@@ -126,6 +157,8 @@ export type Customer = {
   created_at: string;
 };
 
+// One line of a wholesale customer's credit account: a charge (a credit
+// sale), a payment, or a correction. amount is signed for corrections.
 export type LedgerEntry = {
   id: string;
   entry_type: "charge" | "payment" | "adjustment";
@@ -149,6 +182,8 @@ export type Address = {
   country: string;
 };
 
+// One line of an online order. unit_price is the online price actually
+// charged; product details are copied in at ordering time.
 export type OrderItem = {
   id: string;
   variant_id: string;
@@ -165,6 +200,8 @@ export type OrderItem = {
   image_storage_path: string | null;
 };
 
+// An online order (website or phone app). status_history: every change
+// of status after it was placed, oldest first, with the note given.
 export type Order = {
   id: string;
   order_number: string;
@@ -185,9 +222,19 @@ export type Order = {
   status_history: { status: OrderStatus; note: string | null; created_at: string }[];
 };
 
+// Price tier of a till line, and how a till sale was paid ("credit" =
+// on a wholesale customer's account).
 export type PriceTier = "retail" | "wholesale" | "pack";
 export type PaymentMethod = "cash" | "mobile_money" | "card" | "credit";
 
+// One line of a till sale, at the price actually charged. Three kinds:
+//   - a product: variant_id set (stock came off when it was sold);
+//   - quick-logged: only category_id -- a type of item, its exact
+//     product to be attached later ("Identify");
+//   - unsorted: neither -- a whole basket rung up as one amount
+//     (quantity 1), to be broken down later ("Break down").
+// For a pack line, quantity counts pieces and pack_size says how many
+// make a pack.
 export type PosSaleItem = {
   id: string;
   variant_id: string | null;
@@ -204,6 +251,8 @@ export type PosSaleItem = {
   pack_size: number | null;
 };
 
+// One till receipt: who rang it up, for whom, what was in it and how it
+// was paid. status is "completed" or "voided".
 export type PosSale = {
   id: string;
   customer_id: string | null;
@@ -222,6 +271,8 @@ export type PosSale = {
   void_reason: string | null;
 };
 
+// GET /reports/dashboard, for the last period_days days.
+// unidentified_item_count: till lines still to sort out (all time).
 export type Dashboard = {
   period_days: number;
   gross_revenue: number;
@@ -241,8 +292,10 @@ export type Dashboard = {
   unidentified_item_count: number;
 };
 
+// Sales per day, for the dashboard chart. Days with no sales are absent.
 export type DailySales = { day: string; items_sold: number; total_amount: number };
 
+// A change recorded in the audit log, with the values before and after.
 export type AuditEntry = {
   id: string;
   action: string;
@@ -254,6 +307,10 @@ export type AuditEntry = {
 
 // ---------- sales report & activity (GET /reports/sales, /reports/activity) ----------
 
+// Totals for the whole report period. counter = in store (the till);
+// online = website/app orders. by_method splits in-store takings by how
+// they were paid. online_markup_earned: how much more online orders
+// brought in than the same items at in-store prices.
 export type SalesTotals = {
   revenue: number;
   counter_revenue: number;
@@ -270,6 +327,7 @@ export type SalesTotals = {
   credit_collected: number;
 };
 
+// One row of the tally: a day, week or month (start..end, inclusive).
 export type SalesPeriod = {
   start: string;
   end: string;
@@ -287,6 +345,8 @@ export type SalesPeriod = {
   voided_amount: number;
 };
 
+// What sold. product_id/variant_id are null for till lines that don't
+// name a product yet (grouped by type, or as "Unsorted sales").
 export type ProductSales = {
   product_id: string | null;
   variant_id: string | null;
@@ -301,6 +361,8 @@ export type ProductSales = {
   online_quantity: number;
 };
 
+// In-store sales per staff member. voided_*: their sales that were later
+// voided (by anyone); voids_performed: voids they carried out.
 export type StaffSales = {
   staff_id: string;
   staff_name: string;
@@ -325,8 +387,11 @@ export type SalesReport = {
   by_category: { category_name: string; quantity: number; revenue: number }[];
 };
 
+// The activity log's categories (the filter tiles on the Activity page).
 export type ActivityKind = "sale" | "void" | "stock" | "catalog" | "order" | "credit" | "staff";
 
+// One entry in the owner's activity log. reference_type/_id say what it
+// was about, for the "View" link (see link() in pages/Activity.tsx).
 export type Activity = {
   at: string;
   kind: ActivityKind;
@@ -339,6 +404,8 @@ export type Activity = {
   reference_id: string | null;
 };
 
+// Online pricing: online price = in-store price x (1 + percent/100),
+// rounded up to a multiple of online_price_rounding (0 = no rounding).
 export type ShopSettings = {
   online_markup_percent: number;
   online_price_rounding: number;

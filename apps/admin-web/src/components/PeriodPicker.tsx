@@ -21,6 +21,8 @@ export function PeriodPicker({
         <Select
           className="w-44 pl-9"
           value={preset}
+          // Picking a preset replaces the dates with its range; picking
+          // "Custom" keeps the current dates as a starting point to edit.
           onChange={(e) => {
             const p = e.target.value as Preset;
             onChange(p, p === "custom" ? period : presetRange(p));
@@ -33,6 +35,8 @@ export function PeriodPicker({
           ))}
         </Select>
       </div>
+      {/* Custom range: two date fields, each limited so "from" can't come
+         after "to". An emptied field is ignored rather than clearing it. */}
       {preset === "custom" && (
         <>
           <Input type="date" className="w-40" value={period.from} max={period.to} onChange={(e) => e.target.value && onChange("custom", { ...period, from: e.target.value })} />

@@ -1,4 +1,10 @@
-// Categories, Staff and the signed-in user's own Account page.
+// Three settings pages that share this file:
+//   - Categories: how products are grouped -- the website's menu and
+//     category pages, the till's category chips and quick-log types;
+//   - Staff: who can sign in to the admin and what each person may do
+//     (owner only), including invite and sign-in links;
+//   - Account: the signed-in person's own details and password.
+// (The shop-wide online pricing lives on its own page, ShopSettings.tsx.)
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Link2, Pencil, Plus, Tags, Trash2, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -14,12 +20,16 @@ import type { Category, Staff, StaffRole } from "@/lib/types";
 
 // ---------- categories ----------
 
+// The category list, with how many products each holds and its menu
+// position. Editing needs the manageCatalog permission.
 export function CategoriesPage() {
   const { can } = useAuth();
   const qc = useQueryClient();
   const toast = useToast();
   const categories = useCategories();
-  // How many live products each category has, from the public catalogue.
+  // How many products each category holds (any status -- drafts and
+  // archived count too, since they also stop a category being deleted).
+  // One small request per category, reading just the total.
   const counts = useQuery({
     queryKey: ["category-counts", categories.data?.length],
     enabled: !!categories.data,
@@ -30,6 +40,8 @@ export function CategoriesPage() {
         ),
       ),
   });
+  // The category in the edit dialog ("new" = creating), and the one
+  // waiting for delete confirmation.
   const [editing, setEditing] = useState<Category | "new" | null>(null);
   const [deleting, setDeleting] = useState<Category | null>(null);
 
@@ -83,6 +95,8 @@ export function CategoriesPage() {
                     <p className="font-semibold">{c.name}</p>
                     {c.description && <p className="text-xs text-muted">{c.description}</p>}
                   </Td>
+                  {/* Its page on the website. Fixed when created, so links don't break
+                     if it's renamed later. */}
                   <Td className="font-mono text-xs text-muted">/category/{c.slug}</Td>
                   <Td className="tabular text-right">{counts.data?.[c.id] ?? "…"}</Td>
                   <Td className="tabular text-right text-muted">{c.display_order}</Td>
@@ -115,6 +129,8 @@ export function CategoriesPage() {
   );
 }
 
+// Create or edit a category: name, optional description (shown at the top
+// of its page on the website) and menu position.
 function CategoryModal({ category, onClose }: { category: Category | "new" | null; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -139,6 +155,7 @@ function CategoryModal({ category, onClose }: { category: Category | "new" | nul
     setError(null);
     const body = { name: form.name.trim(), description: form.description.trim() || null, display_order: Number(form.display_order || 0) };
     try {
+      // The web address (slug) is made from the name once, on creation.
       if (isNew) await api.post("/categories", { ...body, slug: slugify(form.name) });
       else await api.patch(`/categories/${(category as Category).id}`, body);
       await qc.invalidateQueries({ queryKey: ["categories"] });
@@ -185,12 +202,16 @@ function CategoryModal({ category, onClose }: { category: Category | "new" | nul
 
 // ---------- staff ----------
 
+// The roles, in plain words. The API decides what each can actually do
+// (require_role in app/deps.py); lib/auth.tsx mirrors it so the admin
+// only offers what will work.
 const ROLES: { value: StaffRole; label: string; description: string }[] = [
   { value: "owner", label: "Owner", description: "Everything, including staff and the change history" },
   { value: "inventory_manager", label: "Inventory manager", description: "Products, prices, stock, the till and reports" },
   { value: "order_fulfillment", label: "Sales & orders", description: "The till, online orders, customers and credit" },
   { value: "viewer", label: "Viewer", description: "Can look, can't change anything" },
 ];
+// "inventory_manager" -> "Inventory manager"; several -> "A + B".
 const roleLabel = (r: StaffRole) => ROLES.find((x) => x.value === r)?.label ?? titleCase(r);
 const rolesLabel = (roles: StaffRole[]) => roles.map(roleLabel).join(" + ");
 
@@ -199,6 +220,8 @@ const rolesLabel = (roles: StaffRole[]) => roles.map(roleLabel).join(" + ");
  * already includes everything and Viewer is read-only, so ticking either
  * clears the rest -- the same rules the API enforces. */
 function RolePicker({ value, onChange, disabled }: { value: StaffRole[]; onChange: (roles: StaffRole[]) => void; disabled?: boolean }) {
+  // Untick: just remove it. Tick Owner or Viewer: that role alone. Tick
+  // any other: add it, dropping Owner/Viewer if either was ticked.
   const toggle = (r: StaffRole) => {
     if (value.includes(r)) return onChange(value.filter((x) => x !== r));
     if (r === "owner" || r === "viewer") return onChange([r]);
@@ -225,16 +248,24 @@ function RolePicker({ value, onChange, disabled }: { value: StaffRole[]; onChang
   );
 }
 
+// Staff accounts (owner only -- the API refuses everyone else). An owner
+// can change anyone's roles or switch them off, except their own: so the
+// shop can never be left without an owner by accident.
 export function StaffPage() {
   const qc = useQueryClient();
   const toast = useToast();
   const { staff: me } = useAuth();
   const staff = useQuery({ queryKey: ["staff"], queryFn: () => api.get<Staff[]>("/staff") });
   const [inviting, setInviting] = useState(false);
+  // A freshly issued invite/sign-in link, shown in LinkModal to copy.
   const [link, setLink] = useState<{ name: string; url: string } | null>(null);
+  // The person whose roles are being changed, and the roles ticked.
   const [editing, setEditing] = useState<Staff | null>(null);
   const [editRoles, setEditRoles] = useState<StaffRole[]>([]);
 
+  // Saves a role change or switches an account on/off. Both are recorded
+  // in the activity log. A switched-off account can't sign in, but its
+  // history (sales, changes) is kept.
   const update = useMutation({
     mutationFn: ({ id, ...body }: { id: string; roles?: StaffRole[]; is_active?: boolean }) => api.patch(`/staff/${id}`, body),
     onSuccess: async () => {
@@ -244,6 +275,9 @@ export function StaffPage() {
     onError: (e) => toast.error(e),
   });
 
+  // Issues a new one-time link for someone to set their password -- for a
+  // forgotten password, or an invite that expired. (Older unused links
+  // aren't cancelled; each still works once until it expires.)
   const newLink = async (s: Staff) => {
     try {
       const r = await api.post<Staff & { invite_link: string }>(`/staff/${s.id}/invite-link`);
@@ -315,6 +349,7 @@ export function StaffPage() {
                   </Td>
                   <Td className="text-muted">{date(s.created_at)}</Td>
                   <Td>
+                    {/* You can't switch yourself off. */}
                     <Toggle checked={s.is_active} disabled={isMe} label="Active" onChange={(on) => update.mutate({ id: s.id, is_active: on })} />
                   </Td>
                   <Td className="text-right">
@@ -330,6 +365,7 @@ export function StaffPage() {
           </tbody>
         </Table>
       </Card>
+      {/* A key to what each role means, under the table. */}
       <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {ROLES.map((r) => (
           <Card key={r.value} className="p-4">
@@ -366,6 +402,9 @@ export function StaffPage() {
   );
 }
 
+// Invite a new staff member: creates their account with the roles
+// ticked and returns a one-time link for them to choose a password
+// (emailed if email sending is set up; shown here either way).
 function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () => void; onInvited: (name: string, url: string) => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({ full_name: "", email: "", roles: ["order_fulfillment"] as StaffRole[] });
@@ -423,6 +462,8 @@ function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () 
   );
 }
 
+// Shows an invite/sign-in link to copy and pass on. Anyone with the link
+// can set that person's password, hence the warning.
 function LinkModal({ link, onClose }: { link: { name: string; url: string } | null; onClose: () => void }) {
   const toast = useToast();
   return (
@@ -455,6 +496,9 @@ function LinkModal({ link, onClose }: { link: { name: string; url: string } | nu
 
 // ---------- my account ----------
 
+// The signed-in person's own page: who they are, and changing their
+// password -- which signs them out on every other device, so a lost
+// phone or shared computer stops having access.
 export function AccountPage() {
   const { staff } = useAuth();
   const toast = useToast();
@@ -465,6 +509,7 @@ export function AccountPage() {
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Checked here only; the API just receives the new password.
     if (password !== confirm) return setError("The two passwords don't match.");
     setBusy(true);
     setError(null);

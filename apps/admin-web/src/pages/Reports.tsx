@@ -16,6 +16,8 @@ import { compactNumber, money } from "@/lib/format";
 import { defaultGrouping, describePeriod, type Period, type Preset, presetRange } from "@/lib/period";
 import type { SalesPeriod, SalesReport } from "@/lib/types";
 
+// How each payment method reads; "credit" is a sale put on a wholesale
+// customer's account.
 const METHOD_LABELS: Record<string, string> = { cash: "Cash", mobile_money: "Mobile money", card: "Card", credit: "On account" };
 
 /** "Mon 6 Oct" for a day; "6–12 Oct" for a week; "October 2026" for a month. */
@@ -28,10 +30,14 @@ function periodLabel(p: SalesPeriod, group: SalesReport["group_by"]): string {
 
 export function ReportsPage() {
   const [params, setParams] = useSearchParams();
+  // Everything about the report comes from the URL: the preset (today,
+  // this week...), custom dates, and how rows are grouped -- by default
+  // whatever suits the range (days for a week, months for a year).
   const preset = (params.get("preset") as Preset) ?? "today";
   const period: Period =
     preset === "custom" ? { from: params.get("from") ?? presetRange("today").from, to: params.get("to") ?? presetRange("today").to } : presetRange(preset);
   const group = (params.get("group") as SalesReport["group_by"]) ?? defaultGrouping(period);
+  // Which breakdown is shown below the tally.
   const [tab, setTab] = useState<"products" | "staff" | "categories">("products");
 
   // The period lives in the URL, so a report can be bookmarked or sent.
@@ -48,8 +54,12 @@ export function ReportsPage() {
   if (report.isError) return <ErrorState error={report.error} />;
   const r = report.data;
   const t = r.totals;
+  // A single day reads as an end-of-day report: no grouping control,
+  // "Day total" instead of a tally.
   const singleDay = r.date_from === r.date_to;
 
+  // CSV downloads (open in Excel/Sheets): the tally with a total row, and
+  // the products sold.
   const exportTally = () =>
     downloadCsv(`sales-${r.date_from}-to-${r.date_to}.csv`, [
       ["Period", "Receipts", "Online orders", "Items", "Cash", "Mobile money", "Card", "On account", "Online", "Total", "Voids", "Voided amount"],
@@ -85,6 +95,7 @@ export function ReportsPage() {
         }
       />
 
+      {/* Headline numbers for the whole period. */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Total sales"
@@ -111,6 +122,7 @@ export function ReportsPage() {
             <div key={m} className="px-5 py-4">
               <p className="text-xs font-semibold tracking-wide text-muted uppercase">{METHOD_LABELS[m]}</p>
               <p className="tabular mt-1 text-xl font-bold">{money(t.by_method[m] ?? 0)}</p>
+              {/* What to check the cash drawer against at close. */}
               {m === "cash" && <p className="text-xs text-muted">Should be in the drawer</p>}
               {m === "credit" && <p className="text-xs text-muted">Owed, not yet paid</p>}
             </div>
@@ -123,6 +135,8 @@ export function ReportsPage() {
             </p>
           </div>
         </div>
+        {/* Money on account moves separately from sales: "given" is new credit
+           sales in the period, "collected" is customers paying off what they owe. */}
         {(t.credit_collected > 0 || t.credit_given > 0) && (
           <div className="border-t border-line bg-canvas/50 px-5 py-3 text-sm text-muted">
             On account: <b className="text-ink">{money(t.credit_given)}</b> given on credit, <b className="text-ink">{money(t.credit_collected)}</b> collected from
@@ -131,6 +145,8 @@ export function ReportsPage() {
         )}
       </Card>
 
+      {/* Bar chart, in-store and online stacked -- only when there's more
+         than one period to compare. */}
       {r.periods.length > 1 && (
         <Card className="mt-6">
           <CardHeader title={`Sales by ${r.group_by}`} />
@@ -178,6 +194,8 @@ export function ReportsPage() {
           </thead>
           <tbody>
             {r.periods.map((p) => {
+              // Each period's label links to the sales journal for exactly those
+              // dates, to see the receipts behind the numbers.
               const drill = `/sales?from=${p.start}&to=${p.end}`; // in-store receipts for that period
               return (
                 <tr key={p.start} className={p.revenue === 0 && p.voided_count === 0 ? "text-muted" : ""}>
@@ -186,6 +204,7 @@ export function ReportsPage() {
                       {periodLabel(p, r.group_by)}
                     </Link>
                   </Td>
+                  {/* Receipts here = in-store receipts plus online orders. */}
                   <Td className="tabular text-right">{p.receipts + p.online_orders || "—"}</Td>
                   <Td className="tabular text-right">{p.items_sold || "—"}</Td>
                   <Td className="tabular text-right">{p.cash ? money(p.cash) : "—"}</Td>
@@ -261,6 +280,8 @@ export function ReportsPage() {
                   {r.by_product.map((p) => (
                     <tr key={`${p.variant_id ?? p.product_name}`}>
                       <Td>
+                        {/* Lines without a product (quick-logged, or rung up as one amount and
+                           not broken down yet) are listed by type, in amber, without a link. */}
                         {p.product_id ? (
                           <Link to={`/products/${p.product_id}`} className="font-medium hover:text-brand-700">
                             {p.product_name}
@@ -307,6 +328,7 @@ export function ReportsPage() {
                   {r.by_staff.map((s) => (
                     <tr key={s.staff_id}>
                       <Td>
+                        {/* Opens the journal filtered to this person's receipts. */}
                         <Link to={`/sales?from=${r.date_from}&to=${r.date_to}&staff=${s.staff_id}`} className="font-medium hover:text-brand-700">
                           {s.staff_name}
                         </Link>
@@ -354,6 +376,8 @@ export function ReportsPage() {
           </Card>
         )}
       </div>
+      {/* The counting rules, printed with the report so a printout explains
+         itself. */}
       <p className="mt-6 text-xs text-muted">
         In-store sales count unless voided; online orders count unless cancelled or refunded. Days run midnight to midnight, {r.timezone.replace("_", " ")} time.
       </p>

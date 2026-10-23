@@ -1,3 +1,13 @@
+// One product's page in the admin: its details and in-store price, every
+// size/colour (variant) with its prices and stock, photos, and -- for the
+// owner -- a history of who changed what. Header actions receive stock,
+// publish/unpublish, archive or delete it.
+//
+// A product's life: Draft (being set up; neither the shop nor the till
+// will sell it) -> Active ("published": on the website, the phone app and
+// the till) -> Archived (no longer sold online; leftover stock can still
+// be sold at the till). Fast-received items (Receive stock with just a
+// name and photo) start as drafts priced at ₵0.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ArrowLeft, ExternalLink, ImagePlus, PackagePlus, Pencil, Plus, Rocket, Star, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -33,6 +43,7 @@ import { onlinePrice, useShopSettings } from "@/lib/pricing";
 import { useCategories } from "@/lib/queries";
 import type { AuditEntry, Product, Variant } from "@/lib/types";
 
+// Where "View on the shop" links to; set per deployment.
 const STOREFRONT_URL = (import.meta.env.VITE_STOREFRONT_URL ?? "https://belpok.xyz").replace(/\/$/, "");
 
 export function ProductDetailPage() {
@@ -42,15 +53,21 @@ export function ProductDetailPage() {
   const qc = useQueryClient();
   const { can } = useAuth();
   const product = useQuery({ queryKey: ["product", id], queryFn: () => api.get<Product>(`/products/${id}`) });
+  // The shop's online markup, for showing each size's online price.
   const shopSettings = useShopSettings();
 
+  // Which dialog is open: stock adjustment for a variant, editing a variant
+  // ("new" = adding one), receiving stock, or confirming deletion.
   const [adjusting, setAdjusting] = useState<Variant | null>(null);
   const [editingVariant, setEditingVariant] = useState<Variant | "new" | null>(null);
   const [receiving, setReceiving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // After any change: reload this product and the product lists.
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ["product", id] }), qc.invalidateQueries({ queryKey: ["products"] })]);
 
+  // Publish (active), unpublish (draft) or archive. The API refuses to
+  // publish a product with no price, and says so in the error.
   const setStatus = useMutation({
     mutationFn: (status: Product["status"]) => api.patch<Product>(`/products/${id}`, { status }),
     onSuccess: async (p) => {
@@ -61,6 +78,9 @@ export function ProductDetailPage() {
     onError: (e) => toast.error(e),
   });
 
+  // Deleting is only allowed for a product with no sales or stock history
+  // (the API refuses otherwise, to keep the records whole); archive it
+  // instead in that case.
   const remove = useMutation({
     mutationFn: () => api.del(`/products/${id}`),
     onSuccess: async () => {
@@ -119,6 +139,7 @@ export function ProductDetailPage() {
         }
       />
 
+      {/* A fast-received item still waiting for its real details. */}
       {p.status === "draft" && p.base_price === 0 && (
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Received at the counter and still a placeholder: set a price and category below, then <b>Publish</b> to start selling it.
@@ -167,7 +188,12 @@ export function ProductDetailPage() {
                         </div>
                         <p className="mt-0.5 font-mono text-[11px] text-muted">{v.sku}</p>
                       </Td>
+                      {/* In store: the size's own price, or the product's. */}
                       <Td className="tabular text-right">{money(v.price_override ?? p.base_price)}</Td>
+                      {/* Online: the size's fixed online price if it has one, otherwise the
+                         in-store price plus the shop's markup (worked out here the same way
+                         the API does -- lib/pricing.ts mirrors app/pricing.py). "…" until
+                         the shop settings have loaded. */}
                       <Td className="tabular text-right whitespace-nowrap">
                         {(() => {
                           const online = onlinePrice(p, v, shopSettings.data);
@@ -180,6 +206,7 @@ export function ProductDetailPage() {
                         })()}
                       </Td>
                       <Td className="tabular text-right">{v.wholesale_price !== null ? money(v.wholesale_price) : <span className="text-muted">—</span>}</Td>
+                      {/* Price for a whole factory pack, and how many pieces are in one. */}
                       <Td className="tabular text-right whitespace-nowrap">
                         {v.pack_price !== null ? (
                           <span>
@@ -193,6 +220,8 @@ export function ProductDetailPage() {
                         <StockBadge variant={v} />
                       </Td>
                       <Td className="text-right whitespace-nowrap">
+                        {/* Adjust: count corrections, damage, returns (see StockModals.tsx).
+                           Edit: the size's details and prices (VariantModal below). */}
                         {can.adjustStock && (
                           <Button size="sm" variant="ghost" onClick={() => setAdjusting(v)}>
                             Adjust
@@ -230,6 +259,7 @@ export function ProductDetailPage() {
               </a>
             )}
           </Card>
+          {/* Owner only (renders nothing for other roles). */}
           <HistoryCard productId={p.id} />
         </div>
       </div>
@@ -251,9 +281,13 @@ export function ProductDetailPage() {
   );
 }
 
+// Name, category, in-store price, brand and description. Read-only for
+// staff without the manageCatalog permission.
 function DetailsCard({ product, editable, onSaved }: { product: Product; editable: boolean; onSaved: () => Promise<unknown> }) {
   const toast = useToast();
   const categories = useCategories();
+  // The form as the saved product -- a ₵0 placeholder price shows as
+  // empty, so it's obvious it needs filling in.
   const initial = () => ({
     name: product.name,
     category_id: product.category_id,
@@ -264,6 +298,7 @@ function DetailsCard({ product, editable, onSaved }: { product: Product; editabl
   const [form, setForm] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Reload the form whenever the product is saved (here or elsewhere).
   useEffect(() => setForm(initial()), [product.updated_at]);
 
   const set = (k: keyof ReturnType<typeof initial>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -354,6 +389,8 @@ function VariantModal({
   const toast = useToast();
   const isNew = variant === "new";
   const v = isNew ? null : variant;
+  // Number -> input text ("" for none), and back again with num() below:
+  // an empty price field means "not set" (null), not ₵0.
   const blank = (n: number | null | undefined) => (n === null || n === undefined ? "" : String(n));
   const [form, setForm] = useState({
     size: "",
@@ -370,6 +407,8 @@ function VariantModal({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Fill the form each time the dialog opens: from the variant being
+  // edited, or blank for a new one (low-stock alert defaults to 5).
   useEffect(() => {
     if (!variant) return;
     setError(null);
@@ -392,6 +431,7 @@ function VariantModal({
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
+    // A pack price is meaningless without the pack size, and vice versa.
     if ((form.pack_price === "") !== (form.pack_size === "")) return setError("Pack price and units per pack go together — fill both or neither.");
     const body = {
       size: form.size.trim(),
@@ -408,6 +448,9 @@ function VariantModal({
     setBusy(true);
     setError(null);
     try {
+      // A new variant's SKU is generated by the API from the product slug,
+      // size and colour. Its stock starts at 0 -- stock only ever changes
+      // through stock movements (receive, adjust, sell), never by editing.
       if (isNew) await api.post(`/products/${product.id}/variants`, body);
       else await api.patch(`/variants/${v!.id}`, body);
       await onSaved();
@@ -451,6 +494,7 @@ function VariantModal({
               type="color"
               aria-label="Colour swatch"
               value={form.color_hex || "#000000"}
+              // The swatch colour, shown as a dot on the website's colour picker.
               onChange={(e) => setForm({ ...form, color_hex: e.target.value.toUpperCase() })}
               className="h-10 w-12 shrink-0 cursor-pointer rounded-lg border border-line bg-white p-1"
             />
@@ -485,12 +529,18 @@ function VariantModal({
   );
 }
 
+// Product photos: upload (several at once), choose the cover photo,
+// delete. The cover is what the website shows first and in listings.
 function PhotosCard({ product, editable, onChanged }: { product: Product; editable: boolean; onChanged: () => Promise<unknown> }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  // Cover photo first, then in display order.
   const ordered = [...product.images].sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.display_order - b.display_order);
 
+  // Each file is uploaded to the photo bucket through the API (which only
+  // accepts JPEG, PNG or WebP, and returns the storage path), then attached
+  // to the product. The first photo of a product with none becomes the cover.
   const upload = async (files: FileList) => {
     setUploading(true);
     try {
@@ -507,6 +557,7 @@ function PhotosCard({ product, editable, onChanged }: { product: Product; editab
     }
   };
 
+  // Runs one photo action, then refreshes and confirms (or shows the error).
   const act = async (fn: () => Promise<unknown>, msg: string) => {
     try {
       await fn();
@@ -550,6 +601,7 @@ function PhotosCard({ product, editable, onChanged }: { product: Product; editab
                       icon={Star}
                       label="Make cover photo"
                       className="bg-white shadow"
+                      // PATCH /images/{id} makes that image the product's cover.
                       onClick={() => void act(() => api.patch(`/images/${img.id}`, {}), "Cover photo updated")}
                     />
                   )}
@@ -569,6 +621,8 @@ function PhotosCard({ product, editable, onChanged }: { product: Product; editab
   );
 }
 
+// Who changed this product, when, and which fields -- from the audit log.
+// The full before/after values are in the owner's Activity log.
 function HistoryCard({ productId }: { productId: string }) {
   const { can } = useAuth();
   const log = useQuery({
@@ -585,6 +639,7 @@ function HistoryCard({ productId }: { productId: string }) {
       ) : (
         <ol className="space-y-4 p-5">
           {log.data.map((e) => {
+            // Only the fields whose value actually changed in this entry.
             const fields = Object.keys(e.new_values ?? e.old_values ?? {}).filter(
               (k) => JSON.stringify(e.old_values?.[k]) !== JSON.stringify(e.new_values?.[k]),
             );

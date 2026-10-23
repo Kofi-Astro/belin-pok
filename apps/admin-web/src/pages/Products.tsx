@@ -1,3 +1,10 @@
+// The product catalogue: every product, searchable and filterable by
+// status (live / drafts / archived) and category, with price and stock at
+// a glance. Two ways to add products:
+//   - Receive stock: the fast path for a delivery -- name, photo and
+//     quantity, creating a draft to price later (components/StockModals);
+//   - New product: the full form, for setting a product up properly first.
+// Clicking a row opens the product's own page (ProductDetail.tsx).
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { PackagePlus, Plus, Search, Shirt } from "lucide-react";
 import { useState } from "react";
@@ -14,7 +21,9 @@ import { applyMarkup, useShopSettings } from "@/lib/pricing";
 import { useCategories, useDebounced } from "@/lib/queries";
 import type { Product, ProductStatus } from "@/lib/types";
 
+// Products per page.
 const PAGE_SIZE = 25;
+// Status filter tabs; "Live" is the API's "active".
 const STATUS_TABS: { value: ProductStatus | ""; label: string }[] = [
   { value: "", label: "All" },
   { value: "active", label: "Live" },
@@ -26,6 +35,7 @@ export function ProductsPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
   const categories = useCategories();
+  // For the "Online from" hint under each price.
   const shopSettings = useShopSettings();
   const [search, setSearch] = useState("");
   const debounced = useDebounced(search);
@@ -41,8 +51,12 @@ export function ProductsPage() {
       api.list<Product>("/products", { search: debounced, category_id: categoryId, status, limit: PAGE_SIZE, offset: page * PAGE_SIZE }),
     placeholderData: keepPreviousData,
   });
+  // Category id -> name, from the cached category list.
   const categoryName = (id: string) => categories.data?.find((c) => c.id === id)?.name ?? "—";
 
+  // The in-store price, or a range when sizes are priced differently, with
+  // the cheapest online price underneath when the shop has a markup set.
+  // A draft at ₵0 is a fast-received item that hasn't been priced yet.
   const priceCell = (p: Product) => {
     const prices = p.variants.map((v) => v.price_override ?? p.base_price);
     const min = Math.min(p.base_price, ...prices);
@@ -168,6 +182,7 @@ export function ProductsPage() {
                         <ProductStatusBadge status={p.status} />
                       </Td>
                       <Td className="tabular text-right font-medium">{priceCell(p)}</Td>
+                      {/* Red: nothing left. Amber: some size is at or below its alert level. */}
                       <Td className={`tabular text-right font-semibold ${stock === 0 ? "text-red-600" : p.variants.some((v) => v.stock_quantity <= v.low_stock_threshold) ? "text-amber-700" : ""}`}>
                         {stock}
                       </Td>
@@ -205,6 +220,9 @@ function NewProductModal({ open, onClose, onCreated }: { open: boolean; onClose:
     setBusy(true);
     setError(null);
     try {
+      // Created as a draft (the API's default), so it isn't sold anywhere
+      // until it has sizes and is published. The slug is the URL-friendly
+      // name the website uses (/products/<slug>).
       const p = await api.post<Product>("/products", {
         name: form.name.trim(),
         slug: slugify(form.name),

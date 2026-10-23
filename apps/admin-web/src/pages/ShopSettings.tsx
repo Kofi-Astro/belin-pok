@@ -11,6 +11,8 @@ import { dateTime, money } from "@/lib/format";
 import { applyMarkup, useShopSettings } from "@/lib/pricing";
 import type { ShopSettings } from "@/lib/types";
 
+// Rounding steps on offer. Prices are always rounded *up* to the step, so
+// rounding never takes the online price below the markup.
 const ROUNDING = [
   { value: 0, label: "Don't round" },
   { value: 0.5, label: "Up to the next GH₵0.50" },
@@ -18,28 +20,37 @@ const ROUNDING = [
   { value: 5, label: "Up to the next GH₵5" },
 ];
 
+// In-store prices for the worked-example table, spanning the shop's
+// typical range (a pair of socks to a jacket).
 const EXAMPLES = [25, 45, 85, 150, 320];
 
 export function ShopSettingsPage() {
   const qc = useQueryClient();
   const toast = useToast();
   const settings = useShopSettings();
+  // The form, as typed -- not saved until Save is pressed.
   const [percent, setPercent] = useState("");
   const [rounding, setRounding] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
+  // Fill the form from the saved settings once they've loaded.
   useEffect(() => {
     if (!settings.data) return;
     setPercent(String(settings.data.online_markup_percent));
     setRounding(settings.data.online_price_rounding);
   }, [settings.data]);
 
+  // PATCH /settings (owner only), recorded in the activity log. The API
+  // works online prices out from these settings on every request, so
+  // checkout charges the new prices at once; the website's pages are
+  // cached for up to a minute (apps/web/src/lib/catalog.ts), so they
+  // catch up within that.
   const save = useMutation({
     mutationFn: () => api.patch<ShopSettings>("/settings", { online_markup_percent: Number(percent || 0), online_price_rounding: rounding }),
     onSuccess: (s) => {
       qc.setQueryData(["shop-settings"], s);
       setError(null);
-      toast.success("Online pricing saved — it applies to the shop straight away");
+      toast.success("Online pricing saved — the website shows the new prices within a minute");
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   });
@@ -47,6 +58,8 @@ export function ShopSettingsPage() {
   if (settings.isPending) return <PageLoading />;
   if (settings.isError) return <ErrorState error={settings.error} />;
 
+  // What's typed, as settings -- the example table previews it live,
+  // before saving.
   const preview = { online_markup_percent: Number(percent || 0), online_price_rounding: rounding };
   const dirty = preview.online_markup_percent !== settings.data.online_markup_percent || rounding !== settings.data.online_price_rounding;
 
@@ -104,6 +117,7 @@ export function ShopSettingsPage() {
               </thead>
               <tbody>
                 {EXAMPLES.map((p) => {
+                  {/* Same arithmetic as the API's (lib/pricing.ts mirrors app/pricing.py). */}
                   const online = applyMarkup(p, preview);
                   return (
                     <tr key={p}>

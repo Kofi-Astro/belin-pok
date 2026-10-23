@@ -1,3 +1,9 @@
+// The dashboard -- the first page after signing in. A quick read on how the
+// shop is doing over the last 7, 30 or 90 days: revenue and items sold
+// (counter and online together), money owed on account, what's running
+// low, best sellers, and the latest stock changes. For a full breakdown
+// of a day, week or any range, there's Sales reports (Reports.tsx); this
+// page links to today's.
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, Boxes, HandCoins, PackageMinus, ShoppingBag } from "lucide-react";
 import { useState } from "react";
@@ -10,13 +16,18 @@ import { api } from "@/lib/api";
 import { compactNumber, money, timeAgo, titleCase } from "@/lib/format";
 import type { DailySales, Dashboard, LowStockRow, StockMovement } from "@/lib/types";
 
+// The periods on offer, in days.
 const PERIODS = [7, 30, 90] as const;
 
+// One colour per price tier, for the tier bars.
 const TIER_COLORS: Record<string, string> = { retail: "#5b33a0", wholesale: "#d14e0f", pack: "#d4a017" };
 
 export function DashboardPage() {
   const [days, setDays] = useState<(typeof PERIODS)[number]>(30);
 
+  // Four independent requests, so one slow panel doesn't hold up the rest:
+  // the headline numbers, sales per day (for the chart), the low-stock list
+  // and the latest stock movements.
   const dashboard = useQuery({ queryKey: ["dashboard", days], queryFn: () => api.get<Dashboard>("/reports/dashboard", { days }) });
   const daily = useQuery({ queryKey: ["daily-sales", days], queryFn: () => api.get<DailySales[]>("/reports/daily-sales", { days }) });
   const lowStock = useQuery({ queryKey: ["low-stock"], queryFn: () => api.get<LowStockRow[]>("/variants/low-stock") });
@@ -36,6 +47,7 @@ export function DashboardPage() {
     const day = new Date(Date.now() - (days - 1 - i) * 86_400_000).toISOString().slice(0, 10);
     return { day, revenue: byDay.get(day)?.total_amount ?? 0, items: byDay.get(day)?.items_sold ?? 0 };
   });
+  // The last point is today, for the "Today:" line on the stat cards.
   const today = series[series.length - 1];
   // The report lists counter and online retail separately (both tier
   // "retail"); one bar per tier is what's useful here.
@@ -75,6 +87,8 @@ export function DashboardPage() {
         }
       />
 
+      {/* A to-do: till lines that don't name a product yet (quick-logged, or a
+         basket rung up as one amount). Sorted out from the Point of sale page. */}
       {d.unidentified_item_count > 0 && (
         <div className="mb-6 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -88,6 +102,7 @@ export function DashboardPage() {
         </div>
       )}
 
+      {/* Headline numbers. */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label={`Revenue · ${days}d`} value={money(d.gross_revenue)} sub={`Today: ${money(today?.revenue ?? 0)}`} icon={Banknote} />
         <StatCard label={`Items sold · ${days}d`} value={compactNumber(d.items_sold)} sub={`Today: ${today?.items ?? 0}`} icon={ShoppingBag} tone="green" />
@@ -106,6 +121,8 @@ export function DashboardPage() {
           <CardHeader title="Revenue" description={`Daily, last ${days} days — counter and online combined`} />
           <div className="h-72 px-2 pt-4 pb-2">
             <ResponsiveContainer width="100%" height="100%">
+              {/* isAnimationActive={false} on the Area: the chart draws in full at
+                 once instead of animating in (cleaner on a slow phone). */}
               <AreaChart data={series} margin={{ left: 8, right: 16, top: 8 }}>
                 <defs>
                   <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
@@ -138,6 +155,7 @@ export function DashboardPage() {
           <CardHeader title="Revenue by price tier" description="Counter and online sales" />
           <div className="space-y-5 p-5">
             {tiers.length === 0 && <p className="text-sm text-muted">No sales in this period.</p>}
+            {/* One bar per tier (retail, wholesale, pack), as a share of revenue. */}
             {tiers.map((t) => {
               const pct = tierTotal ? (t.revenue / tierTotal) * 100 : 0;
               return (
@@ -206,6 +224,8 @@ export function DashboardPage() {
         </Card>
 
         <Card>
+          {/* Who owes, and for how long -- red past 30 days. "Days outstanding" is
+             counted from the oldest charge not yet covered by payments. */}
           <CardHeader title="Credit owed" description="Wholesale accounts, longest unpaid first" />
           {d.aged_debtors.length === 0 ? (
             <EmptyState icon={HandCoins} title="Nobody owes anything" />
@@ -237,6 +257,7 @@ export function DashboardPage() {
           <ul className="divide-y divide-line">
             {activity.data.map((m) => (
               <li key={m.id} className="flex items-center gap-3 px-5 py-3 text-sm">
+                {/* Green arrow up for stock in, red arrow down for stock out. */}
                 <span className={`flex h-8 w-8 items-center justify-center rounded-full ${m.quantity_change > 0 ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
                   {m.quantity_change > 0 ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
                 </span>
