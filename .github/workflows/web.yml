@@ -1,0 +1,40 @@
+name: Web apps
+
+# Type-checks and builds the web storefront (apps/web) and the admin
+# (apps/admin-web) on pull requests. Railway deploys them itself from
+# main; this only stops a broken build from landing there.
+
+on:
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "apps/admin-web/**"
+      - ".github/workflows/web.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [web, admin-web]
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    env:
+      # The URL each app is compiled against; CI never calls it.
+      VITE_API_BASE_URL: https://api.belpok.xyz
+      NEXT_PUBLIC_API_BASE_URL: https://api.belpok.xyz
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/${{ matrix.app }}/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      # The admin is a pure static build. The storefront's full build
+      # prerenders pages from the live API, so that step is left to Railway.
+      - if: matrix.app == 'admin-web'
+        run: npm run build

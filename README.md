@@ -28,17 +28,19 @@ This repo is being built in phases:
 | Database                  | PostgreSQL (Railway Postgres)                                                                                          |
 | Auth                      | Built into the API: hashed passwords, short-lived access tokens + rotating refresh tokens                              |
 | Photo storage             | S3-compatible bucket (Railway Bucket), served through the API                                                          |
-| Admin frontend             | Flutter, compiled to Flutter Web for this phase                                                                         |
-| Storefront frontend        | Flutter, compiled to Flutter Web for this phase                                                                         |
-| Hosting                    | Railway -- API, database, bucket, and both web apps                                                                     |
+| Web storefront            | Next.js (React, server-rendered), Tailwind CSS -- `apps/web/`                                                          |
+| Admin / inventory system  | React + Vite, Tailwind CSS, TanStack Query -- `apps/admin-web/`                                                        |
+| Phone app (storefront)    | Flutter, for the Android/iOS release -- `apps/storefront/`                                                             |
+| Hosting                   | Railway -- API, database, bucket, storefront and admin                                                                 |
 | Source control / CI       | GitHub + GitHub Actions                                                                                                  |
 
 ## Repo layout
 
 ```text
-apps/admin/          Flutter Web admin dashboard (+ Dockerfile for hosting)
-apps/storefront/      Flutter Web public storefront (+ Dockerfile for hosting)
-packages/belpok_core/ Shared Dart package: models, API client + sign-in session, theme
+apps/web/            Web storefront (Next.js) -- belpok.xyz
+apps/admin-web/      Admin & inventory system (React + Vite) -- admin.belpok.xyz
+apps/storefront/     Flutter storefront, for the Android/iOS app
+packages/belpok_core/ Dart package for the Flutter app: models, API client + sign-in session, theme
 services/api/         FastAPI backend
 services/api/migrations/ SQL migrations (schema + seed data), applied by app/migrate.py
 deploy/               Shared Caddy config that serves the built web apps
@@ -49,7 +51,8 @@ deploy/               Shared Caddy config that serves the built web apps
 
 - PostgreSQL 15+ for local development (e.g. `brew install postgresql`)
 - Python 3.12+
-- Flutter SDK (stable channel) with web support enabled (`flutter config --enable-web`)
+- Node.js 22+ (the web storefront and the admin)
+- Flutter SDK, stable channel (only for the phone app)
 
 ## Database & migrations
 
@@ -137,51 +140,64 @@ That account must choose a new password the first time it signs in
 (pass `--no-force-change` to skip that). Everyone else is invited from the
 admin app's Staff screen.
 
-## Admin app: Flutter (`apps/admin/`)
+## Web storefront: Next.js (`apps/web/`)
 
-One codebase, every platform Flutter supports -- Web (the deployed target
-for now), plus Android, iOS, macOS, Windows, and Linux for local use on a
-phone/tablet at the shop counter or testing on a dev machine. `flutter
-devices` lists what's available to run on.
+The shop customers see at belpok.xyz. Catalogue pages (home, shop,
+categories, products) are rendered on the server, so they're real HTML:
+search engines index them, and links shared on WhatsApp/Facebook show the
+product's photo and price. Cart, checkout and accounts run in the browser.
 
 ```bash
-cd apps/admin
-flutter pub get
-
-flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000   # web
-flutter run -d macos --dart-define=API_BASE_URL=http://localhost:8000    # macOS
-flutter run -d <device-id> --dart-define=API_BASE_URL=http://localhost:8000  # a connected phone/simulator
+cd apps/web
+npm install
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 npm run dev   # http://localhost:3000
+npm run typecheck
 ```
 
-`API_BASE_URL` is the only setting (`lib/config.dart`) -- sign-in, data
-and product photos all go through the API.
+Settings are build-time environment variables (compiled in, so changing
+one means a rebuild):
 
-Only the Web build is wired up for deployment (Railway, see below) --
-Android/iOS need signing + app store setup and Windows/Linux desktop can
-only be built on their own OS (Flutter doesn't cross-compile desktop
-targets), so those stay local-only builds until/unless that's worth setting
-up.
+| Variable | |
+| --- | --- |
+| `NEXT_PUBLIC_API_BASE_URL` | the API (required) |
+| `NEXT_PUBLIC_SITE_URL` | the shop's own address, for canonical links and the sitemap |
+| `NEXT_PUBLIC_CONTACT_PHONE`, `NEXT_PUBLIC_CONTACT_WHATSAPP`, `NEXT_PUBLIC_CONTACT_EMAIL`, `NEXT_PUBLIC_SHOP_ADDRESS` | optional; shown in the footer and on the wholesale page -- anything unset is simply left out |
 
-Sign in with the owner account from "The first owner account" above,
-then invite everyone else from the Staff screen.
+Previewing against an API on your own machine (`127.0.0.1`), also set
+`NEXT_IMAGE_ALLOW_LOCAL_IP=1` at build time -- Next's image optimiser
+refuses local addresses otherwise. Never set it for a deployed build.
 
-## Storefront app: Flutter (`apps/storefront/`)
+## Admin: React (`apps/admin-web/`)
 
-The public storefront -- browsing, cart, guest/signed-in checkout, order
-history. Same multi-platform Flutter setup as the admin app (Web is the
-deployed target); unlike admin, most of it works with no sign-in at all --
-only the account/order-history screen requires one.
+The admin and inventory system at admin.belpok.xyz: dashboard, point of
+sale, online orders, customers and credit, products, inventory, receiving
+stock, categories and staff. What each person sees follows their role
+(`src/lib/auth.tsx`), matching what the API allows.
+
+```bash
+cd apps/admin-web
+npm install
+VITE_API_BASE_URL=http://localhost:8000 npm run dev   # http://localhost:5173
+npm run build                                         # type-check + production build
+```
+
+`VITE_API_BASE_URL` (required) and `VITE_STOREFRONT_URL` (for "View on the
+shop" links) are build-time settings. Sign in with the owner account from
+"The first owner account" above, then invite everyone else from Staff.
+
+## Phone app: Flutter (`apps/storefront/`)
+
+The storefront as an Android/iOS app (the website is `apps/web`). Browsing,
+cart, guest/signed-in checkout and order history, against the same API.
 
 ```bash
 cd apps/storefront
 flutter pub get
-
-flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000   # web
+flutter run -d <device-id> --dart-define=API_BASE_URL=http://localhost:8000
 ```
 
-Same `API_BASE_URL` override as the admin app. Customers create an
-account (name, email, password) from the sign-in screen, which creates
-their `customers` record at the same time.
+Customers create an account (name, email, password) from the sign-in
+screen, which creates their `customers` record at the same time.
 
 ### Running on a phone (Android/iOS)
 
@@ -264,9 +280,8 @@ set up to consume them but doesn't (and shouldn't) contain them.
 
 ## Shared Dart package: `packages/belpok_core/`
 
-Both Flutter apps depend on this via a local path dependency
-(`path: ../../packages/belpok_core` in each `pubspec.yaml`) for the pieces
-they genuinely share: the `Category`/`Product`/`ProductVariant`/
+The Flutter phone app depends on this via a local path dependency
+(`path: ../../packages/belpok_core`): the `Category`/`Product`/`ProductVariant`/
 `ProductImage`/`Order`/`OrderItem`/`Address` models (they mirror
 `services/api/app/schemas.py` response shapes 1:1), the API client's HTTP/
 error-decoding plumbing (`ApiHttp`, `ApiException`), the signed-in session
@@ -296,8 +311,8 @@ on PRs and never deploy, so there's exactly one deploy path.
 
 | Domain | Railway service | Source |
 | --- | --- | --- |
-| `belpok.xyz`, `www.belpok.xyz` | storefront | `apps/storefront/` |
-| `admin.belpok.xyz` | admin | `apps/admin/` |
+| `belpok.xyz`, `www.belpok.xyz` | web | `apps/web/` |
+| `admin.belpok.xyz` | admin-web | `apps/admin-web/` |
 | `api.belpok.xyz` | belin-pok | `services/api/` |
 | -- | Postgres | Railway database |
 | -- | Bucket | Railway bucket for product photos |
@@ -323,42 +338,48 @@ migrations. Variables (see `services/api/.env.example` for all of them):
 | `RESEND_API_KEY`, `EMAIL_FROM` | optional -- see `.env.example` |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | optional, for push notifications |
 
-### Admin and storefront services
+### Storefront and admin services
 
-Each is built from its own Dockerfile (Flutter installed from its git tag
-to compile, Caddy to serve -- see `deploy/Caddyfile`). The Docker build
-needs `packages/belpok_core` as well as the app, so these services build
-from the repo root. Railway no longer accepts a `railway.json` config file
-for newly created services, so these settings live on the services
-themselves (Settings tab):
+Railway no longer accepts a `railway.json` config file for newly created
+services, so these settings live on the services themselves (Settings tab).
+Both are built from a Dockerfile; Railway picks Docker automatically once
+the Dockerfile path is set.
 
-| Setting | admin | storefront |
+| Setting | web (storefront) | admin-web |
 | --- | --- | --- |
 | Source | `Kofi-Astro/belin-pok`, branch `main` | same |
-| Root Directory | *(blank -- repo root)* | *(blank -- repo root)* |
-| Dockerfile path | `apps/admin/Dockerfile` | `apps/storefront/Dockerfile` |
-| Watch paths | `apps/admin/**`, `packages/belpok_core/**`, `deploy/**` | `apps/storefront/**`, `packages/belpok_core/**`, `deploy/**` |
+| Root Directory | `apps/web` | *(blank -- repo root, for `deploy/Caddyfile`)* |
+| Dockerfile path | *(default: `Dockerfile`)* | `apps/admin-web/Dockerfile` |
+| Watch paths | `apps/web/**` | `apps/admin-web/**`, `deploy/**` |
 | Healthcheck path | `/` | `/` |
-| Variable `API_BASE_URL` | `https://api.belpok.xyz` | `https://api.belpok.xyz` |
+| Variables | `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_SITE_URL` (+ optional contact details) | `VITE_API_BASE_URL`, `VITE_STOREFRONT_URL` |
 
-`API_BASE_URL` is read at **build** time (it's compiled into the app), so
-changing it needs a redeploy.
+The storefront runs as a Node server (Next.js standalone output); the
+admin is static files served by Caddy, which falls back to `index.html` so
+deep links like `/products/<id>` survive a reload. All their variables are
+read at **build** time, so changing one needs a redeploy.
+
+The API's `CORS_ORIGINS` must list every address the two apps are served
+from, and `ADMIN_APP_URL` / `STOREFRONT_URL` are where invite and
+password-reset links point -- keep both in step with the domains.
 
 ### Switching over from Supabase + Cloudflare (one-time)
 
-1. Create the Railway services above (Postgres, Bucket, api, admin,
-   storefront) and set their variables. Deploy; the API's pre-deploy step
-   builds the schema.
-2. Create the first owner (see "The first owner account" above for the
-   exact `railway ssh` command).
-3. Test on the raw `*.up.railway.app` URLs: sign in as admin (you'll be
-   asked for a new password), receive an item with a photo, publish it,
-   check it on the storefront, place a test order.
-4. **DNS (owner's step):** add `api`, `admin`, `belpok.xyz` and `www` as
-   custom domains on their Railway services, and update the DNS records
-   wherever belpok.xyz's DNS is managed to the targets Railway shows.
-   Then remove the custom domains from the two Cloudflare Workers
-   projects, and delete `apps/*/wrangler.jsonc` once nothing deploys
-   there any more.
+1. Railway services (done): Postgres, Bucket, `belin-pok` (API), `web`,
+   `admin-web`, with their variables set. The API's pre-deploy step built
+   the schema.
+2. First owner (done): `admin` / `admin`, which must choose a new password
+   on first sign-in. The command is under "The first owner account" above.
+3. Test on the `*.up.railway.app` addresses: sign in to the admin, receive
+   an item with a photo, price and publish it, see it on the storefront,
+   place a test order, ring up a sale.
+4. **DNS (owner's step):** add `admin.belpok.xyz` to `admin-web`, and
+   `belpok.xyz` + `www.belpok.xyz` to `web`, as custom domains in Railway,
+   then update the DNS records wherever belpok.xyz's DNS is managed to the
+   targets Railway shows (`api.belpok.xyz` already points at Railway).
+   Then set the API's `ADMIN_APP_URL` / `STOREFRONT_URL` back to
+   `https://admin.belpok.xyz` / `https://belpok.xyz`, remove the domains
+   from the old Cloudflare Workers projects, and delete
+   `apps/storefront/wrangler.jsonc`.
 5. **Delete the Supabase project (owner's step)** once everything above
    works -- nothing in this repo uses it any more.
