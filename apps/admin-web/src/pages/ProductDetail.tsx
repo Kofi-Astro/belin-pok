@@ -40,6 +40,7 @@ import {
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { dateTime, imageUrl, money, sortVariants, titleCase, totalStock, variantLabel } from "@/lib/format";
+import { imageFiles, type UploadFailure, uploadPhotos } from "@/lib/photos";
 import { onlinePrice, useShopSettings } from "@/lib/pricing";
 import { useCategories } from "@/lib/queries";
 import type { AuditEntry, Product, Variant } from "@/lib/types";
@@ -716,27 +717,35 @@ function AddTypeModal({ product, onClose, onSaved }: { product: Product; onClose
 function PhotosCard({ product, editable, onChanged }: { product: Product; editable: boolean; onChanged: () => Promise<unknown> }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
+  // Upload progress ("4 of 9"), null when idle; files that failed last time.
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [failed, setFailed] = useState<UploadFailure[]>([]);
+  const [dragging, setDragging] = useState(false);
   // Cover photo first, then in display order.
   const ordered = [...product.images].sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.display_order - b.display_order);
 
-  // Each file is uploaded to the photo bucket through the API (which only
-  // accepts JPEG, PNG or WebP, and returns the storage path), then attached
-  // to the product. The first photo of a product with none becomes the cover.
-  const upload = async (files: FileList) => {
-    setUploading(true);
-    try {
-      for (const [i, file] of [...files].entries()) {
-        const path = await api.uploadPhoto(file);
-        await api.post(`/products/${product.id}/images`, { storage_path: path, is_primary: product.images.length === 0 && i === 0 });
-      }
-      await onChanged();
-      toast.success(files.length === 1 ? "Photo added" : `${files.length} photos added`);
-    } catch (err) {
-      toast.error(err);
-    } finally {
-      setUploading(false);
-    }
+  // Any number of photos at once (lib/photos.ts): each is shrunk, uploaded
+  // three at a time, and attached to the product as soon as it lands -- so
+  // they appear one by one with a running count, instead of all at the very
+  // end. The first photo of a product with none becomes the cover.
+  const upload = async (picked: FileList | File[]) => {
+    const files = imageFiles(picked);
+    if (!files.length || progress) return;
+    const firstIsCover = product.images.length === 0;
+    setFailed([]);
+    const failures = await uploadPhotos(
+      files,
+      async (path, index) => {
+        await api.post(`/products/${product.id}/images`, { storage_path: path, is_primary: firstIsCover && index === 0 });
+        await onChanged();
+      },
+      (done, total) => setProgress({ done, total }),
+    );
+    setProgress(null);
+    setFailed(failures);
+    const added = files.length - failures.length;
+    if (added) toast.success(added === 1 ? "Photo added" : `${added} photos added`);
+    if (failures.length) toast.error(`${failures.length} photo${failures.length === 1 ? "" : "s"} couldn't be added — see the list below`);
   };
 
   // Runs one photo action, then refreshes and confirms (or shows the error).
@@ -757,13 +766,66 @@ function PhotosCard({ product, editable, onChanged }: { product: Product; editab
         description="The cover photo is what shoppers see first."
         actions={
           editable && (
-            <Button size="sm" variant="secondary" icon={ImagePlus} loading={uploading} onClick={() => fileRef.current?.click()}>
-              Upload
+            <Button size="sm" variant="secondary" icon={ImagePlus} loading={!!progress} onClick={() => fileRef.current?.click()}>
+              {progress ? `Uploading ${progress.done} of ${progress.total}…` : "Upload photos"}
             </Button>
           )
         }
       />
-      <input ref={fileRef} type="file" multiple accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => e.target.files?.length && void upload(e.target.files)} />
+      {/* accept="image/*" opens phones' own photo gallery, where several can be
+          ticked at once (a list of exact types can fall back to a one-file
+          picker on Android). The value is cleared after each pick so the same
+          photos can be chosen again. */}
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.length) void upload([...e.target.files]);
+          e.target.value = "";
+        }}
+      />
+      {editable && (
+        // Drop zone: drag any number of photos from the computer onto here.
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            void upload(e.dataTransfer.files);
+          }}
+          className={`mx-5 mt-5 rounded-xl border-2 border-dashed px-4 py-3 text-center text-sm ${dragging ? "border-brand-500 bg-brand-50 text-brand-700" : "border-line text-muted"}`}
+        >
+          {progress ? (
+            <span className="font-semibold text-brand-700">
+              Uploading {progress.done} of {progress.total}…
+            </span>
+          ) : (
+            <>
+              Drag photos here, or{" "}
+              <button type="button" className="font-semibold text-brand-700 hover:underline" onClick={() => fileRef.current?.click()}>
+                choose several at once
+              </button>
+              . Large phone photos are shrunk automatically.
+            </>
+          )}
+        </div>
+      )}
+      {failed.length > 0 && (
+        <ul className="mx-5 mt-3 space-y-1 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800">
+          {failed.map((f) => (
+            <li key={f.name}>
+              <b>{f.name}</b>: {f.reason}
+            </li>
+          ))}
+        </ul>
+      )}
       {ordered.length === 0 ? (
         <EmptyState icon={ImagePlus} title="No photos yet" message="Products with photos sell far better online." />
       ) : (

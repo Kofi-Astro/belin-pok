@@ -5,6 +5,7 @@ import { Camera, ChevronDown, PackagePlus, Search } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { api } from "@/lib/api";
+import { imageFiles, uploadPhotos } from "@/lib/photos";
 import { primaryImage, sortVariants, variantLabel } from "@/lib/format";
 import { useCategories, useDebounced } from "@/lib/queries";
 import type { MovementType, Product, StockIntakeResult, Variant } from "@/lib/types";
@@ -163,9 +164,12 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
   const [mode, setMode] = useState<"new" | "existing">(fixedProduct ? "existing" : "new");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // New item: its photo (a local preview url, plus the storage path once
-  // uploaded), name, quantity, and the optional extra details.
-  const [photo, setPhoto] = useState<{ url: string; path: string | null; uploading: boolean } | null>(null);
+  // New item: its photos (each a local preview url, plus the storage path
+  // once uploaded; the first is the cover), name, quantity, and the
+  // optional extra details.
+  type PendingPhoto = { key: number; url: string; path: string | null; uploading: boolean };
+  const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+  const photo = photos[0] ?? null;
   const [name, setName] = useState("");
   const [qty, setQty] = useState("");
   const [more, setMore] = useState(false);
@@ -198,7 +202,7 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
   // Clears the item fields for the next one -- but not the mode, and not
   // the chosen product when the dialog belongs to one product.
   const reset = () => {
-    setPhoto(null);
+    setPhotos([]);
     setName("");
     setQty("");
     setCategoryId("");
@@ -218,15 +222,22 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
     onClose();
   };
 
-  const pickPhoto = async (file: File) => {
-    // Uploaded immediately, so saving the item is one quick request later.
-    setPhoto({ url: URL.createObjectURL(file), path: null, uploading: true });
-    try {
-      const path = await api.uploadPhoto(file);
-      setPhoto((p) => p && { ...p, path, uploading: false });
-    } catch (err) {
-      setPhoto(null);
-      setError(err instanceof Error ? err.message : String(err));
+  // Photos upload straight away, in the background (shrunk, three at a
+  // time -- lib/photos.ts), while the rest of the form is filled in; saving
+  // the item is then quick. Any number can be picked at once.
+  const pickPhotos = async (picked: File[]) => {
+    const files = imageFiles(picked);
+    if (!files.length) return;
+    const added = files.map((f) => ({ key: Math.random(), url: URL.createObjectURL(f), path: null, uploading: true }));
+    setPhotos((current) => [...current, ...added]);
+    const failures = await uploadPhotos(files, (path, index) =>
+      setPhotos((current) => current.map((p) => (p.key === added[index].key ? { ...p, path, uploading: false } : p))),
+    );
+    if (failures.length) {
+      // Drop the ones that didn't make it, and say which.
+      const failedKeys = new Set(failures.map((f) => added[files.findIndex((x) => x.name === f.name)]?.key));
+      setPhotos((current) => current.filter((p) => !failedKeys.has(p.key)));
+      setError(failures.map((f) => `${f.name}: ${f.reason}`).join(" · "));
     }
   };
 
@@ -251,10 +262,11 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
       // A broad item can go without a name: it's then named after its
       // category ("Joggers"), with brand/quality as its type.
       if (!name.trim() && !categoryId) return setError("Enter the item's name, or choose its category under More details.");
-      if (!photo?.path) return setError(photo?.uploading ? "The photo is still uploading — one moment." : "Add a photo of the item.");
+      if (!photo) return setError("Add a photo of the item.");
+      if (photos.some((p) => p.uploading)) return setError("Photos are still uploading — one moment.");
       body = {
         name: name.trim() || null,
-        image_storage_path: photo.path,
+        image_storage_path: photo.path!,
         quantity,
         category_id: categoryId || null,
         base_price: price ? Number(price) : null,
@@ -279,6 +291,12 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
     setError(null);
     try {
       const r = await api.post<StockIntakeResult>("/products/receive", body);
+      // The first photo went with the item as its cover; attach the rest.
+      if (mode === "new") {
+        for (const extra of photos.slice(1)) {
+          if (extra.path) await api.post(`/products/${r.product.id}/images`, { storage_path: extra.path, is_primary: false });
+        }
+      }
       await invalidate();
       const label = `+${quantity} ${r.product.name} (${variantLabel(r.variant)}) — ${r.variant.stock_quantity} in stock`;
       setLastSaved(label);
@@ -343,21 +361,30 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
                 className="relative flex h-28 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-line bg-canvas text-muted hover:border-brand-500"
               >
                 {photo ? (
-                  <img src={photo.url} alt="" className={`h-full w-full object-cover ${photo.uploading ? "opacity-50" : ""}`} />
+                  <>
+                    <img src={photo.url} alt="" className={`h-full w-full object-cover ${photos.some((p) => p.uploading) ? "opacity-50" : ""}`} />
+                    {photos.length > 1 && (
+                      <span className="absolute right-1 bottom-1 rounded-full bg-ink/80 px-1.5 text-[11px] font-bold text-white">+{photos.length - 1}</span>
+                    )}
+                  </>
                 ) : (
-                  <span className="flex flex-col items-center gap-1 text-xs font-semibold">
-                    <Camera className="h-5 w-5" /> Photo
+                  <span className="flex flex-col items-center gap-1 text-center text-xs font-semibold">
+                    <Camera className="h-5 w-5" /> Photos
                   </span>
                 )}
               </button>
-              {/* capture="environment": opens the back camera on phones and tablets. */}
+              {/* Several at once; phones offer the camera or the photo gallery
+                  (accept="image/*" gets the gallery's multi-select). */}
               <input
                 ref={fileRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
-                capture="environment"
+                multiple
+                accept="image/*"
                 className="hidden"
-                onChange={(e) => e.target.files?.[0] && void pickPhoto(e.target.files[0])}
+                onChange={(e) => {
+                  if (e.target.files?.length) void pickPhotos([...e.target.files]);
+                  e.target.value = "";
+                }}
               />
               <div className="flex-1 space-y-3">
                 <Field label="Item name">

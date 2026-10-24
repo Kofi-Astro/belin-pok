@@ -18,6 +18,7 @@ import { Button, Card, CardHeader, ErrorState, Field, FormError, IconButton, Inp
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { dateTime, imageUrl, primaryImage } from "@/lib/format";
+import { imageFiles, uploadPhotos } from "@/lib/photos";
 import { useDebounced } from "@/lib/queries";
 import type { HighlightIcon, Product, StorefrontContent, StorefrontContentRead } from "@/lib/types";
 
@@ -155,18 +156,17 @@ function BannerCard({ value, onChange }: { value: StorefrontContent["hero"]; onC
   const [uploading, setUploading] = useState(false);
   const patch = (p: Partial<StorefrontContent["hero"]>) => onChange({ ...value, ...p });
 
+  // Shrunk and uploaded together (lib/photos.ts), up to the three allowed.
   const upload = async (files: FileList) => {
     setUploading(true);
-    try {
-      const room = 3 - value.image_paths.length;
-      const paths = [];
-      for (const file of [...files].slice(0, room)) paths.push(await api.uploadPhoto(file));
-      patch({ image_paths: [...value.image_paths, ...paths] });
-    } catch (err) {
-      toast.error(err);
-    } finally {
-      setUploading(false);
-    }
+    const room = 3 - value.image_paths.length;
+    const paths: string[] = [];
+    const failures = await uploadPhotos(imageFiles(files).slice(0, room), (path, index) => {
+      paths[index] = path;
+    });
+    patch({ image_paths: [...value.image_paths, ...paths.filter(Boolean)] });
+    if (failures.length) toast.error(failures.map((f) => `${f.name}: ${f.reason}`).join(" · "));
+    setUploading(false);
   };
 
   return (
@@ -214,7 +214,17 @@ function BannerCard({ value, onChange }: { value: StorefrontContent["hero"]; onC
               </Button>
             )}
           </div>
-          <input ref={fileRef} type="file" multiple accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => e.target.files?.length && void upload(e.target.files)} />
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.length) void upload(e.target.files);
+              e.target.value = "";
+            }}
+          />
           <p className="mt-1.5 text-xs text-muted">Up to three, shown on computers. With none, the three newest product photos are used.</p>
         </div>
       </div>
