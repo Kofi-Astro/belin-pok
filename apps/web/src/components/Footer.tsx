@@ -1,20 +1,29 @@
 // The site-wide footer: a short blurb, shop links (including the first few
 // categories, so the footer stays in step with what the shop sells),
-// account links and -- if configured -- contact details. A server
+// account links, and contact details and social links if any are set. The
+// blurb, contact details and social links are edited on the admin's Website
+// page (lib/content.ts). A server
 // component: the categories are fetched once on the server and cached
 // with the rest of the catalogue (see lib/catalog.ts).
 import { Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 import Link from "next/link";
 
 import { getCategories } from "@/lib/catalog";
-import { CONTACT } from "@/lib/format";
+import { contactDetails, getStorefront, whatsappLink } from "@/lib/content";
 
 import { Logo } from "./Logo";
 
 export async function Footer() {
-  const categories = await getCategories();
-  // Only show the "Get in touch" column if at least one detail is set.
-  const hasContact = Object.values(CONTACT).some(Boolean);
+  const [categories, content] = await Promise.all([getCategories(), getStorefront()]);
+  const contact = contactDetails(content);
+  const social = [
+    ["Instagram", content.social.instagram],
+    ["Facebook", content.social.facebook],
+    ["TikTok", content.social.tiktok],
+    ["X", content.social.x],
+  ].filter(([, url]) => url);
+  // Only show the "Get in touch" column if there's something to put in it.
+  const hasContact = Object.values(contact).some(Boolean) || social.length > 0;
 
   return (
     <footer className="mt-24 bg-brand-950 text-white/75">
@@ -22,9 +31,7 @@ export async function Footer() {
         {/* Brand column: the logo (light version, for the dark background). */}
         <div className="space-y-4">
           <Logo light />
-          <p className="max-w-xs text-sm leading-relaxed text-white/60">
-            Caps, tees, jackets and everyday menswear — for walk-in customers and for businesses buying wholesale.
-          </p>
+          {content.footer_blurb && <p className="max-w-xs text-sm leading-relaxed text-white/60">{content.footer_blurb}</p>}
         </div>
 
         <div>
@@ -77,44 +84,53 @@ export async function Footer() {
           </ul>
         </div>
 
-        {/* Only details actually configured for this deployment are shown --
-            see CONTACT in lib/format.ts. */}
+        {/* Only details actually set are shown -- see contactDetails in
+            lib/content.ts. */}
         {hasContact && (
           <div>
             <h3 className="mb-4 text-xs font-bold tracking-[0.18em] text-white uppercase">Get in touch</h3>
             <ul className="space-y-3 text-sm">
-              {CONTACT.whatsapp && (
+              {contact.whatsapp && (
                 <li className="flex items-center gap-2.5">
                   <MessageCircle className="h-4 w-4 text-gold" />
-                  {/* wa.me links want digits only (no +, spaces or dashes). */}
-                  <a href={`https://wa.me/${CONTACT.whatsapp.replace(/\D/g, "")}`} className="hover:text-white">
+                  <a href={whatsappLink(contact.whatsapp)} className="hover:text-white">
                     WhatsApp us
                   </a>
                 </li>
               )}
-              {CONTACT.phone && (
+              {contact.phone && (
                 <li className="flex items-center gap-2.5">
                   <Phone className="h-4 w-4 text-gold" />
-                  <a href={`tel:${CONTACT.phone}`} className="hover:text-white">
-                    {CONTACT.phone}
+                  <a href={`tel:${contact.phone}`} className="hover:text-white">
+                    {contact.phone}
                   </a>
                 </li>
               )}
-              {CONTACT.email && (
+              {contact.email && (
                 <li className="flex items-center gap-2.5">
                   <Mail className="h-4 w-4 text-gold" />
-                  <a href={`mailto:${CONTACT.email}`} className="hover:text-white">
-                    {CONTACT.email}
+                  <a href={`mailto:${contact.email}`} className="hover:text-white">
+                    {contact.email}
                   </a>
                 </li>
               )}
-              {CONTACT.address && (
+              {contact.address && (
                 <li className="flex items-start gap-2.5">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
-                  <span>{CONTACT.address}</span>
+                  <span>{contact.address}</span>
                 </li>
               )}
             </ul>
+            {/* Social pages, as plain labelled links. */}
+            {social.length > 0 && (
+              <p className="mt-5 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                {social.map(([label, url]) => (
+                  <a key={label} href={url} target="_blank" rel="noopener noreferrer" className="font-semibold text-white hover:text-gold">
+                    {label}
+                  </a>
+                ))}
+              </p>
+            )}
           </div>
         )}
       </div>

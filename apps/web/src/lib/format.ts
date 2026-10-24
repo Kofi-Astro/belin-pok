@@ -44,13 +44,4 @@ export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GH", { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** Optional shop contact details, set per deployment. Anything unset is
- * simply not shown -- the site never displays placeholder contact info. */
-export const CONTACT = {
-  phone: process.env.NEXT_PUBLIC_CONTACT_PHONE || null,
-  whatsapp: process.env.NEXT_PUBLIC_CONTACT_WHATSAPP || null,
-  email: process.env.NEXT_PUBLIC_CONTACT_EMAIL || null,
-  address: process.env.NEXT_PUBLIC_SHOP_ADDRESS || null,
-};
-
 export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://belpok.xyz").replace(/\/$/, "");

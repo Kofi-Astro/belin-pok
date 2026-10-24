@@ -25,6 +25,8 @@ export const api = {
   },
   post: async <T>(path: string, body: unknown = {}) =>
     (await session.fetch<T>(path, { method: "POST", body: JSON.stringify(body) })).data,
+  put: async <T>(path: string, body: unknown) =>
+    (await session.fetch<T>(path, { method: "PUT", body: JSON.stringify(body) })).data,
   patch: async <T>(path: string, body: unknown) =>
     (await session.fetch<T>(path, { method: "PATCH", body: JSON.stringify(body) })).data,
   /** DELETE, with optional query values (e.g. the reason an owner gives

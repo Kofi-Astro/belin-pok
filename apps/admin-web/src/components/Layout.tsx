@@ -7,6 +7,7 @@ import {
   BarChart3,
   Boxes,
   ClipboardList,
+  Globe,
   History,
   LayoutDashboard,
   LogOut,
@@ -61,6 +62,10 @@ const NAV: { heading: string; items: NavItem[] }[] = [
       { to: "/inventory", label: "Inventory", icon: Boxes },
       { to: "/categories", label: "Categories", icon: Tags, show: (c) => c.manageCatalog },
     ],
+  },
+  {
+    heading: "Online shop",
+    items: [{ to: "/website", label: "Website", icon: Globe, show: (c) => c.manageCatalog }],
   },
   {
     heading: "Team",

@@ -2,7 +2,7 @@ import { Boxes, CreditCard, PackageCheck, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { CONTACT } from "@/lib/format";
+import { contactDetails, getStorefront, whatsappLink } from "@/lib/content";
 
 // Title and description for the browser tab and search results.
 export const metadata: Metadata = {
@@ -13,7 +13,9 @@ export const metadata: Metadata = {
 /** How wholesale works. Wholesale accounts are set up by the shop (staff
  * approve them in the admin app), so this page explains the offer and how
  * to get in touch -- using whichever contact details are configured. */
-export default function WholesalePage() {
+export default async function WholesalePage() {
+  // Contact details from the admin's Website page (or build-time settings).
+  const contact = contactDetails(await getStorefront());
   return (
     <>
       <section className="bg-brand-900 text-white">
@@ -59,27 +61,27 @@ export default function WholesalePage() {
             prices apply whenever you buy from us.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            {CONTACT.whatsapp && (
-              <a href={`https://wa.me/${CONTACT.whatsapp.replace(/\D/g, "")}`} className="btn-primary">
+            {contact.whatsapp && (
+              <a href={whatsappLink(contact.whatsapp)} className="btn-primary">
                 Message us on WhatsApp
               </a>
             )}
-            {CONTACT.phone && (
-              <a href={`tel:${CONTACT.phone}`} className="btn border border-white/30 text-white hover:bg-white/10">
-                Call {CONTACT.phone}
+            {contact.phone && (
+              <a href={`tel:${contact.phone}`} className="btn border border-white/30 text-white hover:bg-white/10">
+                Call {contact.phone}
               </a>
             )}
-            {CONTACT.email && (
-              <a href={`mailto:${CONTACT.email}?subject=Wholesale%20account`} className="btn border border-white/30 text-white hover:bg-white/10">
+            {contact.email && (
+              <a href={`mailto:${contact.email}?subject=Wholesale%20account`} className="btn border border-white/30 text-white hover:bg-white/10">
                 Email us
               </a>
             )}
             {/* No contact details configured: point people to the shop itself. */}
-            {!CONTACT.whatsapp && !CONTACT.phone && !CONTACT.email && (
+            {!contact.whatsapp && !contact.phone && !contact.email && (
               <p className="font-semibold text-gold">Visit the shop and ask for a wholesale account.</p>
             )}
           </div>
-          {CONTACT.address && <p className="mt-6 text-sm text-white/60">{CONTACT.address}</p>}
+          {contact.address && <p className="mt-6 text-sm text-white/60">{contact.address}</p>}
         </div>
       </section>
 

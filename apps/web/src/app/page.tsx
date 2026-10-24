@@ -1,20 +1,79 @@
-// The home page: a hero with the newest photos, what the shop offers,
-// category tiles, new arrivals and a wholesale pitch. Server-rendered from
-// the public catalogue, so it always reflects what's live -- there's no
-// separate "homepage content" to keep up to date.
-import { ArrowRight, BellRing, Boxes, Store, Truck } from "lucide-react";
+// The home page: a banner, the shop's selling points, an optional row of
+// hand-picked featured products, category tiles, new arrivals and a
+// wholesale pitch. The words, buttons, banner photos and which sections show
+// are edited on the admin's Website page (lib/content.ts); the products,
+// categories and their photos come live from the catalogue. Server-rendered,
+// so it's real HTML for search engines and link previews.
+import {
+  ArrowRight,
+  BellRing,
+  Boxes,
+  Clock,
+  CreditCard,
+  Heart,
+  type LucideIcon,
+  Phone,
+  ShieldCheck,
+  Sparkles,
+  Star,
+  Store,
+  Tag,
+  Truck,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
 import { ProductGrid } from "@/components/ProductCard";
 import { getCategories, getProducts } from "@/lib/catalog";
+import { getStorefront, type HighlightIcon, isExternal } from "@/lib/content";
 import { imageUrl, primaryImage } from "@/lib/format";
+
+// The icons a selling point can use (chosen on the admin's Website page).
+const ICONS: Record<HighlightIcon, LucideIcon> = {
+  store: Store,
+  truck: Truck,
+  boxes: Boxes,
+  bell: BellRing,
+  tag: Tag,
+  shield: ShieldCheck,
+  star: Star,
+  clock: Clock,
+  card: CreditCard,
+  phone: Phone,
+  heart: Heart,
+  sparkles: Sparkles,
+};
+
+/** A button from the admin: a page on this site, or a full web address
+ * (opened in a new tab). Renders nothing without a label. */
+function CtaLink({ href, label, className, arrow }: { href: string; label: string; className: string; arrow?: boolean }) {
+  if (!label.trim() || !href) return null;
+  const inner = (
+    <>
+      {label} {arrow && <ArrowRight className="h-4 w-4" />}
+    </>
+  );
+  return isExternal(href) ? (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+      {inner}
+    </a>
+  ) : (
+    <Link href={href} className={className}>
+      {inner}
+    </Link>
+  );
+}
 
 export default async function HomePage() {
   // One newest-first page of products feeds both the "New arrivals" grid
   // and each category tile's photo (the newest product in it), rather
   // than a request per category.
-  const [categories, { products }] = await Promise.all([getCategories(), getProducts({ sort: "newest", limit: 100 })]);
+  const [content, categories, { products }] = await Promise.all([
+    getStorefront(),
+    getCategories(),
+    getProducts({ sort: "newest", limit: 100 }),
+  ]);
+  const { hero, wholesale } = content;
 
   // category id -> photo of its newest product (products are newest-first,
   // so the first one seen per category wins).
@@ -23,12 +82,18 @@ export default async function HomePage() {
     const img = primaryImage(p);
     if (img && !tileImage.has(p.category_id)) tileImage.set(p.category_id, img.storage_path);
   }
-  // The three newest photos, fanned out in the hero.
-  const heroImages = products.map(primaryImage).filter(Boolean).slice(0, 3) as { storage_path: string }[];
+  // Banner photos: the ones uploaded on the Website page, or else the
+  // three newest product photos.
+  const heroImages = hero.image_paths.length
+    ? hero.image_paths
+    : (products.map(primaryImage).filter(Boolean) as { storage_path: string }[]).slice(0, 3).map((i) => i.storage_path);
+  // Fewer than three *product* photos (a brand-new shop) would look sparse,
+  // so that case shows the name instead; uploaded banner photos always show.
+  const showPhotos = hero.image_paths.length > 0 || heroImages.length >= 3;
 
   return (
     <>
-      {/* Hero */}
+      {/* Banner */}
       <section className="relative overflow-hidden bg-brand-900 text-white">
         {/* Decoration only: a faint dot pattern and a soft glow behind the text. */}
         <div
@@ -41,37 +106,36 @@ export default async function HomePage() {
         <div className="absolute -top-40 -right-40 h-[32rem] w-[32rem] rounded-full bg-accent/25 blur-3xl" />
         <div className="container-page relative grid items-center gap-12 py-16 lg:grid-cols-2 lg:py-24">
           <div className="max-w-xl">
-            <p className="eyebrow text-gold">New season · Now in store</p>
-            <h1 className="mt-5 text-4xl leading-[1.05] font-extrabold tracking-tight sm:text-5xl lg:text-6xl">
-              Everyday menswear, stocked deep.
-            </h1>
-            <p className="mt-6 text-lg leading-relaxed text-white/75">
-              Caps, tees, jackets and the rest of the wardrobe — for the walk-in shopper and the business buying by the
-              dozen.
-            </p>
+            {hero.eyebrow && <p className="eyebrow text-gold">{hero.eyebrow}</p>}
+            <h1 className="mt-5 text-4xl leading-[1.05] font-extrabold tracking-tight sm:text-5xl lg:text-6xl">{hero.title}</h1>
+            {hero.subtitle && <p className="mt-6 text-lg leading-relaxed text-white/75">{hero.subtitle}</p>}
             <div className="mt-9 flex flex-wrap gap-3">
-              <Link href="/shop?sort=newest" className="btn-primary px-8">
-                Shop new arrivals <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link href="/wholesale" className="btn border border-white/30 text-white hover:bg-white/10">
-                Buying wholesale?
-              </Link>
+              <CtaLink href={hero.primary_link} label={hero.primary_label} className="btn-primary px-8" arrow />
+              <CtaLink href={hero.secondary_link} label={hero.secondary_label} className="btn border border-white/30 text-white hover:bg-white/10" />
             </div>
           </div>
 
-          {/* Fewer than three photos (a brand-new shop) would look sparse, so
-             show the name in a simple panel instead. Desktop only either way. */}
-          {heroImages.length >= 3 ? (
+          {/* Photos: desktop only. Three are fanned out; one or two (uploaded
+              on the Website page) sit side by side. */}
+          {showPhotos && heroImages.length >= 3 ? (
             <div className="relative hidden h-[30rem] lg:block">
-              {heroImages.map((img, i) => (
+              {heroImages.slice(0, 3).map((path, i) => (
                 <div
-                  key={img.storage_path}
+                  key={path}
                   className={`absolute overflow-hidden rounded-3xl shadow-2xl ring-1 ring-white/10 ${
                     // Position, size and tilt of each of the three photos.
                     ["top-0 left-8 h-80 w-60 -rotate-3", "top-12 right-4 h-96 w-72 rotate-2", "bottom-0 left-36 h-64 w-52 rotate-1"][i]
                   }`}
                 >
-                  <Image src={imageUrl(img.storage_path)} alt="" fill sizes="300px" className="object-cover" priority />
+                  <Image src={imageUrl(path)} alt="" fill sizes="300px" className="object-cover" priority />
+                </div>
+              ))}
+            </div>
+          ) : showPhotos ? (
+            <div className={`hidden h-[28rem] gap-4 lg:grid ${heroImages.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+              {heroImages.map((path) => (
+                <div key={path} className="relative overflow-hidden rounded-3xl shadow-2xl ring-1 ring-white/10">
+                  <Image src={imageUrl(path)} alt="" fill sizes="(min-width: 1024px) 40vw, 1px" className="object-cover" priority />
                 </div>
               ))}
             </div>
@@ -83,31 +147,42 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Why shop here */}
-      <section className="border-b border-line bg-white">
-        <div className="container-page grid grid-cols-2 gap-6 py-8 lg:grid-cols-4">
-          {/* Four short selling points, as data so the markup isn't repeated. */}
-          {[
-            { icon: Store, title: "Pick up in store", text: "Order online, collect at the shop" },
-            { icon: Truck, title: "Or get it delivered", text: "We arrange delivery after you order" },
-            { icon: Boxes, title: "Wholesale pricing", text: "Pack and bulk rates for businesses" },
-            { icon: BellRing, title: "Back-in-stock alerts", text: "Get notified when sizes return" },
-          ].map(({ icon: Icon, title, text }) => (
-            <div key={title} className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700">
-                <Icon className="h-5 w-5" />
-              </span>
-              <div>
-                <p className="text-sm font-bold">{title}</p>
-                <p className="text-xs text-muted">{text}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* Selling points */}
+      {content.highlights.length > 0 && (
+        <section className="border-b border-line bg-white">
+          <div className={`container-page grid grid-cols-2 gap-6 py-8 ${content.highlights.length >= 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
+            {content.highlights.map(({ icon, title, text }) => {
+              const Icon = ICONS[icon] ?? Store;
+              return (
+                <div key={title} className="flex items-start gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold">{title}</p>
+                    {text && <p className="text-xs text-muted">{text}</p>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Featured: hand-picked on the Website page (live products only). */}
+      {content.featured.enabled && content.featured_products.length > 0 && (
+        <section className="container-page pt-20">
+          <div className="mb-8">
+            <p className="eyebrow">Hand-picked</p>
+            <h2 className="mt-2 text-3xl font-extrabold tracking-tight">{content.featured.title}</h2>
+            {content.featured.subtitle && <p className="mt-2 max-w-2xl text-muted">{content.featured.subtitle}</p>}
+          </div>
+          <ProductGrid products={content.featured_products} />
+        </section>
+      )}
 
       {/* Shop by category */}
-      {categories.length > 0 && (
+      {content.show_categories && categories.length > 0 && (
         <section className="container-page pt-20">
           <div className="mb-8 flex items-end justify-between gap-4">
             <div>
@@ -150,56 +225,52 @@ export default async function HomePage() {
       )}
 
       {/* New arrivals */}
-      <section className="container-page pt-20">
-        <div className="mb-8 flex items-end justify-between gap-4">
-          <div>
-            <p className="eyebrow">Just landed</p>
-            <h2 className="mt-2 text-3xl font-extrabold tracking-tight">New arrivals</h2>
-          </div>
-          <Link href="/shop?sort=newest" className="text-sm font-bold text-brand-700 hover:underline">
-            Shop all new
-          </Link>
-        </div>
-        {/* Two rows on desktop; an empty shop gets a friendly placeholder. */}
-        {products.length > 0 ? (
-          <ProductGrid products={products.slice(0, 8)} />
-        ) : (
-          <div className="rounded-3xl border border-dashed border-line bg-white px-6 py-20 text-center">
-            <p className="text-lg font-bold">New stock is on its way</p>
-            <p className="mt-2 text-sm text-muted">Check back soon — we&apos;re adding products to the shop.</p>
-          </div>
-        )}
-      </section>
-
-      {/* Wholesale */}
-      <section className="container-page pt-20">
-        <div className="grid overflow-hidden rounded-3xl bg-ink text-white lg:grid-cols-5">
-          <div className="p-10 lg:col-span-3 lg:p-14">
-            <p className="eyebrow text-gold">For businesses</p>
-            <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">Stocking your own shop?</h2>
-            <p className="mt-4 max-w-lg leading-relaxed text-white/70">
-              Approved wholesale customers get bulk and factory-pack pricing, and can buy on account. Tell us about your
-              business and we&apos;ll set you up.
-            </p>
-            <Link href="/wholesale" className="btn-primary mt-8">
-              How wholesale works <ArrowRight className="h-4 w-4" />
+      {content.show_new_arrivals && (
+        <section className="container-page pt-20">
+          <div className="mb-8 flex items-end justify-between gap-4">
+            <div>
+              <p className="eyebrow">Just landed</p>
+              <h2 className="mt-2 text-3xl font-extrabold tracking-tight">New arrivals</h2>
+            </div>
+            <Link href="/shop?sort=newest" className="text-sm font-bold text-brand-700 hover:underline">
+              Shop all new
             </Link>
           </div>
-          <div className="grid grid-cols-2 gap-px bg-white/10 lg:col-span-2">
-            {[
-              ["Pack pricing", "Factory-sealed packs at a better unit price"],
-              ["Bulk rates", "Wholesale prices on loose units"],
-              ["Buy on account", "Credit for approved businesses"],
-              ["One supplier", "Caps to joggers in one order"],
-            ].map(([title, text]) => (
-              <div key={title} className="bg-ink p-6">
-                <p className="font-bold text-gold">{title}</p>
-                <p className="mt-1 text-sm text-white/60">{text}</p>
+          {/* Two rows on desktop; an empty shop gets a friendly placeholder. */}
+          {products.length > 0 ? (
+            <ProductGrid products={products.slice(0, 8)} />
+          ) : (
+            <div className="rounded-3xl border border-dashed border-line bg-white px-6 py-20 text-center">
+              <p className="text-lg font-bold">New stock is on its way</p>
+              <p className="mt-2 text-sm text-muted">Check back soon — we&apos;re adding products to the shop.</p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Wholesale */}
+      {wholesale.enabled && (
+        <section className="container-page pt-20">
+          <div className="grid overflow-hidden rounded-3xl bg-ink text-white lg:grid-cols-5">
+            <div className={`p-10 lg:p-14 ${wholesale.points.length ? "lg:col-span-3" : "lg:col-span-5"}`}>
+              {wholesale.eyebrow && <p className="eyebrow text-gold">{wholesale.eyebrow}</p>}
+              <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">{wholesale.title}</h2>
+              {wholesale.text && <p className="mt-4 max-w-lg leading-relaxed text-white/70">{wholesale.text}</p>}
+              <CtaLink href={wholesale.button_link} label={wholesale.button_label} className="btn-primary mt-8" arrow />
+            </div>
+            {wholesale.points.length > 0 && (
+              <div className="grid grid-cols-2 gap-px bg-white/10 lg:col-span-2">
+                {wholesale.points.map(({ title, text }) => (
+                  <div key={title} className="bg-ink p-6">
+                    <p className="font-bold text-gold">{title}</p>
+                    {text && <p className="mt-1 text-sm text-white/60">{text}</p>}
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </>
   );
 }

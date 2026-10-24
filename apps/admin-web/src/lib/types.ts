@@ -413,3 +413,44 @@ export type ShopSettings = {
   online_price_rounding: number;
   updated_at: string;
 };
+
+// ---------- the website's editable content (GET/PUT /storefront) ----------
+
+/** Icons a selling point can use; the website draws each one. */
+export type HighlightIcon = "store" | "truck" | "boxes" | "bell" | "tag" | "shield" | "star" | "clock" | "card" | "phone" | "heart" | "sparkles";
+
+/** Everything the Website page edits. Mirrors StorefrontContent in
+ * services/api/app/schemas.py, which supplies the defaults. */
+export type StorefrontContent = {
+  announcement: { enabled: boolean; text: string; extra: string };
+  hero: {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    primary_label: string;
+    primary_link: string;
+    secondary_label: string;
+    secondary_link: string;
+    // Uploaded photo storage paths; empty = the newest products' photos.
+    image_paths: string[];
+  };
+  highlights: { icon: HighlightIcon; title: string; text: string }[];
+  show_categories: boolean;
+  show_new_arrivals: boolean;
+  featured: { enabled: boolean; title: string; subtitle: string; product_ids: string[] };
+  wholesale: {
+    enabled: boolean;
+    eyebrow: string;
+    title: string;
+    text: string;
+    button_label: string;
+    button_link: string;
+    points: { title: string; text: string }[];
+  };
+  footer_blurb: string;
+  contact: { phone: string; whatsapp: string; email: string; address: string };
+  social: { instagram: string; facebook: string; tiktok: string; x: string };
+};
+
+export type StorefrontContentRead = { content: StorefrontContent; updated_at: string; updated_by_name: string | null };
+

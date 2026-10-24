@@ -27,6 +27,7 @@ import { ReportsPage } from "@/pages/Reports";
 import { SalesJournalPage } from "@/pages/SalesJournal";
 import { ShopSettingsPage } from "@/pages/ShopSettings";
 import { AccountPage, CategoriesPage, StaffPage } from "@/pages/Settings";
+import { WebsitePage } from "@/pages/Website";
 
 // Data is cached briefly and refetched when the window regains focus, so a
 // tab left open at the counter catches up with sales made elsewhere.
@@ -82,6 +83,7 @@ const router = createBrowserRouter([
           { path: "staff", element: <StaffPage /> },
           { path: "account", element: <AccountPage /> },
           { path: "settings", element: <ShopSettingsPage /> },
+          { path: "website", element: <WebsitePage /> },
           // An unknown address goes to the home page rather than a dead end.
           { path: "*", element: <Home /> },
         ],
