@@ -24,6 +24,7 @@ from app.routers import (
     shop_settings,
     staff,
     stock_movements,
+    storefront,
     uploads,
     variants,
 )
@@ -66,3 +67,4 @@ app.include_router(pos_sales.router)
 app.include_router(inventory.router)
 app.include_router(uploads.router)
 app.include_router(shop_settings.router)
+app.include_router(storefront.router)

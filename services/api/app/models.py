@@ -788,3 +788,17 @@ class ShopSettings(Base):
     online_price_rounding: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))
+
+
+class StorefrontContent(Base):
+    """The website's editable content -- one row (id = 1) holding a JSON
+    document whose shape is app/schemas.py's StorefrontContent. See
+    migrations/20261024120001_storefront_content.sql and
+    app/routers/storefront.py."""
+
+    __tablename__ = "storefront_content"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    content: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))

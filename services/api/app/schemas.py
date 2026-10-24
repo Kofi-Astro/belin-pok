@@ -17,6 +17,7 @@ or has a non-obvious validation rule.
 
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -1072,3 +1073,183 @@ class ShopSettingsUpdate(BaseModel):
     online_markup_percent: float | None = Field(default=None, ge=0, le=200)
     # 0 = no rounding; otherwise online prices round *up* to a multiple of this.
     online_price_rounding: float | None = Field(default=None, ge=0, le=100)
+
+
+# ---------- storefront content (app/routers/storefront.py) ----------
+#
+# What the admin's Website page edits and the website shows. Every field
+# has a default -- the site's original wording -- so a stored document only
+# needs the fields that were changed, and the site looks exactly as before
+# until someone edits it. Lengths are capped so a slip of the keyboard
+# can't break a page layout.
+
+# Icons the selling points can use; the website maps each to a drawing.
+HighlightIcon = Literal[
+    "store", "truck", "boxes", "bell", "tag", "shield", "star", "clock", "card", "phone", "heart", "sparkles"
+]
+
+
+def _check_link(value: str | None) -> str | None:
+    """Button links: a page on this site ("/shop", "/category/caps") or a
+    full web address. Anything else (javascript:, typos) is refused."""
+    if value is None or value == "":
+        return value
+    value = value.strip()
+    if value.startswith("/") and not value.startswith("//"):
+        return value
+    if value.startswith(("https://", "http://")):
+        return value
+    raise ValueError("Links must be a page on the site (starting with /) or a full https:// address")
+
+
+class StorefrontAnnouncement(BaseModel):
+    """The thin strip above the header."""
+
+    enabled: bool = True
+    text: str = Field(default="Retail & wholesale menswear", max_length=120)
+    # Shown after the text on wider screens only.
+    extra: str = Field(default="Pick up in store or get it delivered", max_length=120)
+
+
+class StorefrontHero(BaseModel):
+    """The home page's opening banner."""
+
+    eyebrow: str = Field(default="New season · Now in store", max_length=60)
+    title: str = Field(default="Everyday menswear, stocked deep.", max_length=90)
+    subtitle: str = Field(
+        default="Caps, tees, jackets and the rest of the wardrobe — for the walk-in shopper and the business "
+        "buying by the dozen.",
+        max_length=300,
+    )
+    primary_label: str = Field(default="Shop new arrivals", max_length=40)
+    primary_link: str = Field(default="/shop?sort=newest", max_length=300)
+    # Leave the label empty to hide the second button.
+    secondary_label: str = Field(default="Buying wholesale?", max_length=40)
+    secondary_link: str = Field(default="/wholesale", max_length=300)
+    # Up to three uploaded photos (storage paths, via POST
+    # /uploads/product-photo). Empty: the newest products' photos.
+    image_paths: list[str] = Field(default_factory=list, max_length=3)
+
+    _links = field_validator("primary_link", "secondary_link")(_check_link)
+
+
+class StorefrontHighlight(BaseModel):
+    icon: HighlightIcon = "store"
+    title: str = Field(max_length=40)
+    text: str = Field(default="", max_length=80)
+
+
+def _default_highlights() -> list[StorefrontHighlight]:
+    return [
+        StorefrontHighlight(icon="store", title="Pick up in store", text="Order online, collect at the shop"),
+        StorefrontHighlight(icon="truck", title="Or get it delivered", text="We arrange delivery after you order"),
+        StorefrontHighlight(icon="boxes", title="Wholesale pricing", text="Pack and bulk rates for businesses"),
+        StorefrontHighlight(icon="bell", title="Back-in-stock alerts", text="Get notified when sizes return"),
+    ]
+
+
+class StorefrontFeatured(BaseModel):
+    """A hand-picked row of products on the home page."""
+
+    enabled: bool = False
+    title: str = Field(default="Featured", max_length=60)
+    subtitle: str = Field(default="", max_length=160)
+    # In display order. Products that aren't live are skipped on the site.
+    product_ids: list[uuid.UUID] = Field(default_factory=list, max_length=12)
+
+
+class StorefrontPoint(BaseModel):
+    title: str = Field(max_length=40)
+    text: str = Field(default="", max_length=80)
+
+
+def _default_wholesale_points() -> list[StorefrontPoint]:
+    return [
+        StorefrontPoint(title="Pack pricing", text="Factory-sealed packs at a better unit price"),
+        StorefrontPoint(title="Bulk rates", text="Wholesale prices on loose units"),
+        StorefrontPoint(title="Buy on account", text="Credit for approved businesses"),
+        StorefrontPoint(title="One supplier", text="Caps to joggers in one order"),
+    ]
+
+
+class StorefrontWholesale(BaseModel):
+    """The "For businesses" section at the bottom of the home page."""
+
+    enabled: bool = True
+    eyebrow: str = Field(default="For businesses", max_length=60)
+    title: str = Field(default="Stocking your own shop?", max_length=90)
+    text: str = Field(
+        default="Approved wholesale customers get bulk and factory-pack pricing, and can buy on account. "
+        "Tell us about your business and we'll set you up.",
+        max_length=400,
+    )
+    button_label: str = Field(default="How wholesale works", max_length=40)
+    button_link: str = Field(default="/wholesale", max_length=300)
+    points: list[StorefrontPoint] = Field(default_factory=_default_wholesale_points, max_length=4)
+
+    _links = field_validator("button_link")(_check_link)
+
+
+class StorefrontContact(BaseModel):
+    """Shown in the footer and on the wholesale page. Empty fields are left
+    out (the website falls back to its build-time contact settings)."""
+
+    phone: str = Field(default="", max_length=40)
+    whatsapp: str = Field(default="", max_length=40)
+    email: str = Field(default="", max_length=200)
+    address: str = Field(default="", max_length=300)
+
+
+class StorefrontSocial(BaseModel):
+    """Full addresses of the shop's social pages; empty ones are hidden."""
+
+    instagram: str = Field(default="", max_length=300)
+    facebook: str = Field(default="", max_length=300)
+    tiktok: str = Field(default="", max_length=300)
+    x: str = Field(default="", max_length=300)
+
+    @field_validator("instagram", "facebook", "tiktok", "x")
+    @classmethod
+    def _full_address(cls, value: str) -> str:
+        value = value.strip()
+        if value and not value.startswith(("https://", "http://")):
+            raise ValueError("Social links must be full addresses, starting with https://")
+        return value
+
+
+class StorefrontContent(BaseModel):
+    """Everything the admin can change about the website's look and words.
+    Unknown keys in a stored document are ignored, so removing a field
+    later doesn't break reading old documents."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    announcement: StorefrontAnnouncement = Field(default_factory=StorefrontAnnouncement)
+    hero: StorefrontHero = Field(default_factory=StorefrontHero)
+    highlights: list[StorefrontHighlight] = Field(default_factory=_default_highlights, max_length=4)
+    show_categories: bool = True
+    show_new_arrivals: bool = True
+    featured: StorefrontFeatured = Field(default_factory=StorefrontFeatured)
+    wholesale: StorefrontWholesale = Field(default_factory=StorefrontWholesale)
+    footer_blurb: str = Field(
+        default="Caps, tees, jackets and everyday menswear — for walk-in customers and for businesses "
+        "buying wholesale.",
+        max_length=300,
+    )
+    contact: StorefrontContact = Field(default_factory=StorefrontContact)
+    social: StorefrontSocial = Field(default_factory=StorefrontSocial)
+
+
+class StorefrontContentRead(BaseModel):
+    """GET /storefront (admin): the content, and when/who last changed it."""
+
+    content: StorefrontContent
+    updated_at: datetime
+    updated_by_name: str | None
+
+
+class PublicStorefront(StorefrontContent):
+    """GET /public/storefront: the content plus the featured products
+    themselves (live ones only, at online prices, in the chosen order)."""
+
+    featured_products: list[ProductWithVariants] = Field(default_factory=list)

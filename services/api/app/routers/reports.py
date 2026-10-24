@@ -643,6 +643,21 @@ def _money(amount: float) -> str:
     return f"GH₵{amount:,.2f}"
 
 
+# The Website page's sections, as the activity log names them.
+_WEBSITE_SECTIONS = {
+    "announcement": "announcement",
+    "hero": "banner",
+    "highlights": "selling points",
+    "show_categories": "categories section",
+    "show_new_arrivals": "new arrivals section",
+    "featured": "featured products",
+    "wholesale": "wholesale section",
+    "footer_blurb": "footer",
+    "contact": "contact details",
+    "social": "social links",
+}
+
+
 def _sale_summary(items: int, unsorted: int) -> str:
     """The activity log's headline for a counter sale: "Sold 3 items",
     "Rang up a basket as one amount", or both."""
@@ -863,6 +878,9 @@ async def activity_log(
                 "staff.update": f"Changed {person}'s account",
                 "staff.invite_link": f"Issued a new sign-in link for {person}",
                 "settings.update": "Changed online pricing",
+                "storefront.update": "Changed the website ("
+                + ", ".join(_WEBSITE_SECTIONS.get(k, k) for k in new.get("changed", []))
+                + ")",
             }.get(e.action, e.action)
             detail = None
             if e.action.endswith("update") or e.action == "settings.update":
