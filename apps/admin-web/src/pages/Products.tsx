@@ -180,6 +180,8 @@ export function ProductsPage() {
                       <Td className="text-muted">{categoryName(p.category_id)}</Td>
                       <Td>
                         <ProductStatusBadge status={p.status} />
+                        {/* Live with nothing to buy -- see the product page's warning. */}
+                        {p.status === "active" && p.variants.length === 0 && <p className="mt-1 text-xs font-semibold text-amber-700">No sizes yet</p>}
                       </Td>
                       <Td className="tabular text-right font-medium">{priceCell(p)}</Td>
                       {/* Red: nothing left. Amber: some size is at or below its alert level. */}

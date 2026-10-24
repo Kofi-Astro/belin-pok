@@ -38,6 +38,8 @@ export type Category = {
   parent_id: string | null;
   description: string | null;
   display_order: number;
+  // Storefront tile photo (storage path), or null.
+  image_path: string | null;
 };
 
 // draft: being set up, not sold anywhere. active: on the website, app and
@@ -456,6 +458,13 @@ export type StorefrontContent = {
   footer_blurb: string;
   contact: { phone: string; whatsapp: string; email: string; address: string };
   social: { instagram: string; facebook: string; tiktok: string; x: string };
+  // Mid-page promotion banner (off until switched on).
+  promo: { enabled: boolean; eyebrow: string; title: string; text: string; button_label: string; button_link: string; image_path: string | null };
+  // The "How to order" strip, and the payment methods it and the footer list.
+  show_how_to_order: boolean;
+  payment_methods: ("mobile_money" | "cash" | "card" | "bank_transfer")[];
+  // "Visit the shop": opening hours (one line per day/range) and a map link.
+  visit: { enabled: boolean; title: string; text: string; hours: string; map_link: string };
 };
 
 export type StorefrontContentRead = { content: StorefrontContent; updated_at: string; updated_by_name: string | null };

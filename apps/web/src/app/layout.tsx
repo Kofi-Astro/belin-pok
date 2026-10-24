@@ -10,6 +10,7 @@ import { Manrope } from "next/font/google";
 import { CartDrawer } from "@/components/CartDrawer";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
+import { WhatsAppButton } from "@/components/WhatsAppButton";
 import { AuthProvider } from "@/lib/auth";
 import { CartProvider } from "@/lib/cart";
 import { SITE_URL } from "@/lib/format";
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <main className="flex-1">{children}</main>
             <Footer />
             <CartDrawer />
+            <WhatsAppButton />
           </CartProvider>
         </AuthProvider>
       </body>

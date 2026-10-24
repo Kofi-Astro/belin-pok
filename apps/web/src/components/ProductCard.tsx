@@ -4,6 +4,8 @@ import Link from "next/link";
 import { formatPrice, imageUrl, priceRange, totalStock } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
+import { GarmentArt } from "./GarmentArt";
+
 // Products added in the last three weeks get a "New" badge.
 const NEW_FOR_DAYS = 21;
 
@@ -45,11 +47,14 @@ export function ProductCard({ product, priority = false }: { product: Product; p
             )}
           </>
         ) : (
-          <div className="flex h-full items-center justify-center text-sm font-semibold text-brand-700/40">No photo</div>
+          // No photo yet: a drawing of the garment instead of an empty box.
+          <GarmentArt name={product.name} className="transition duration-500 group-hover:scale-[1.03]" />
         )}
-        {/* Badge: Sold out takes precedence over New. */}
+        {/* Badge: Coming soon (no sizes to buy yet), then Sold out, then New. */}
         <div className="absolute top-3 left-3 flex gap-1.5">
-          {soldOut ? (
+          {product.variants.length === 0 ? (
+            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-accent shadow-sm">Coming soon</span>
+          ) : soldOut ? (
             <span className="rounded-full bg-ink px-2.5 py-1 text-[11px] font-bold text-white">Sold out</span>
           ) : (
             isNew && <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-brand-700 shadow-sm">New</span>

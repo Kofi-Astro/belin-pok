@@ -163,6 +163,14 @@ export function ProductDetailPage() {
         </div>
       )}
 
+      {/* Live but nothing to buy: the website shows it as "Coming soon". */}
+      {p.status === "active" && p.variants.length === 0 && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          This product is live but has <b>no sizes yet</b>, so the website shows it as “Coming soon” and nobody can buy it. Add a size (or{" "}
+          <b>Add a type</b>) below, then receive stock for it.
+        </div>
+      )}
+
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
           <DetailsCard product={p} editable={can.manageCatalog} onSaved={refresh} />

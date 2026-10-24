@@ -10,6 +10,8 @@ export type Category = {
   slug: string;
   description: string | null;
   display_order: number;
+  // Tile photo set in the admin, or null.
+  image_path?: string | null;
 };
 
 // A product photo. storage_path is turned into a URL by imageUrl() in

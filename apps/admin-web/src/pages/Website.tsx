@@ -1,8 +1,9 @@
 // The Website page: changes what shoppers see on the storefront (belpok.xyz)
 // without touching code -- the announcement strip, the home page banner
 // (words, buttons, photos), selling points, a hand-picked Featured row,
-// which home sections show, the wholesale section, footer text, contact
-// details and social links. For owners and inventory managers.
+// which home sections show, a promotion banner, "How to order" and the
+// payment methods taken, the wholesale section, "Visit the shop" (opening
+// hours, directions), footer text, contact details and social links. For owners and inventory managers.
 //
 // Everything is edited as one draft and saved together (PUT /storefront --
 // see services/api/app/routers/storefront.py, which validates it and keeps
@@ -114,7 +115,10 @@ export function WebsitePage() {
           <BannerCard value={draft.hero} onChange={(v) => set("hero", v)} />
           <HighlightsCard value={draft.highlights} onChange={(v) => set("highlights", v)} />
           <SectionsCard draft={draft} set={set} />
+          <PromoCard value={draft.promo} onChange={(v) => set("promo", v)} />
+          <HowToOrderCard draft={draft} set={set} />
           <WholesaleCard value={draft.wholesale} onChange={(v) => set("wholesale", v)} />
+          <VisitCard value={draft.visit} onChange={(v) => set("visit", v)} />
           <FooterCard draft={draft} set={set} />
         </fieldset>
         <p className="text-xs text-muted">
@@ -477,3 +481,143 @@ function FooterCard({ draft, set }: { draft: StorefrontContent; set: <K extends 
     </Card>
   );
 }
+
+/** The mid-page promotion: a sale, new stock, an offer. Off by default --
+ * switch it on when there's something real to announce, off when it ends. */
+function PromoCard({ value, onChange }: { value: StorefrontContent["promo"]; onChange: (v: StorefrontContent["promo"]) => void }) {
+  const toast = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const patch = (p: Partial<StorefrontContent["promo"]>) => onChange({ ...value, ...p });
+  const upload = async (files: FileList) => {
+    setUploading(true);
+    const failures = await uploadPhotos(imageFiles(files).slice(0, 1), (path) => patch({ image_path: path }));
+    if (failures.length) toast.error(failures[0].reason);
+    setUploading(false);
+  };
+  return (
+    <Card>
+      <CardHeader
+        title="Promotion banner"
+        description="A bold banner in the middle of the home page — a sale, new stock, an offer."
+        actions={<Toggle checked={value.enabled} onChange={(enabled) => patch({ enabled })} label="Show the promotion banner" />}
+      />
+      {value.enabled && (
+        <div className="grid gap-4 p-5 sm:grid-cols-2">
+          <Field label="Small heading">
+            <Input maxLength={60} value={value.eyebrow} onChange={(e) => patch({ eyebrow: e.target.value })} placeholder="e.g. This week only" />
+          </Field>
+          <Field label="Headline" hint="Needed for the banner to show.">
+            <Input maxLength={90} value={value.title} onChange={(e) => patch({ title: e.target.value })} placeholder="e.g. 20% off all joggers" />
+          </Field>
+          <Field label="Text" className="sm:col-span-2">
+            <Textarea maxLength={300} value={value.text} onChange={(e) => patch({ text: e.target.value })} />
+          </Field>
+          <Field label="Button">
+            <Input maxLength={40} value={value.button_label} onChange={(e) => patch({ button_label: e.target.value })} />
+          </Field>
+          <Field label="…goes to" hint={LINK_HINT}>
+            <Input value={value.button_link} onChange={(e) => patch({ button_link: e.target.value })} />
+          </Field>
+          <div className="sm:col-span-2">
+            <p className="mb-1.5 text-xs font-semibold text-ink/80">Photo (optional)</p>
+            <div className="flex items-center gap-3">
+              {value.image_path && <img src={imageUrl(value.image_path)} alt="" className="h-20 w-28 rounded-lg object-cover ring-1 ring-line" />}
+              <Button size="sm" variant="secondary" icon={ImagePlus} loading={uploading} onClick={() => fileRef.current?.click()}>
+                {value.image_path ? "Change photo" : "Add photo"}
+              </Button>
+              {value.image_path && (
+                <Button size="sm" variant="ghost" onClick={() => patch({ image_path: null })}>
+                  Remove
+                </Button>
+              )}
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length) void upload(e.target.files);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const PAYMENT_OPTIONS: { value: StorefrontContent["payment_methods"][number]; label: string }[] = [
+  { value: "mobile_money", label: "Mobile money" },
+  { value: "cash", label: "Cash" },
+  { value: "card", label: "Card" },
+  { value: "bank_transfer", label: "Bank transfer" },
+];
+
+/** The "How to order" steps (fixed wording; WhatsApp is mentioned when a
+ * WhatsApp number is set) and the payment methods listed with them and in
+ * the footer. */
+function HowToOrderCard({ draft, set }: { draft: StorefrontContent; set: <K extends keyof StorefrontContent>(k: K, v: StorefrontContent[K]) => void }) {
+  const toggle = (m: StorefrontContent["payment_methods"][number]) =>
+    set(
+      "payment_methods",
+      draft.payment_methods.includes(m) ? draft.payment_methods.filter((x) => x !== m) : PAYMENT_OPTIONS.map((o) => o.value).filter((v) => v === m || draft.payment_methods.includes(v)),
+    );
+  return (
+    <Card>
+      <CardHeader
+        title="How to order & payment"
+        description="Three simple steps on the home page — choose, order online or on WhatsApp, pick up or delivery."
+        actions={<Toggle checked={draft.show_how_to_order} onChange={(v) => set("show_how_to_order", v)} label="Show how to order" />}
+      />
+      <div className="p-5">
+        <p className="mb-2 text-xs font-semibold text-ink/80">Ways customers can pay (shown with the steps and in the footer)</p>
+        <div className="flex flex-wrap gap-2">
+          {PAYMENT_OPTIONS.map((o) => {
+            const on = draft.payment_methods.includes(o.value);
+            return (
+              <label key={o.value} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${on ? "border-brand-500 bg-brand-50" : "border-line"}`}>
+                <input type="checkbox" checked={on} onChange={() => toggle(o.value)} className="h-4 w-4 accent-brand-600" />
+                {o.label}
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** "Visit the shop": shown on the home page once there's an address (in
+ * the contact details below), opening hours or a phone number. */
+function VisitCard({ value, onChange }: { value: StorefrontContent["visit"]; onChange: (v: StorefrontContent["visit"]) => void }) {
+  const patch = (p: Partial<StorefrontContent["visit"]>) => onChange({ ...value, ...p });
+  return (
+    <Card>
+      <CardHeader
+        title="Visit the shop"
+        description="Where to find you and when you're open, with one-tap directions. Uses the address and phone from the contact details below."
+        actions={<Toggle checked={value.enabled} onChange={(enabled) => patch({ enabled })} label="Show visit the shop" />}
+      />
+      {value.enabled && (
+        <div className="grid gap-4 p-5 sm:grid-cols-2">
+          <Field label="Heading">
+            <Input maxLength={60} value={value.title} onChange={(e) => patch({ title: e.target.value })} />
+          </Field>
+          <Field label="Google Maps link" hint="Open the shop in Google Maps, tap Share, and paste the link here.">
+            <Input value={value.map_link} onChange={(e) => patch({ map_link: e.target.value })} placeholder="https://maps.app.goo.gl/…" />
+          </Field>
+          <Field label="Text" className="sm:col-span-2">
+            <Textarea maxLength={300} value={value.text} onChange={(e) => patch({ text: e.target.value })} />
+          </Field>
+          <Field label="Opening hours" hint="One line per day or range. Also shown in the footer." className="sm:col-span-2">
+            <Textarea maxLength={400} value={value.hours} onChange={(e) => patch({ hours: e.target.value })} placeholder={"Mon – Sat: 8am – 7pm\nSun: closed"} />
+          </Field>
+        </div>
+      )}
+    </Card>
+  );
+}
+

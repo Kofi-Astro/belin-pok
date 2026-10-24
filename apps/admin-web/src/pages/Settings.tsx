@@ -6,14 +6,17 @@
 //   - Account: the signed-in person's own details and password.
 // (The shop-wide online pricing lives on its own page, ShopSettings.tsx.)
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Link2, Mail, MessageCircle, Pencil, Plus, Share2, Smartphone, Tags, Trash2, UserPlus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Copy, ImagePlus, Link2, Mail, MessageCircle, Pencil, Plus, Share2, Smartphone, Tags, Trash2, UserPlus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+
+import { Thumb } from "@/components/bits";
 
 import { ConfirmDialog, Modal, useToast } from "@/components/overlay";
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, FormError, IconButton, Input, PageHeader, PageLoading, Table, Td, Textarea, Th, Toggle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { date, slugify, titleCase } from "@/lib/format";
+import { date, imageUrl, slugify, titleCase } from "@/lib/format";
+import { imageFiles, uploadPhotos } from "@/lib/photos";
 import { useCategories } from "@/lib/queries";
 import { session } from "@/lib/session";
 import type { Category, Staff, StaffRole } from "@/lib/types";
@@ -92,8 +95,13 @@ export function CategoriesPage() {
               {categories.data.map((c) => (
                 <tr key={c.id}>
                   <Td>
-                    <p className="font-semibold">{c.name}</p>
-                    {c.description && <p className="text-xs text-muted">{c.description}</p>}
+                    <div className="flex items-center gap-3">
+                      <Thumb path={c.image_path} size={36} />
+                      <div>
+                        <p className="font-semibold">{c.name}</p>
+                        {c.description && <p className="text-xs text-muted">{c.description}</p>}
+                      </div>
+                    </div>
                   </Td>
                   {/* Its page on the website. Fixed when created, so links don't break
                      if it's renamed later. */}
@@ -135,7 +143,9 @@ function CategoryModal({ category, onClose }: { category: Category | "new" | nul
   const qc = useQueryClient();
   const toast = useToast();
   const isNew = category === "new";
-  const [form, setForm] = useState({ name: "", description: "", display_order: "0" });
+  const [form, setForm] = useState({ name: "", description: "", display_order: "0", image_path: null as string | null });
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -144,8 +154,8 @@ function CategoryModal({ category, onClose }: { category: Category | "new" | nul
     setError(null);
     setForm(
       category === "new"
-        ? { name: "", description: "", display_order: "0" }
-        : { name: category.name, description: category.description ?? "", display_order: String(category.display_order) },
+        ? { name: "", description: "", display_order: "0", image_path: null }
+        : { name: category.name, description: category.description ?? "", display_order: String(category.display_order), image_path: category.image_path },
     );
   }, [category]);
 
@@ -153,7 +163,12 @@ function CategoryModal({ category, onClose }: { category: Category | "new" | nul
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const body = { name: form.name.trim(), description: form.description.trim() || null, display_order: Number(form.display_order || 0) };
+    const body = {
+      name: form.name.trim(),
+      description: form.description.trim() || null,
+      display_order: Number(form.display_order || 0),
+      image_path: form.image_path,
+    };
     try {
       // The web address (slug) is made from the name once, on creation.
       if (isNew) await api.post("/categories", { ...body, slug: slugify(form.name) });
@@ -195,6 +210,37 @@ function CategoryModal({ category, onClose }: { category: Category | "new" | nul
         <Field label="Menu order" hint="Lower numbers come first.">
           <Input type="number" value={form.display_order} onChange={(e) => setForm({ ...form, display_order: e.target.value })} />
         </Field>
+        {/* The category's tile on the website's home page. Without one, the
+            tile uses its newest product's photo, or a drawing. */}
+        <div>
+          <p className="mb-1.5 text-xs font-semibold text-ink/80">Tile photo (optional)</p>
+          <div className="flex items-center gap-3">
+            {form.image_path && <img src={imageUrl(form.image_path)} alt="" className="h-16 w-16 rounded-lg object-cover ring-1 ring-line" />}
+            <Button size="sm" variant="secondary" icon={ImagePlus} loading={uploading} onClick={() => fileRef.current?.click()}>
+              {form.image_path ? "Change photo" : "Add photo"}
+            </Button>
+            {form.image_path && (
+              <Button size="sm" variant="ghost" onClick={() => setForm({ ...form, image_path: null })}>
+                Remove
+              </Button>
+            )}
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const files = e.target.files ? imageFiles(e.target.files).slice(0, 1) : [];
+              e.target.value = "";
+              if (!files.length) return;
+              setUploading(true);
+              const failures = await uploadPhotos(files, (path) => setForm((f) => ({ ...f, image_path: path })));
+              if (failures.length) setError(failures[0].reason);
+              setUploading(false);
+            }}
+          />
+        </div>
       </form>
     </Modal>
   );

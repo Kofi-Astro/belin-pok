@@ -1,6 +1,6 @@
 // The home page: a banner, the shop's selling points, an optional row of
-// hand-picked featured products, category tiles, new arrivals and a
-// wholesale pitch. The words, buttons, banner photos and which sections show
+// hand-picked featured products, category tiles, an optional promotion,
+// new arrivals, how to order, a wholesale pitch and where to find the shop. The words, buttons, banner photos and which sections show
 // are edited on the admin's Website page (lib/content.ts); the products,
 // categories and their photos come live from the catalogue. Server-rendered,
 // so it's real HTML for search engines and link previews.
@@ -23,9 +23,13 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 
+import { GarmentArt } from "@/components/GarmentArt";
+import { HowToOrder } from "@/components/home/HowToOrder";
+import { PromoBanner } from "@/components/home/PromoBanner";
+import { VisitShop } from "@/components/home/VisitShop";
 import { ProductGrid } from "@/components/ProductCard";
 import { getCategories, getProducts } from "@/lib/catalog";
-import { getStorefront, type HighlightIcon, isExternal } from "@/lib/content";
+import { contactDetails, getStorefront, type HighlightIcon, isExternal } from "@/lib/content";
 import { imageUrl, primaryImage } from "@/lib/format";
 
 // The icons a selling point can use (chosen on the admin's Website page).
@@ -113,6 +117,24 @@ export default async function HomePage() {
               <CtaLink href={hero.primary_link} label={hero.primary_label} className="btn-primary px-8" arrow />
               <CtaLink href={hero.secondary_link} label={hero.secondary_label} className="btn border border-white/30 text-white hover:bg-white/10" />
             </div>
+            {/* Phones and tablets: the banner's photos are desktop-only, so
+                show a swipeable row of categories instead -- something to
+                look at, and a quick way in. */}
+            {categories.length > 0 && (
+              <div className="-mx-4 mt-10 flex gap-3 overflow-x-auto px-4 pb-1 lg:hidden">
+                {categories.slice(0, 8).map((c) => {
+                  const photo = c.image_path || tileImage.get(c.id);
+                  return (
+                    <Link key={c.id} href={`/category/${c.slug}`} className="w-24 shrink-0 text-center">
+                      <span className="relative block aspect-square overflow-hidden rounded-2xl bg-white/[0.07] ring-1 ring-white/10">
+                        {photo ? <Image src={imageUrl(photo)} alt="" fill sizes="96px" className="object-cover" /> : <GarmentArt name={c.name} dark />}
+                      </span>
+                      <span className="mt-2 block truncate text-xs font-semibold text-white/80">{c.name}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Photos: desktop only. Three are fanned out; one or two (uploaded
@@ -140,8 +162,18 @@ export default async function HomePage() {
               ))}
             </div>
           ) : (
-            <div className="hidden h-80 items-center justify-center rounded-3xl border border-white/10 bg-white/5 lg:flex">
-              <p className="text-2xl font-extrabold text-white/30">Belin-Pok</p>
+            // No photos yet: the first four categories as drawings, so the
+            // banner still shows what the shop sells.
+            <div className="hidden grid-cols-2 gap-4 lg:grid">
+              {(categories.length ? categories.slice(0, 4).map((c) => c.name) : ["Caps", "T-Shirts", "Jackets", "Joggers"]).map((name, i) => (
+                <div
+                  key={name}
+                  className={`relative aspect-square overflow-hidden rounded-3xl bg-white/[0.07] ring-1 ring-white/10 ${i % 2 ? "translate-y-8" : ""}`}
+                >
+                  <GarmentArt name={name} dark />
+                  <span className="absolute bottom-4 left-5 text-sm font-bold tracking-wide text-white/80">{name}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -195,25 +227,27 @@ export default async function HomePage() {
           </div>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             {categories.map((c) => {
-              const photo = tileImage.get(c.id);
+              // The category's own photo (set in the admin), else its newest
+              // product's, else a drawing of the garment.
+              const photo = c.image_path || tileImage.get(c.id);
               return (
-                <Link
-                  key={c.id}
-                  href={`/category/${c.slug}`}
-                  className="group relative aspect-square overflow-hidden rounded-2xl bg-brand-800"
-                >
-                  {photo && (
-                    <Image
-                      src={imageUrl(photo)}
-                      alt=""
-                      fill
-                      sizes="(min-width: 640px) 25vw, 50vw"
-                      className="object-cover opacity-80 transition duration-500 group-hover:scale-105"
-                    />
+                <Link key={c.id} href={`/category/${c.slug}`} className="group relative aspect-square overflow-hidden rounded-2xl bg-brand-800">
+                  {photo ? (
+                    <>
+                      <Image
+                        src={imageUrl(photo)}
+                        alt=""
+                        fill
+                        sizes="(min-width: 640px) 25vw, 50vw"
+                        className="object-cover opacity-85 transition duration-500 group-hover:scale-105"
+                      />
+                      {/* Darkens the bottom of the photo so the white name stays readable. */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-brand-950/85 via-brand-950/20 to-transparent" />
+                    </>
+                  ) : (
+                    <GarmentArt name={c.name} className="transition duration-500 group-hover:scale-105" />
                   )}
-                  {/* Darkens the bottom of the photo so the white name stays readable. */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-brand-950/85 via-brand-950/20 to-transparent" />
-                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between p-4 text-white">
+                  <div className={`absolute inset-x-0 bottom-0 flex items-center justify-between p-4 ${photo ? "text-white" : "text-ink"}`}>
                     <span className="text-lg font-extrabold">{c.name}</span>
                     <ArrowRight className="h-5 w-5 -translate-x-1 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
                   </div>
@@ -223,6 +257,8 @@ export default async function HomePage() {
           </div>
         </section>
       )}
+
+      <PromoBanner promo={content.promo} />
 
       {/* New arrivals */}
       {content.show_new_arrivals && (
@@ -248,6 +284,8 @@ export default async function HomePage() {
         </section>
       )}
 
+      {content.show_how_to_order && <HowToOrder content={content} whatsapp={contactDetails(content).whatsapp} />}
+
       {/* Wholesale */}
       {wholesale.enabled && (
         <section className="container-page pt-20">
@@ -271,6 +309,8 @@ export default async function HomePage() {
           </div>
         </section>
       )}
+
+      <VisitShop content={content} />
     </>
   );
 }

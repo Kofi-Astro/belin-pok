@@ -9,6 +9,8 @@ import { useState } from "react";
 import { imageUrl } from "@/lib/format";
 import type { ProductImage } from "@/lib/types";
 
+import { GarmentArt } from "./GarmentArt";
+
 /** Big photo plus thumbnails. The primary (cover) photo comes first. */
 export function Gallery({ images, name }: { images: ProductImage[]; name: string }) {
   // Cover photo first, then the rest in the order staff arranged them
@@ -22,8 +24,8 @@ export function Gallery({ images, name }: { images: ProductImage[]; name: string
   // so the page layout doesn't collapse.
   if (!current) {
     return (
-      <div className="flex aspect-[4/5] items-center justify-center rounded-3xl bg-brand-50 font-semibold text-brand-700/40">
-        No photo yet
+      <div className="aspect-[4/5] overflow-hidden rounded-3xl">
+        <GarmentArt name={name} />
       </div>
     );
   }

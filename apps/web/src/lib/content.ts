@@ -13,6 +13,15 @@ import type { Product } from "./types";
 
 export type HighlightIcon = "store" | "truck" | "boxes" | "bell" | "tag" | "shield" | "star" | "clock" | "card" | "phone" | "heart" | "sparkles";
 
+export type PaymentMethod = "mobile_money" | "cash" | "card" | "bank_transfer";
+
+export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+  mobile_money: "Mobile money",
+  cash: "Cash",
+  card: "Card",
+  bank_transfer: "Bank transfer",
+};
+
 export type StorefrontContent = {
   announcement: { enabled: boolean; text: string; extra: string };
   hero: {
@@ -42,6 +51,13 @@ export type StorefrontContent = {
   footer_blurb: string;
   contact: { phone: string; whatsapp: string; email: string; address: string };
   social: { instagram: string; facebook: string; tiktok: string; x: string };
+  // A promotional banner mid-page (a sale, new stock); off by default.
+  promo: { enabled: boolean; eyebrow: string; title: string; text: string; button_label: string; button_link: string; image_path: string | null };
+  // The three-step "How to order" strip.
+  show_how_to_order: boolean;
+  payment_methods: PaymentMethod[];
+  // "Visit the shop": shown once there's an address, hours or phone.
+  visit: { enabled: boolean; title: string; text: string; hours: string; map_link: string };
   // The featured products themselves: live ones only, at online prices.
   featured_products: Product[];
 };
@@ -85,6 +101,16 @@ export const DEFAULT_CONTENT: StorefrontContent = {
   footer_blurb: "Caps, tees, jackets and everyday menswear — for walk-in customers and for businesses buying wholesale.",
   contact: { phone: "", whatsapp: "", email: "", address: "" },
   social: { instagram: "", facebook: "", tiktok: "", x: "" },
+  promo: { enabled: false, eyebrow: "This week", title: "", text: "", button_label: "Shop now", button_link: "/shop", image_path: null },
+  show_how_to_order: true,
+  payment_methods: ["mobile_money", "cash", "card"],
+  visit: {
+    enabled: true,
+    title: "Visit the shop",
+    text: "Come in to see the full range, try things on, and talk to us about wholesale.",
+    hours: "",
+    map_link: "",
+  },
   featured_products: [],
 };
 
@@ -94,7 +120,9 @@ export async function getStorefront(): Promise<StorefrontContent> {
   try {
     const res = await fetch(`${API_BASE_URL}/public/storefront`, { next: { revalidate: 60 } });
     if (!res.ok) return DEFAULT_CONTENT;
-    return (await res.json()) as StorefrontContent;
+    // Defaults first: any section the API doesn't send (e.g. an older API
+    // during a deploy) keeps its default instead of being undefined.
+    return { ...DEFAULT_CONTENT, ...((await res.json()) as Partial<StorefrontContent>) };
   } catch {
     // API unreachable (e.g. while building without one): render with defaults.
     return DEFAULT_CONTENT;

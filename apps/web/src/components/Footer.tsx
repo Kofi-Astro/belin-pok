@@ -5,11 +5,11 @@
 // page (lib/content.ts). A server
 // component: the categories are fetched once on the server and cached
 // with the rest of the catalogue (see lib/catalog.ts).
-import { Mail, MapPin, MessageCircle, Phone } from "lucide-react";
+import { Clock, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 import Link from "next/link";
 
 import { getCategories } from "@/lib/catalog";
-import { contactDetails, getStorefront, whatsappLink } from "@/lib/content";
+import { contactDetails, getStorefront, PAYMENT_LABELS, whatsappLink } from "@/lib/content";
 
 import { Logo } from "./Logo";
 
@@ -22,8 +22,9 @@ export async function Footer() {
     ["TikTok", content.social.tiktok],
     ["X", content.social.x],
   ].filter(([, url]) => url);
+  const hours = content.visit.hours.split("\n").map((l) => l.trim()).filter(Boolean);
   // Only show the "Get in touch" column if there's something to put in it.
-  const hasContact = Object.values(contact).some(Boolean) || social.length > 0;
+  const hasContact = Object.values(contact).some(Boolean) || social.length > 0 || hours.length > 0;
 
   return (
     <footer className="mt-24 bg-brand-950 text-white/75">
@@ -120,6 +121,18 @@ export async function Footer() {
                   <span>{contact.address}</span>
                 </li>
               )}
+              {hours.length > 0 && (
+                <li className="flex items-start gap-2.5">
+                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+                  <span>
+                    {hours.map((line) => (
+                      <span key={line} className="block">
+                        {line}
+                      </span>
+                    ))}
+                  </span>
+                </li>
+              )}
             </ul>
             {/* Social pages, as plain labelled links. */}
             {social.length > 0 && (
@@ -136,7 +149,20 @@ export async function Footer() {
       </div>
       {/* Copyright line; the year updates itself. */}
       <div className="border-t border-white/10">
-        <p className="container-page py-6 text-xs text-white/45">© {new Date().getFullYear()} Belin-Pok Enterprise</p>
+        <div className="container-page flex flex-wrap items-center justify-between gap-3 py-6 text-xs text-white/45">
+          <p>© {new Date().getFullYear()} Belin-Pok Enterprise</p>
+          {/* The payment methods set on the admin's Website page. */}
+          {content.payment_methods.length > 0 && (
+            <p className="flex flex-wrap items-center gap-2">
+              We accept
+              {content.payment_methods.map((m) => (
+                <span key={m} className="rounded-full border border-white/15 px-2.5 py-0.5 font-semibold text-white/70">
+                  {PAYMENT_LABELS[m]}
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
       </div>
     </footer>
   );
