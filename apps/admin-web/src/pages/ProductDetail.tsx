@@ -9,7 +9,7 @@
 // be sold at the till). Fast-received items (Receive stock with just a
 // name and photo) start as drafts priced at ₵0.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArrowLeft, ExternalLink, ImagePlus, PackagePlus, Pencil, Plus, Rocket, Star, Trash2, Undo2 } from "lucide-react";
+import { Archive, ArrowLeft, ExternalLink, ImagePlus, PackagePlus, Pencil, Plus, Rocket, Sparkles, Star, Trash2, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
@@ -323,6 +323,29 @@ function DetailsCard({ product, editable, onSaved }: { product: Product; editabl
   // Reload the form whenever the product is saved (here or elsewhere).
   useEffect(() => setForm(initial()), [product.updated_at]);
 
+  // "Write a description": Claude drafts one from the cover photo and what's
+  // known about the product (POST /products/{id}/describe -- see
+  // services/api/app/ai_describe.py). The draft goes into the box like
+  // typing would; nothing is saved until staff check it and press Save.
+  const [drafting, setDrafting] = useState(false);
+  const [seenColour, setSeenColour] = useState<string | null>(null);
+  const writeDescription = async () => {
+    if (form.description.trim() && !window.confirm("Replace the current description with a new draft?")) return;
+    setDrafting(true);
+    setError(null);
+    try {
+      const draft = await api.post<{ description: string; colour: string | null }>(`/products/${product.id}/describe`);
+      setForm((f) => ({ ...f, description: draft.description }));
+      setSeenColour(draft.colour);
+      toast.success("Draft written — check it, edit anything that's wrong, then save");
+    } catch (err) {
+      // e.g. "Add a photo of the product first", or not set up yet.
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDrafting(false);
+    }
+  };
+
   const set = (k: keyof ReturnType<typeof initial>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm({ ...form, [k]: e.target.value });
 
@@ -375,9 +398,33 @@ function DetailsCard({ product, editable, onSaved }: { product: Product; editabl
         <Field label="Brand" className="sm:col-span-2">
           <Input disabled={!editable} value={form.brand} onChange={set("brand")} />
         </Field>
-        <Field label="Description" hint="Shown on the product page of the shop." className="sm:col-span-2">
-          <Textarea disabled={!editable} value={form.description} onChange={set("description")} />
-        </Field>
+        <div className="sm:col-span-2">
+          <Field label="Description" hint="Shown on the product page of the shop.">
+            <Textarea disabled={!editable || drafting} value={form.description} onChange={set("description")} />
+          </Field>
+          {editable && (
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={Sparkles}
+                loading={drafting}
+                disabled={product.images.length === 0}
+                title={product.images.length === 0 ? "Add a photo first" : undefined}
+                onClick={() => void writeDescription()}
+              >
+                Write a description from the photo
+              </Button>
+              <span className="text-xs text-muted">
+                {product.images.length === 0
+                  ? "Add a photo first."
+                  : seenColour
+                    ? `Draft ready. Main colour it sees: ${seenColour}.`
+                    : "AI writes a draft from the cover photo — always check it before saving."}
+              </span>
+            </div>
+          )}
+        </div>
         {editable && (
           <div className="flex justify-end gap-2 sm:col-span-2">
             {dirty && (
