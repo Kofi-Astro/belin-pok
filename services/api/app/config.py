@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # resend_api_key being optional above.
     firebase_service_account_json: str | None = None
 
+    # Optional. Anthropic API key for drafting product descriptions from
+    # photos (app/ai_describe.py). Without it the admin's "Write a
+    # description" button reports that the feature isn't set up.
+    anthropic_api_key: str | None = None
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

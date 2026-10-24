@@ -287,6 +287,14 @@ class StockIntakeCreate(BaseModel):
         return self
 
 
+class ProductDescriptionDraft(BaseModel):
+    """POST /products/{id}/describe: a draft for staff to review, never saved
+    by the API. colour: the main colour Claude sees, as a hint."""
+
+    description: str
+    colour: str | None
+
+
 class StockIntakeRead(BaseModel):
     product: ProductWithVariants
     variant: ProductVariantRead

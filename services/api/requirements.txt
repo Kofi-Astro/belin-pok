@@ -16,3 +16,7 @@ boto3>=1.35
 # Multipart photo uploads (POST /uploads/product-photo).
 python-multipart>=0.0.12
 firebase-admin>=6.5
+# Drafting product descriptions from photos (app/ai_describe.py).
+anthropic>=1
+# Shrinking photos before sending them to Claude (5 MB per image limit).
+pillow>=11

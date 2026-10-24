@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app import ai_describe
 from app.db import get_db
 from app.deps import get_current_staff, require_role
 from app.models import (
@@ -33,6 +34,7 @@ from app.routers.stock_movements import notify_back_in_stock_subscribers
 from app.routers.variants import generate_sku
 from app.schemas import (
     ProductCreate,
+    ProductDescriptionDraft,
     ProductRead,
     ProductUpdate,
     ProductVariantRead,
@@ -40,6 +42,7 @@ from app.schemas import (
     StockIntakeCreate,
     StockIntakeRead,
 )
+from app.storage import PhotoStore, get_photo_store
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -437,3 +440,54 @@ async def delete_product(
         )
     )
     await db.commit()
+
+
+@router.post("/{product_id}/describe", response_model=ProductDescriptionDraft)
+async def describe_product(
+    product_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    store: PhotoStore = Depends(get_photo_store),
+    _staff: Staff = Depends(_write_roles),
+) -> ProductDescriptionDraft:
+    """A draft description written by Claude from the product's cover photo
+    and what's known about it (see app/ai_describe.py). Nothing is saved:
+    the admin puts the draft in the description box for staff to check,
+    edit and save."""
+    stmt = (
+        select(Product)
+        .where(Product.id == product_id)
+        .options(selectinload(Product.variants), selectinload(Product.images))
+    )
+    product = await db.scalar(stmt)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    cover = next((i for i in product.images if i.is_primary), None) or next(iter(product.images), None)
+    photo = await store.get(cover.storage_path) if cover else None
+    if photo is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Add a photo of the product first")
+
+    # What the shop already knows, for Claude to use rather than guess.
+    category = await db.get(Category, product.category_id)
+
+    def distinct(values):
+        return ", ".join(dict.fromkeys(v for v in values if v))
+
+    facts = [f"Name: {product.name}"]
+    if category is not None and category.slug != UNCATEGORIZED_SLUG:
+        facts.append(f"Category: {category.name}")
+    if product.brand:
+        facts.append(f"Brand: {product.brand}")
+    for label, values in (
+        ("Types / qualities", [v.style for v in product.variants]),
+        ("Colours", [v.color for v in product.variants]),
+        ("Sizes", [v.size for v in product.variants]),
+    ):
+        if joined := distinct(values):
+            facts.append(f"{label}: {joined}")
+
+    try:
+        draft = await ai_describe.draft_description(photo.data, facts)
+    except ai_describe.DescriptionUnavailable as exc:
+        code = status.HTTP_503_SERVICE_UNAVAILABLE if not ai_describe.is_configured() else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+    return ProductDescriptionDraft(description=draft.description, colour=draft.colour)
