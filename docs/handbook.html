@@ -98,7 +98,7 @@
     <li><span>1</span>The system at a glance
       <ol><li>What Belin-Pok does</li><li>The four parts</li><li>Who uses what</li><li>Principles behind the design</li></ol></li>
     <li><span>2</span>Running the shop — a guide for the owner and staff
-      <ol><li>Signing in</li><li>Staff roles</li><li>Products and stock</li><li>Prices: in-store, wholesale, pack, online</li><li>Selling at the till</li><li>Busy-hour sales</li><li>Voids, returns and corrections</li><li>Online orders</li><li>Customers and credit</li><li>Watching the shop from anywhere</li><li>Managing staff</li><li>Deleting test data</li><li>A daily routine</li></ol></li>
+      <ol><li>Signing in</li><li>Staff roles</li><li>Products and stock</li><li>Prices: in-store, wholesale, pack, online</li><li>Selling at the till</li><li>Busy-hour sales</li><li>Voids, returns and corrections</li><li>Online orders</li><li>Customers and credit</li><li>Watching the shop from anywhere</li><li>Managing staff</li><li>Deleting test data</li><li>Editing the website</li><li>A daily routine</li></ol></li>
     <li><span>3</span>Technical reference
       <ol><li>Architecture</li><li>Repository layout</li><li>The API</li><li>Data model</li><li>Sign-in and security</li><li>The web storefront</li><li>The admin system</li><li>The phone app</li><li>Configuration</li><li>API endpoint reference</li></ol></li>
     <li><span>4</span>Hosting and operations
@@ -187,8 +187,8 @@
   <h3>Receiving a delivery</h3>
   <p><b>Receive stock</b> (on Products, Inventory or a product's page) is the fast path. It stays open after each item so a whole delivery can be logged in one go.</p>
   <ul>
-    <li><b>New item:</b> take a photo, type a name and how many came in. It's saved as a <b>draft</b> priced at ₵0 — not on sale anywhere yet. Category, price, size and colour can be filled in now or later.</li>
-    <li><b>Already in the catalogue:</b> search for it, pick the size/colour (or add a new one), enter the quantity.</li>
+    <li><b>New item:</b> take a photo, type a name and how many came in. It's saved as a <b>draft</b> priced at ₵0 — not on sale anywhere yet. Category, price, type, size and colour can be filled in now or later. For broad items, leave the name blank and choose a category: the item is named after it ("Joggers").</li>
+    <li><b>Already in the catalogue:</b> search for it, pick the type/size/colour (or add a new one), enter the quantity.</li>
   </ul>
   <h3>A product's life</h3>
   <table>
@@ -197,10 +197,12 @@
     <tr><td><span class="tag" style="background:#e5f6ee;color:#1f8f5f">Live</span></td><td>Published: on the website, the app and the till. Publishing needs a price.</td></tr>
     <tr><td><span class="tag" style="background:#eee;color:#555">Archived</span></td><td>Discontinued: off the website and app. Leftover stock can still be sold at the till.</td></tr>
   </table>
-  <h3>Sizes, photos and stock levels</h3>
+  <h3>Types, sizes, photos and stock levels</h3>
   <ul>
-    <li>Each <b>size/colour</b> is its own SKU (generated automatically) with its own stock, prices and low-stock alert level (default 5).</li>
+    <li>Each <b>type/size/colour</b> combination is its own SKU (generated automatically) with its own stock, prices and low-stock alert level (default 5).</li>
+    <li><b>Types</b> hold kinds or qualities of one broad product at different prices — e.g. Joggers in Standard (₵130), Premium (₵150) and Branded (₵180), or Unbranded / a brand name. <b>Add a type</b> on the product page creates a type across several sizes at one price. Shoppers choose a type first on the website and see its price; the till shows each option's price.</li>
     <li><b>Photos:</b> upload several at once; choose the cover photo shoppers see first. JPEG, PNG or WebP.</li>
+    <li><b>Descriptions:</b> <b>Write a description from the photo</b> asks Claude (Anthropic's AI) to draft one from the cover photo and the product's details, plus the main colour it sees. It's only a draft in the box — check it, correct anything wrong (a photo can't show fabric or whether a brand is genuine) and save. About 1–2 US cents per draft; needs the Anthropic key in 5.1.</li>
     <li><b>Inventory</b> shows stock for every SKU, what's running low (the reorder list), and the full movement history.</li>
     <li><b>Adjust</b> records a restock, a count correction, a customer return, or a sale made outside the till — always with a reason.</li>
     <li><b>Repack</b> records loose units organised into factory-style packs (a note; the count doesn't change).</li>
@@ -221,8 +223,8 @@
   <p>Wholesale and pack prices are never shown to the public: the website and app only ever receive online prices.</p>
 </section>
 
-<section class="chapter">
-  <h2 style="margin-top:0">2.5 Selling at the till</h2>
+<section>
+  <h2>2.5 Selling at the till</h2>
   <p>The <b>Point of sale</b> page has the product grid (search and category chips), the current sale, and today's receipts below.</p>
   <ol class="steps">
     <li>Choose <b>Retail</b> or <b>Wholesale</b>. Wholesale asks for the customer first and unlocks wholesale and pack prices.</li>
@@ -273,8 +275,8 @@
   </ul>
 </section>
 
-<section class="chapter">
-  <h2 style="margin-top:0">2.10 Watching the shop from anywhere</h2>
+<section>
+  <h2>2.10 Watching the shop from anywhere</h2>
   <table>
     <tr><th style="width:22%">Page</th><th>Use it for</th></tr>
     <tr><td><b>Dashboard</b></td><td>The last 7, 30 or 90 days at a glance: revenue, items sold, credit owed, low stock, best sellers, latest stock activity, and a reminder of sales still to sort out.</td></tr>
@@ -307,7 +309,17 @@
   </table>
   <p class="small">Deletion is refused, with an explanation, where undoing isn't possible: credit already paid off, received stock since sold, or a product still in a sale.</p>
 
-  <h2>2.13 A daily routine</h2>
+  <h2>2.13 Editing the website</h2>
+  <p><b>Online shop → Website</b> (owners and inventory managers) changes what shoppers see on belpok.xyz without touching code. Edit, then <b>Save changes</b>; the site shows it within a minute, and the activity log records who changed which section.</p>
+  <ul>
+    <li><b>Announcement strip</b> — the thin bar above the header (turn it off, or use it for a sale).</li>
+    <li><b>Home page banner</b> — small heading, headline, text, two buttons (each to any shop page or web address), and up to three photos (otherwise the newest product photos).</li>
+    <li><b>Selling points</b> — up to four, each with an icon.</li>
+    <li><b>Home page sections</b> — show or hide "Shop by category" and "New arrivals"; a hand-picked <b>Featured</b> row of up to 12 live products, in your order.</li>
+    <li><b>Wholesale section</b>, <b>footer text</b>, <b>contact details</b> (also on the wholesale page) and <b>social links</b>.</li>
+  </ul>
+
+  <h2>2.14 A daily routine</h2>
   <div class="two">
     <div class="box ok"><h4>Opening &amp; during the day</h4><ul class="small"><li>Check the dashboard: low stock, orders needing attention.</li><li>Log deliveries with Receive stock as they arrive.</li><li>Move online orders along as they're paid and packed.</li><li>Use quick log / one amount when busy.</li></ul></div>
     <div class="box ok"><h4>Closing</h4><ul class="small"><li>Sort out today's quick-logged and one-amount sales.</li><li>Sales reports → Today: count the drawer against <i>Cash</i>.</li><li>Review voids and their reasons.</li><li>Owner: skim the activity log.</li></ul></div>
@@ -419,6 +431,7 @@ deploy/Caddyfile         Serves the built admin app
     <tr><td><code>SHOP_TIMEZONE</code></td><td>Report day boundaries (default <code>Africa/Accra</code>).</td></tr>
     <tr><td><code>RESEND_API_KEY</code>, <code>EMAIL_FROM</code></td><td>Optional: sending invite and reset emails.</td></tr>
     <tr><td><code>FIREBASE_SERVICE_ACCOUNT_JSON</code></td><td>Optional: push notifications to the phone app.</td></tr>
+    <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Optional: drafting product descriptions from photos (<code>app/ai_describe.py</code>, Claude Opus 5.5).</td></tr>
     <tr><td><code>ACCESS_TOKEN_MINUTES</code>, <code>REFRESH_TOKEN_DAYS</code></td><td>Optional session lengths (defaults 15 and 30).</td></tr>
   </table>
   <h3>Web apps (build-time — changing one needs a redeploy)</h3>
@@ -426,14 +439,14 @@ deploy/Caddyfile         Serves the built admin app
     <tr><th style="width:36%">Variable</th><th>Purpose</th></tr>
     <tr><td><code>NEXT_PUBLIC_API_BASE_URL</code></td><td>Storefront: the API address.</td></tr>
     <tr><td><code>NEXT_PUBLIC_SITE_URL</code></td><td>Storefront: its own address, for links and the sitemap.</td></tr>
-    <tr><td><code>NEXT_PUBLIC_CONTACT_PHONE</code>, <code>…_WHATSAPP</code>, <code>…_EMAIL</code>, <code>NEXT_PUBLIC_SHOP_ADDRESS</code></td><td>Storefront: optional contact details for the footer and wholesale page; unset ones are left out.</td></tr>
+    <tr><td><code>NEXT_PUBLIC_CONTACT_PHONE</code>, <code>…_WHATSAPP</code>, <code>…_EMAIL</code>, <code>NEXT_PUBLIC_SHOP_ADDRESS</code></td><td>Storefront: optional fallback contact details. Details entered on the admin's Website page take priority; unset ones are left out.</td></tr>
     <tr><td><code>VITE_API_BASE_URL</code>, <code>VITE_STOREFRONT_URL</code></td><td>Admin: the API, and where "View on the shop" links go.</td></tr>
   </table>
 </section>
 
 <section class="chapter">
   <h2 style="margin-top:0">3.10 API endpoint reference</h2>
-  <p class="small muted">77 endpoints. "Staff" means any signed-in staff member; role limits follow section 2.2. Full request/response details are at <code>/docs</code>.</p>
+  <p class="small muted">81 endpoints. "Staff" means any signed-in staff member; role limits follow section 2.2. Full request/response details are at <code>/docs</code>.</p>
   <table class="api">
     <tr><th colspan="3">Sign-in</th></tr>
     <tr><td><span class="method POST">POST</span></td><td>/auth/login · /auth/refresh · /auth/logout</td><td>Start, renew, end a session</td></tr>
@@ -449,7 +462,7 @@ deploy/Caddyfile         Serves the built admin app
     <tr><td><span class="method POST">POST</span></td><td>/products · /products/receive</td><td>Create a product; receive stock (fast path)</td></tr>
     <tr><td><span class="method PATCH">PATCH</span></td><td>/products/{id}</td><td>Edit, publish, archive</td></tr>
     <tr><td><span class="method DELETE">DELETE</span></td><td>/products/{id}</td><td>Delete (owner may include stock history)</td></tr>
-    <tr><td><span class="method GET">GET</span>/<span class="method POST">POST</span></td><td>/products/{id}/variants · /products/{id}/images</td><td>Sizes/colours; photos</td></tr>
+    <tr><td><span class="method GET">GET</span>/<span class="method POST">POST</span></td><td>/products/{id}/variants · /products/{id}/images</td><td>Types/sizes/colours; photos</td></tr>
     <tr><td><span class="method PATCH">PATCH</span></td><td>/variants/{id}</td><td>A size's prices, alert level, visibility</td></tr>
     <tr><td><span class="method GET">GET</span></td><td>/variants · /variants/low-stock</td><td>Inventory list; reorder list</td></tr>
     <tr><td><span class="method POST">POST</span></td><td>/variants/{id}/notify-when-in-stock</td><td>Customer restock alert</td></tr>
@@ -481,6 +494,9 @@ deploy/Caddyfile         Serves the built admin app
     <tr><td><span class="method GET">GET</span>/<span class="method PATCH">PATCH</span></td><td>/staff · /staff/me · /staff/{id}</td><td>Staff list; own record; roles and active</td></tr>
     <tr><td><span class="method POST">POST</span></td><td>/staff/invite · /staff/{id}/invite-link</td><td>Invite (email and/or phone); new sign-in link</td></tr>
     <tr><td><span class="method GET">GET</span>/<span class="method PATCH">PATCH</span></td><td>/settings</td><td>Online pricing (change: owner)</td></tr>
+    <tr><td><span class="method GET">GET</span></td><td>/public/storefront</td><td>Website content and featured products (no sign-in)</td></tr>
+    <tr><td><span class="method GET">GET</span>/<span class="method POST" style="background:#6b4fa0">PUT</span></td><td>/storefront</td><td>Edit the website's content</td></tr>
+    <tr><td><span class="method POST">POST</span></td><td>/products/{id}/describe</td><td>AI draft description from the cover photo</td></tr>
     <tr><td><span class="method GET">GET</span></td><td>/health</td><td>Health check for Railway</td></tr>
   </table>
 </section>
@@ -571,9 +587,10 @@ gunzip -c ~/belpok-backups/belpok-YYYYMMDD-HHMM.sql.gz | psql -d belpok_restore<
     <tr><td><b>Add two DNS records for www.belpok.xyz</b> in Cloudflare, set up the same way as the existing <code>belpok.xyz</code> and <code>admin</code> records:<br><code>CNAME www → afz6kirc.up.railway.app</code><br><code style="word-break:break-all">TXT _railway-verify.www → railway-verify=acff4956ad71ee5f91d5846aa7ec294c9e2ff49f291689823f69215b4a0d1dc3</code></td><td>The domain is attached to the storefront on Railway, but has no DNS yet, so typing "www.belpok.xyz" currently fails. belpok.xyz itself works.</td></tr>
     <tr><td><b>Database backups</b>: upgrade the Railway workspace to Pro, then turn on daily/weekly/monthly backups for the Postgres volume</td><td>None exist on Railway yet — its scheduled backups need a Pro workspace. Until then, run <code>scripts/backup-db.sh</code> regularly (see 4.6).</td></tr>
     <tr><td><b>Set the online markup</b> (Admin → Shop settings)</td><td>It's 0% until set, so online prices equal in-store prices.</td></tr>
+    <tr><td><b>AI descriptions</b>: an Anthropic account (console.anthropic.com) with billing; set <code>ANTHROPIC_API_KEY</code> on <code>belin-pok</code></td><td>Powers "Write a description from the photo". Until set, the button explains it isn't set up.</td></tr>
     <tr><td><b>Email sending</b>: a Resend account with belpok.xyz verified; set <code>RESEND_API_KEY</code></td><td>Not configured. Invites can still go by WhatsApp/SMS, but customers can't reset forgotten passwords by email until this is done.</td></tr>
     <tr><td><b>Push notifications</b>: a Firebase project; set <code>FIREBASE_SERVICE_ACCOUNT_JSON</code></td><td>Not configured. Needed for order updates and restock alerts in the phone app.</td></tr>
-    <tr><td><b>Shop contact details</b> on the <code>web</code> service</td><td>Phone, WhatsApp, email and address appear in the footer and wholesale page only once set.</td></tr>
+    <tr><td><b>Shop contact details and social links</b> (Admin → Website)</td><td>Phone, WhatsApp, email, address and social pages appear in the footer and wholesale page only once entered.</td></tr>
     <tr><td><b>Publish the phone app</b></td><td>Needs your Play Console / Apple Developer accounts and signing keys.</td></tr>
     <tr><td><b>Delete the old Supabase project</b></td><td>Nothing uses it any more.</td></tr>
   </table>
