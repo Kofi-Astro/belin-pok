@@ -84,6 +84,9 @@ def _validate_pack_pair(pack_price: float | None, pack_size: int | None) -> None
 class ProductVariantBase(BaseModel):
     size: str = Field(min_length=1, max_length=50)
     color: str | None = None
+    # "Type / quality" (Standard, Premium, Nike...), or None for products
+    # without types. Blank is treated as None.
+    style: str | None = Field(default=None, max_length=50)
     color_hex: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     price_override: float | None = Field(default=None, ge=0)
     # Bulk/loose wholesale unit price. Falls back to the retail price
@@ -107,6 +110,11 @@ class ProductVariantBase(BaseModel):
         _validate_pack_pair(info.data.get("pack_price"), value)
         return value
 
+    @field_validator("style", mode="before")
+    @classmethod
+    def _blank_style_is_none(cls, value):
+        return _blank_to_none(value)
+
 
 class ProductVariantCreate(ProductVariantBase):
     # Optional: POST /products/{id}/variants auto-generates one from the
@@ -116,10 +124,18 @@ class ProductVariantCreate(ProductVariantBase):
     sku: str | None = Field(default=None, min_length=1, max_length=100)
 
 
+def _blank_to_none(value):
+    """ " Premium " -> "Premium"; "" or "  " -> None (no type)."""
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
+
+
 class ProductVariantUpdate(BaseModel):
     sku: str | None = Field(default=None, min_length=1, max_length=100)
     size: str | None = Field(default=None, min_length=1, max_length=50)
     color: str | None = None
+    style: str | None = Field(default=None, max_length=50)
     color_hex: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     price_override: float | None = Field(default=None, ge=0)
     wholesale_price: float | None = Field(default=None, ge=0)
@@ -128,6 +144,11 @@ class ProductVariantUpdate(BaseModel):
     online_price: float | None = Field(default=None, ge=0)
     low_stock_threshold: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
+
+    @field_validator("style", mode="before")
+    @classmethod
+    def _blank_style_is_none(cls, value):
+        return _blank_to_none(value)
 
 
 class ProductVariantRead(ProductVariantBase):
@@ -240,9 +261,10 @@ class StockIntakeCreate(BaseModel):
     base_price: float | None = Field(default=None, ge=0)
     size: str | None = Field(default=None, max_length=50)
     color: str | None = Field(default=None, max_length=50)
+    style: str | None = Field(default=None, max_length=50)
     reason: str | None = None
 
-    @field_validator("name", "size", "color", "reason", mode="before")
+    @field_validator("name", "size", "color", "style", "reason", mode="before")
     @classmethod
     def _blank_to_none(cls, value):
         # The admin form sends "" for an untouched optional field -- that
@@ -255,8 +277,11 @@ class StockIntakeCreate(BaseModel):
     @model_validator(mode="after")
     def _new_item_or_restock(self) -> "StockIntakeCreate":
         if self.product_id is None:
-            if self.name is None or self.image_storage_path is None:
-                raise ValueError("A new item needs a name and a photo")
+            # The name can be left out when a category is given: the item is
+            # then named after it ("Joggers"), with brand or quality as its
+            # type rather than in its name.
+            if (self.name is None and self.category_id is None) or self.image_storage_path is None:
+                raise ValueError("A new item needs a photo, and a name or a category")
         elif any(v is not None for v in (self.name, self.image_storage_path, self.category_id, self.base_price)):
             raise ValueError("name, photo, category and price only apply to a new item, not a restock")
         return self
@@ -307,6 +332,7 @@ class StockMovementRead(BaseModel):
     variant_sku: str | None = None
     variant_size: str | None = None
     variant_color: str | None = None
+    variant_style: str | None = None
     performed_by_name: str | None = None
     performed_by_role: StaffRole | None = None
     unit_price: float | None = None
@@ -407,6 +433,7 @@ class POSSaleItemRead(BaseModel):
     product_name: str | None
     variant_size: str | None
     variant_color: str | None
+    variant_style: str | None = None
     category_id: uuid.UUID | None
     category_name: str | None
     note: str | None
@@ -798,6 +825,7 @@ class OrderItemRead(BaseModel):
     variant_sku: str
     variant_size: str
     variant_color: str | None
+    variant_style: str | None
     image_storage_path: str | None
 
 
@@ -931,6 +959,7 @@ class TopVariantRead(BaseModel):
     product_name: str
     size: str
     color: str | None
+    style: str | None = None
     units_sold: int
     revenue: float
 
@@ -1004,6 +1033,7 @@ class ProductSales(BaseModel):
     sku: str | None
     size: str | None
     color: str | None
+    style: str | None = None
     category_name: str | None
     quantity: int
     revenue: float

@@ -183,6 +183,7 @@ async def dashboard(
             Product.name.label("product_name"),
             ProductVariant.size,
             ProductVariant.color,
+            ProductVariant.style,
             func.sum(POSSaleItem.quantity).label("units_sold"),
             func.sum(POSSaleItem.line_total).label("revenue"),
         )
@@ -190,7 +191,7 @@ async def dashboard(
         .join(ProductVariant, ProductVariant.id == POSSaleItem.variant_id)
         .join(Product, Product.id == ProductVariant.product_id)
         .where(POSSale.status != "voided", POSSale.created_at >= since)
-        .group_by(POSSaleItem.variant_id, Product.name, ProductVariant.size, ProductVariant.color)
+        .group_by(POSSaleItem.variant_id, Product.name, ProductVariant.size, ProductVariant.color, ProductVariant.style)
         .order_by(func.sum(POSSaleItem.quantity).desc())
         .limit(10)
     )
@@ -200,6 +201,7 @@ async def dashboard(
             product_name=row.product_name,
             size=row.size,
             color=row.color,
+            style=row.style,
             units_sold=int(row.units_sold),
             revenue=float(row.revenue),
         )
@@ -417,6 +419,7 @@ async def sales_report(
                 "sku": row.sku,
                 "size": row.size,
                 "color": row.color,
+                "style": row.style,
                 "category_name": row.category_name,
                 "quantity": 0,
                 "revenue": 0.0,
@@ -440,6 +443,7 @@ async def sales_report(
             ProductVariant.sku,
             ProductVariant.size,
             ProductVariant.color,
+            ProductVariant.style,
             Category.id.label("category_id"),
             Category.name.label("category_name"),
             func.sum(POSSaleItem.quantity).label("quantity"),
@@ -457,6 +461,7 @@ async def sales_report(
             ProductVariant.sku,
             ProductVariant.size,
             ProductVariant.color,
+            ProductVariant.style,
             Category.id,
             Category.name,
         )
@@ -479,6 +484,7 @@ async def sales_report(
             ProductVariant.sku,
             ProductVariant.size,
             ProductVariant.color,
+            ProductVariant.style,
             Category.name.label("category_name"),
             func.sum(OrderItem.quantity).label("quantity"),
             func.sum(OrderItem.line_total).label("revenue"),
@@ -495,6 +501,7 @@ async def sales_report(
             ProductVariant.sku,
             ProductVariant.size,
             ProductVariant.color,
+            ProductVariant.style,
             Category.name,
         )
     )
@@ -721,6 +728,7 @@ async def activity_log(
                     POSSaleItem.line_total,
                     Product.name,
                     ProductVariant.size,
+                    ProductVariant.style,
                     Category.name.label("category"),
                     POSSaleItem.note,
                 )
@@ -743,7 +751,7 @@ async def activity_log(
             unsorted = sum(1 for r in sale_lines if not r.name and not r.category)
             items = sum(r.quantity for r in sale_lines if r.name or r.category)
             what = ", ".join(
-                f"{r.name} ({r.size}) ×{r.quantity}"
+                f"{r.name} ({' · '.join(filter(None, [r.style, r.size]))}) ×{r.quantity}"
                 if r.name
                 else f"{r.category} (quick log) ×{r.quantity}"
                 if r.category
@@ -784,7 +792,7 @@ async def activity_log(
     # Stock changed by hand (not by a sale).
     if wants("stock"):
         stmt = (
-            select(StockMovement, Product.name, ProductVariant.size, ProductVariant.color)
+            select(StockMovement, Product.name, ProductVariant.size, ProductVariant.color, ProductVariant.style)
             .join(ProductVariant, ProductVariant.id == StockMovement.variant_id)
             .join(Product, Product.id == ProductVariant.product_id)
             .where(
@@ -796,8 +804,8 @@ async def activity_log(
         )
         if staff_id:
             stmt = stmt.where(StockMovement.performed_by == staff_id)
-        for m, name, size, color in await db.execute(stmt):
-            label = f"{name} ({size}{' · ' + color if color else ''})"
+        for m, name, size, color, style in await db.execute(stmt):
+            label = f"{name} ({' · '.join(filter(None, [style, size, color]))})"
             change = f"{'+' if m.quantity_change > 0 else ''}{m.quantity_change}"
             events.append(
                 ActivityRead(

@@ -93,6 +93,7 @@ async def _hydrate(db: AsyncSession, sale: POSSale) -> POSSaleRead:
             Product.name.label("product_name"),
             ProductVariant.size.label("variant_size"),
             ProductVariant.color.label("variant_color"),
+            ProductVariant.style.label("variant_style"),
             ProductVariant.pack_size.label("pack_size"),
             Category.name.label("category_name"),
         )
@@ -111,6 +112,7 @@ async def _hydrate(db: AsyncSession, sale: POSSale) -> POSSaleRead:
             product_name=row.product_name,
             variant_size=row.variant_size,
             variant_color=row.variant_color,
+            variant_style=row.variant_style,
             category_id=row.POSSaleItem.category_id,
             category_name=row.category_name,
             note=row.POSSaleItem.note,
@@ -184,7 +186,11 @@ async def _resolve_lines(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"{product.name} is still a draft — publish it before selling it",
             )
-        retail_price = variant.price_override if variant.price_override is not None else float(product.base_price)
+        # float() both ways: Numeric columns load as Decimal, and the line
+        # totals below are summed with float payment amounts.
+        retail_price = (
+            float(variant.price_override) if variant.price_override is not None else float(product.base_price)
+        )
 
         if tier == PriceTier.retail:
             unit_price = retail_price
@@ -574,7 +580,9 @@ async def break_down_pos_sale_item(
         if variant is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Variant {variant_id} not found")
         product = await db.get(Product, variant.product_id)
-        labels[variant_id] = f"{product.name} ({' · '.join(filter(None, [variant.size, variant.color]))})"
+        labels[variant_id] = (
+            f"{product.name} ({' · '.join(filter(None, [variant.style, variant.size, variant.color]))})"
+        )
         if variant.stock_quantity < needed[variant_id]:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -651,7 +659,9 @@ def _describe_lines(sale: POSSaleRead) -> str:
     parts = []
     for i in sale.items:
         if i.product_name:
-            parts.append(f"{i.product_name} ({i.variant_size}) ×{i.quantity}")
+            parts.append(
+                f"{i.product_name} ({' · '.join(filter(None, [i.variant_style, i.variant_size]))}) ×{i.quantity}"
+            )
         elif i.category_name:
             parts.append(f"{i.category_name} (quick log) ×{i.quantity}")
         else:

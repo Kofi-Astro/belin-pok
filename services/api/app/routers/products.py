@@ -141,6 +141,9 @@ async def create_product(
     staff: Staff = Depends(_write_roles),
 ) -> Product:
     product = Product(**payload.model_dump(), created_by=staff.id)
+    # Broad names ("Joggers") repeat, so a taken web address gets a short
+    # suffix rather than refusing the product.
+    product.slug = await _unique_slug(db, payload.slug)
     await _check_publishable(db, product)
     db.add(product)
     try:
@@ -227,9 +230,12 @@ async def receive_stock(
         else:
             category_id = (await get_or_create_uncategorized(db)).id
 
+        # No name given: named after its category ("Joggers"), with any
+        # brand or quality going in its type instead.
+        name = payload.name or (await db.get(Category, category_id)).name
         product = Product(
-            name=payload.name,
-            slug=await _unique_slug(db, payload.name),
+            name=name,
+            slug=await _unique_slug(db, name),
             category_id=category_id,
             base_price=payload.base_price if payload.base_price is not None else 0,
             status=ProductStatus.draft,
@@ -242,21 +248,23 @@ async def receive_stock(
 
     size = payload.size or DEFAULT_RECEIVE_SIZE
     color_match = ProductVariant.color.is_(None) if payload.color is None else ProductVariant.color == payload.color
+    style_match = ProductVariant.style.is_(None) if payload.style is None else ProductVariant.style == payload.style
     # Locked for the same reason create_stock_movement locks it: the
     # zero-crossing check below needs an old quantity nobody else can
     # change underneath it.
     variant = await db.scalar(
         select(ProductVariant)
-        .where(ProductVariant.product_id == product.id, ProductVariant.size == size, color_match)
+        .where(ProductVariant.product_id == product.id, ProductVariant.size == size, color_match, style_match)
         .with_for_update()
     )
     created_variant = variant is None
     if created_variant:
         variant = ProductVariant(
             product_id=product.id,
-            sku=generate_sku(product.slug, size, payload.color),
+            sku=generate_sku(product.slug, size, payload.color, payload.style),
             size=size,
             color=payload.color,
+            style=payload.style,
         )
         db.add(variant)
         await db.flush()

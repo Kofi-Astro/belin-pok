@@ -33,12 +33,13 @@ _write_roles = require_role(StaffRole.owner, StaffRole.inventory_manager)
 # POST /stock-movements to change it, so every change is audited.
 
 
-def generate_sku(product_slug: str, size: str, color: str | None) -> str:
-    """PRODUCT-SLUG-SIZE[-COLOR], uppercased. Unique in practice because
-    product.slug is itself unique and (product_id, size, color) is too --
+def generate_sku(product_slug: str, size: str, color: str | None, style: str | None = None) -> str:
+    """PRODUCT-SLUG[-TYPE]-SIZE[-COLOR], uppercased. Unique in practice
+    because product.slug is itself unique and (product_id, type, size,
+    color) is too --
     the DB's unique constraint on sku is still the real backstop, this
     just means staff never type one."""
-    parts = [product_slug, size, *([color] if color else [])]
+    parts = [product_slug, *([style] if style else []), size, *([color] if color else [])]
     sku = "-".join(parts).upper().replace(" ", "-")
     return sku[:100]
 
@@ -72,7 +73,7 @@ async def create_variant(
 
     data = payload.model_dump()
     if not data.get("sku"):
-        data["sku"] = generate_sku(product.slug, payload.size, payload.color)
+        data["sku"] = generate_sku(product.slug, payload.size, payload.color, payload.style)
 
     variant = ProductVariant(**data, product_id=product_id)
     db.add(variant)
@@ -82,7 +83,7 @@ async def create_variant(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="SKU already exists, or this size/color combination already exists for this product",
+            detail="SKU already exists, or this type, size and colour already exists for this product",
         ) from exc
     await db.refresh(variant)
     return variant
@@ -108,7 +109,7 @@ async def update_variant(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="SKU already exists, or this size/color combination already exists for this product",
+            detail="SKU already exists, or this type, size and colour already exists for this product",
         ) from exc
     await db.refresh(variant)
     return variant
@@ -173,7 +174,7 @@ async def list_inventory(
     response.headers["X-Total-Count"] = str(await db.scalar(select(func.count()).select_from(stmt.subquery())))
     variants = await db.scalars(
         stmt.options(selectinload(ProductVariant.product).selectinload(Product.images))
-        .order_by(Product.name, ProductVariant.size, ProductVariant.color)
+        .order_by(Product.name, ProductVariant.style, ProductVariant.size, ProductVariant.color)
         .limit(limit)
         .offset(offset)
     )

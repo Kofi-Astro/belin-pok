@@ -64,6 +64,7 @@ async def list_stock_movements(
             ProductVariant.sku.label("variant_sku"),
             ProductVariant.size.label("variant_size"),
             ProductVariant.color.label("variant_color"),
+            ProductVariant.style.label("variant_style"),
             Staff.full_name.label("performed_by_name"),
             Staff.roles.label("performed_by_roles"),
             unit_price.label("unit_price"),
@@ -85,6 +86,7 @@ async def list_stock_movements(
                 "variant_sku": row.variant_sku,
                 "variant_size": row.variant_size,
                 "variant_color": row.variant_color,
+                "variant_style": row.variant_style,
                 "performed_by_name": row.performed_by_name,
                 # The most senior role, as one label for the activity feed.
                 "performed_by_role": next(
@@ -206,6 +208,7 @@ async def delete_stock_movement(
     variant = await db.get(ProductVariant, movement.variant_id)
     product = await db.get(Product, variant.product_id)
     change = f"{'+' if movement.quantity_change > 0 else ''}{movement.quantity_change}"
+    option = " · ".join(filter(None, [variant.style, variant.size]))
 
     await remove_movement(db, movement)
     record_deletion(
@@ -216,7 +219,7 @@ async def delete_stock_movement(
         record_id=movement.id,
         reason=reason.strip(),
         what={
-            "summary": f"a stock entry for {product.name} ({variant.size}): {change}",
+            "summary": f"a stock entry for {product.name} ({option}): {change}",
             "lines": f"{movement.movement_type.value}" + (f" — {movement.reason}" if movement.reason else ""),
             "made_at": movement.created_at.isoformat(),
         },

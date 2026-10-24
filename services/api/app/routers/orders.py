@@ -449,7 +449,9 @@ async def delete_order(
     if order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     lines = ", ".join(
-        f"{i.variant.product.name} ({i.variant.size}) ×{i.quantity}" for i in order.items if i.variant is not None
+        f"{i.variant.product.name} ({' · '.join(filter(None, [i.variant.style, i.variant.size]))}) ×{i.quantity}"
+        for i in order.items
+        if i.variant is not None
     )
 
     # Its checkout movements, and any given back by cancelling it.

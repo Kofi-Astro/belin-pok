@@ -375,6 +375,10 @@ class ProductVariant(Base):
     sku: Mapped[str] = mapped_column(unique=True)
     size: Mapped[str]
     color: Mapped[str | None]
+    # "Type / quality" -- e.g. Standard / Premium, or Unbranded / Nike -- so
+    # one broad product can hold several kinds at different prices. Null for
+    # products without types. See migrations/20261024120002_variant_types.sql.
+    style: Mapped[str | None]
     color_hex: Mapped[str | None]
     price_override: Mapped[float | None] = mapped_column(Numeric(10, 2))
     wholesale_price: Mapped[float | None] = mapped_column(Numeric(10, 2))
@@ -686,6 +690,10 @@ class OrderItem(Base):
     @property
     def variant_color(self) -> str | None:
         return self.variant.color
+
+    @property
+    def variant_style(self) -> str | None:
+        return self.variant.style
 
     @property
     def image_storage_path(self) -> str | None:
