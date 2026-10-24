@@ -28,6 +28,8 @@ from app.models import (
     POSSale,
     POSSaleItem,
     POSSalePayment,
+    POSSaleReturn,
+    POSSaleReturnItem,
     PriceTier,
     Product,
     ProductStatus,
@@ -44,6 +46,8 @@ from app.schemas import (
     POSSaleItemRead,
     POSSalePaymentRead,
     POSSaleRead,
+    POSSaleReturnCreate,
+    POSSaleReturnRead,
     POSSaleVoid,
 )
 from app.shop_time import day_range
@@ -70,10 +74,37 @@ class _Line:
     unit_price: float = 0.0
     category_id: uuid.UUID | None = None
     note: str | None = None
+    # This line's share of a discount on the whole sale (_share_discount).
+    discount: float = 0.0
 
     @property
-    def line_total(self) -> float:
+    def gross(self) -> float:
         return self.quantity * self.unit_price
+
+
+def _share_discount(lines: list[_Line], discount: float) -> None:
+    """Shares a discount on the whole sale out across its lines, in
+    proportion to what each line is worth -- a ₵20 discount on a ₵150 pair
+    of joggers and a ₵50 cap puts ₵15 on the joggers and ₵5 on the cap. So
+    each line's line_total is what was really charged for it, and every
+    report (which add up line_total) shows real takings with no special
+    handling. Worked in whole pesewas; the odd pesewa left over by rounding
+    goes to the biggest lines, so the shares always add up exactly."""
+    gross = [round(line.gross * 100) for line in lines]
+    total = sum(gross)
+    target = round(discount * 100)
+    if not target or not total:
+        return
+    shares = [target * g // total for g in gross]
+    leftover = target - sum(shares)
+    for i in sorted(range(len(lines)), key=lambda i: gross[i], reverse=True):
+        if leftover == 0:
+            break
+        if shares[i] < gross[i]:
+            shares[i] += 1
+            leftover -= 1
+    for line, share in zip(lines, shares, strict=True):
+        line.discount = share / 100
 
 
 @dataclass
@@ -105,6 +136,25 @@ async def _hydrate(db: AsyncSession, sale: POSSale) -> POSSaleRead:
         .where(POSSaleItem.sale_id == sale.id)
     )
     rows = (await db.execute(stmt)).all()
+
+    returns = (
+        await db.scalars(
+            select(POSSaleReturn)
+            .where(POSSaleReturn.sale_id == sale.id)
+            .options(selectinload(POSSaleReturn.items))
+            .order_by(POSSaleReturn.created_at)
+        )
+    ).all()
+    returned: dict[uuid.UUID, int] = {}
+    for r in returns:
+        for ri in r.items:
+            returned[ri.sale_item_id] = returned.get(ri.sale_item_id, 0) + ri.quantity
+    return_reads = []
+    for r in returns:
+        read = POSSaleReturnRead.model_validate(r)
+        read.staff_name = (await db.get(Staff, r.staff_id)).full_name
+        return_reads.append(read)
+
     items = [
         POSSaleItemRead(
             id=row.POSSaleItem.id,
@@ -119,8 +169,10 @@ async def _hydrate(db: AsyncSession, sale: POSSale) -> POSSaleRead:
             price_tier=row.POSSaleItem.price_tier,
             quantity=row.POSSaleItem.quantity,
             unit_price=float(row.POSSaleItem.unit_price),
+            discount=float(row.POSSaleItem.discount),
             line_total=float(row.POSSaleItem.line_total),
             pack_size=row.pack_size if row.POSSaleItem.price_tier == PriceTier.pack else None,
+            returned_quantity=returned.get(row.POSSaleItem.id, 0),
         )
         for row in rows
     ]
@@ -137,12 +189,17 @@ async def _hydrate(db: AsyncSession, sale: POSSale) -> POSSaleRead:
         customer_name=customer.full_name if customer else None,
         items=items,
         payments=[POSSalePaymentRead.model_validate(p) for p in sale.payments],
-        total=sum(item.line_total for item in items),
+        subtotal=round(sum(item.quantity * item.unit_price for item in items), 2),
+        discount_total=round(sum(item.discount for item in items), 2),
+        discount_reason=sale.discount_reason,
+        total=round(sum(item.line_total for item in items), 2),
         credit_amount=float(credit_amount),
         voided_at=sale.voided_at,
         voided_by=sale.voided_by,
         voided_by_name=voider.full_name if voider else None,
         void_reason=sale.void_reason,
+        returns=return_reads,
+        refunded_total=round(sum(float(r.refund_amount) for r in returns), 2),
     )
 
 
@@ -236,6 +293,7 @@ async def list_pos_sales(
     staff_id: uuid.UUID | None = None,
     customer_id: uuid.UUID | None = None,
     needs_details: bool = False,
+    discounted: bool = False,
     sale_status: str | None = Query(default=None, alias="status", pattern="^(completed|voided)$"),
     payment_method: PaymentMethod | None = None,
     limit: int = Query(default=100, ge=1, le=500),
@@ -247,7 +305,8 @@ async def list_pos_sales(
     days in the shop's timezone (see app/shop_time.py); payment_method
     keeps sales with at least one payment of that kind; needs_details keeps
     live sales with a quick-logged or unsorted line still to be named (the
-    till's to-do list). X-Total-Count carries the number of matching sales."""
+    till's to-do list); discounted keeps sales with a discount on them (for
+    the owner to look over). X-Total-Count carries the number of matching sales."""
     stmt = select(POSSale)
     if date_from or date_to:
         start, end = day_range(date_from or date(2000, 1, 1), date_to or date(2100, 1, 1))
@@ -263,6 +322,8 @@ async def list_pos_sales(
             POSSale.status != "voided",
             POSSale.id.in_(select(POSSaleItem.sale_id).where(POSSaleItem.variant_id.is_(None))),
         )
+    if discounted:
+        stmt = stmt.where(POSSale.id.in_(select(POSSaleItem.sale_id).where(POSSaleItem.discount > 0)))
     if payment_method is not None:
         stmt = stmt.where(POSSale.id.in_(select(POSSalePayment.sale_id).where(POSSalePayment.method == payment_method)))
 
@@ -344,7 +405,14 @@ async def create_pos_sale(
                 detail=f"Only {variant.stock_quantity} left in stock for SKU {variant.sku}",
             )
 
-    computed_total = sum(line.line_total for line in resolved.lines)
+    subtotal = sum(line.gross for line in resolved.lines)
+    if payload.discount > subtotal + 0.001:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"The discount (₵{payload.discount:.2f}) is more than the sale (₵{subtotal:.2f})",
+        )
+    _share_discount(resolved.lines, payload.discount)
+    computed_total = subtotal - payload.discount
     paid_total = sum(p.amount for p in payload.payments)
     if abs(paid_total - computed_total) > 0.01:
         raise HTTPException(
@@ -352,7 +420,11 @@ async def create_pos_sale(
             detail=f"Payments (₵{paid_total:.2f}) don't match the total (₵{computed_total:.2f})",
         )
 
-    sale = POSSale(customer_id=payload.customer_id, staff_id=staff.id)
+    sale = POSSale(
+        customer_id=payload.customer_id,
+        staff_id=staff.id,
+        discount_reason=payload.discount_reason.strip() if payload.discount > 0 else None,
+    )
     db.add(sale)
     await db.flush()
 
@@ -377,6 +449,7 @@ async def create_pos_sale(
                 price_tier=line.price_tier,
                 quantity=line.quantity,
                 unit_price=line.unit_price,
+                discount=line.discount,
             )
         )
     for p in payload.payments:
@@ -410,6 +483,13 @@ async def void_pos_sale(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sale not found")
     if sale.status == "voided":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This sale has already been voided")
+    # Voiding puts everything the sale took back on the shelf, which would
+    # count returned items twice.
+    if await db.scalar(select(func.count()).where(POSSaleReturn.sale_id == sale.id)):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Items from this sale were returned, so it can't be voided — record a return for the rest instead",
+        )
 
     original_items = (
         await db.scalars(
@@ -653,6 +733,122 @@ async def break_down_pos_sale_item(
     return await _hydrate(db, sale)
 
 
+@router.post("/{sale_id}/returns", response_model=POSSaleRead, status_code=status.HTTP_201_CREATED)
+async def return_items(
+    sale_id: uuid.UUID,
+    payload: POSSaleReturnCreate,
+    db: AsyncSession = Depends(get_db),
+    staff: Staff = Depends(_write_roles),
+) -> POSSaleRead:
+    """Records goods brought back from a sale: which lines and how many,
+    the reason, and what was refunded and how. Items go back into stock
+    (a 'return' movement) unless back_to_stock is false -- damaged goods.
+    A refund 'on account' (credit) comes off the sale's wholesale
+    customer's balance; any other refund is money out of the till, taken
+    off at cash-up.
+
+    Only lines naming a product can be returned (a one-amount or
+    quick-logged line has to be sorted out first, so it's known what came
+    back), no more than were sold less any already returned, and the
+    refund can't be more than those items were sold for.
+    """
+    sale = await db.get(POSSale, sale_id)
+    if sale is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sale not found")
+    if sale.status == "voided":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This sale has been voided")
+
+    already: dict[uuid.UUID, int] = dict(
+        (
+            await db.execute(
+                select(POSSaleReturnItem.sale_item_id, func.sum(POSSaleReturnItem.quantity))
+                .join(POSSaleReturn, POSSaleReturn.id == POSSaleReturnItem.return_id)
+                .where(POSSaleReturn.sale_id == sale.id)
+                .group_by(POSSaleReturnItem.sale_item_id)
+            )
+        ).all()
+    )
+    wanted: dict[uuid.UUID, int] = {}
+    for line in payload.items:
+        wanted[line.sale_item_id] = wanted.get(line.sale_item_id, 0) + line.quantity
+
+    worth = 0.0  # what the returned items were sold for, after discount
+    lines: list[POSSaleItem] = []
+    for item_id, quantity in wanted.items():
+        item = await db.get(POSSaleItem, item_id)
+        if item is None or item.sale_id != sale.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sale item not found")
+        if item.variant_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Name the product on this line (Identify or Break down) before taking it back",
+            )
+        left = item.quantity - already.get(item.id, 0)
+        if quantity > left:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Only {left} of that line can still be returned",
+            )
+        worth += float(item.line_total) / item.quantity * quantity
+        lines.append(item)
+
+    if payload.refund_amount > round(worth, 2) + 0.001:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"The refund (₵{payload.refund_amount:.2f}) is more than those items sold for (₵{worth:.2f})",
+        )
+    method = payload.refund_method if payload.refund_amount > 0 else None
+    if method == PaymentMethod.credit and sale.customer_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only a sale to a wholesale customer can be refunded to their account",
+        )
+
+    ret = POSSaleReturn(
+        sale_id=sale.id,
+        refund_method=method,
+        refund_amount=round(payload.refund_amount, 2),
+        reason=payload.reason.strip(),
+        back_to_stock=payload.back_to_stock,
+        staff_id=staff.id,
+    )
+    db.add(ret)
+    await db.flush()
+    for item in lines:
+        db.add(POSSaleReturnItem(return_id=ret.id, sale_item_id=item.id, quantity=wanted[item.id]))
+        if payload.back_to_stock:
+            db.add(
+                StockMovement(
+                    variant_id=item.variant_id,
+                    movement_type=StockMovementType.return_,
+                    quantity_change=wanted[item.id],
+                    reason=f"Returned: {ret.reason}",
+                    # The sale's id, not the return's, so deleting the sale
+                    # undoes this too (see delete_pos_sale).
+                    reference_type="pos_sale_return",
+                    reference_id=sale.id,
+                    performed_by=staff.id,
+                )
+            )
+    if method == PaymentMethod.credit:
+        db.add(
+            CustomerCreditLedger(
+                customer_id=sale.customer_id,
+                entry_type=CreditLedgerEntryType.adjustment,
+                amount=-ret.refund_amount,
+                reason=f"Refund for returned goods: {ret.reason}",
+                reference_type="pos_sale_return",
+                reference_id=sale.id,
+                performed_by=staff.id,
+            )
+        )
+    await db.commit()
+
+    stmt = select(POSSale).where(POSSale.id == sale.id).options(selectinload(POSSale.payments))
+    sale = await db.scalar(stmt)
+    return await _hydrate(db, sale)
+
+
 def _describe_lines(sale: POSSaleRead) -> str:
     """A sale's lines in words ("Classic Cap (One Size) ×2, Unsorted ₵90"),
     for the record left behind when it's deleted."""
@@ -691,8 +887,8 @@ async def delete_pos_sale(
     described = await _hydrate(db, sale)
 
     # The sale's own movements/charges, and the reversals a void added.
-    await undo_stock(db, ["pos_sale", "pos_sale_void"], sale.id)
-    await undo_credit(db, ["pos_sale", "pos_sale_void"], sale.id)
+    await undo_stock(db, ["pos_sale", "pos_sale_void", "pos_sale_return"], sale.id)
+    await undo_credit(db, ["pos_sale", "pos_sale_void", "pos_sale_return"], sale.id)
     record_deletion(
         db,
         staff,

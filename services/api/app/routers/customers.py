@@ -27,6 +27,7 @@ from app.models import (
     CustomerStatus,
     CustomerType,
     Order,
+    PaymentMethod,
     POSSale,
     Staff,
     StaffRole,
@@ -258,6 +259,7 @@ async def record_credit_payment(
         entry_type=CreditLedgerEntryType.payment,
         amount=-payload.amount,
         reason=payload.reason,
+        method=PaymentMethod(payload.method),
         performed_by=staff.id,
     )
     db.add(entry)

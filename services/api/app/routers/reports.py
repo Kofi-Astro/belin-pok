@@ -30,6 +30,7 @@ from app.models import (
     POSSale,
     POSSaleItem,
     POSSalePayment,
+    POSSaleReturn,
     PriceTier,
     Product,
     ProductVariant,
@@ -532,6 +533,7 @@ async def sales_report(
                 "voided_count": 0,
                 "voided_amount": 0.0,
                 "voids_performed": 0,
+                "discounts_given": 0.0,
             },
         )
 
@@ -570,6 +572,17 @@ async def sales_report(
     ):
         staff_entry(voided_by)["voids_performed"] = count
 
+    # Discounts, per person and in total (one query; the totals add them up).
+    discounted_receipts = 0
+    for staff_id, count, amount in await db.execute(
+        select(POSSale.staff_id, func.count(func.distinct(POSSale.id)), func.sum(POSSaleItem.discount))
+        .join(POSSaleItem, POSSaleItem.sale_id == POSSale.id)
+        .where(*completed, POSSaleItem.discount > 0)
+        .group_by(POSSale.staff_id)
+    ):
+        staff_entry(staff_id)["discounts_given"] = float(amount)
+        discounted_receipts += count
+
     names = dict((await db.execute(select(Staff.id, Staff.full_name).where(Staff.id.in_(staff_stats)))).all())
     by_staff = sorted(
         (StaffSales(staff_id=sid, staff_name=names.get(sid, "Former staff"), **e) for sid, e in staff_stats.items()),
@@ -593,6 +606,14 @@ async def sales_report(
         .where(*counted_orders, OrderItem.in_store_unit_price.is_not(None))
     )
 
+    returns_count, refunds_given = (
+        await db.execute(
+            select(func.count(), func.coalesce(func.sum(POSSaleReturn.refund_amount), 0)).where(
+                POSSaleReturn.created_at >= start, POSSaleReturn.created_at < end
+            )
+        )
+    ).one()
+
     counter_revenue = sum(p.counter_revenue for p in period_list)
     online_revenue = sum(p.online_revenue for p in period_list)
     receipts = sum(p.receipts for p in period_list)
@@ -611,6 +632,10 @@ async def sales_report(
         credit_given=float(credit.get(CreditLedgerEntryType.charge, 0) or 0),
         # Payments are stored as positive amounts that reduce the balance.
         credit_collected=abs(float(credit.get(CreditLedgerEntryType.payment, 0) or 0)),
+        discounts_given=round(sum(s.discounts_given for s in by_staff), 2),
+        discounted_receipts=discounted_receipts,
+        refunds_given=float(refunds_given),
+        returns_count=returns_count,
     )
 
     return SalesReport(
@@ -631,7 +656,8 @@ async def sales_report(
 _owner_only = require_role(StaffRole.owner)
 
 # "deleted": records an owner removed outright (see app/erase.py).
-ActivityKind = Literal["sale", "void", "stock", "catalog", "order", "credit", "staff", "deleted"]
+# "cash_up": end-of-day counts (see app/routers/cash_ups.py).
+ActivityKind = Literal["sale", "void", "stock", "catalog", "order", "credit", "staff", "deleted", "cash_up"]
 
 _STOCK_VERBS = {
     StockMovementType.restock: "Restocked",
@@ -679,6 +705,40 @@ def _sale_summary(items: int, unsorted: int) -> str:
         basket = "a basket" if unsorted == 1 else f"{unsorted} baskets"
         parts.append(f"rang up {basket} as one amount" if items else f"Rang up {basket} as one amount")
     return " and ".join(parts) or "Sold nothing"
+
+
+def _cash_up_event(e: AuditLog, staff_name: str | None) -> ActivityRead:
+    """An end-of-day count in the activity log: "Cashed up 24 Oct — ₵20.00
+    short", with what was counted and, for a redo, what the first count
+    said."""
+    new, old = e.new_values or {}, e.old_values or {}
+
+    def outcome(values: dict) -> str:
+        diff = values.get("total_difference") or 0
+        if abs(diff) < 0.01:
+            return "balanced"
+        return f"{_money(abs(diff))} {'short' if diff < 0 else 'over'}"
+
+    day = date.fromisoformat(new["business_date"]).strftime("%a %-d %b") if new.get("business_date") else "a day"
+    verb = "Counted again" if e.action == "cash_up.redo" else "Cashed up"
+    detail = [f"Cash counted {_money(new.get('counted_cash') or 0)}, expected {_money(new.get('expected_cash') or 0)}"]
+    if new.get("paid_out"):
+        detail.append(f"paid out {_money(new['paid_out'])} ({new.get('paid_out_note')})")
+    if new.get("note"):
+        detail.append(f"note: {new['note']}")
+    if old:
+        detail.append(f"the earlier count was {outcome(old)}")
+    return ActivityRead(
+        at=e.created_at,
+        kind="cash_up",
+        staff_id=e.staff_id,
+        staff_name=staff_name,
+        summary=f"{verb} {day} — {outcome(new)}",
+        detail="; ".join(detail),
+        amount=new.get("total_difference"),
+        reference_type="cash_up",
+        reference_id=e.record_id,
+    )
 
 
 @router.get("/activity", response_model=list[ActivityRead])
@@ -730,6 +790,7 @@ async def activity_log(
                     POSSaleItem.sale_id,
                     POSSaleItem.quantity,
                     POSSaleItem.line_total,
+                    POSSaleItem.discount,
                     Product.name,
                     ProductVariant.size,
                     ProductVariant.style,
@@ -771,7 +832,13 @@ async def activity_log(
                         staff_id=sale.staff_id,
                         staff_name=who(sale.staff_id),
                         summary=_sale_summary(items, unsorted) + to,
-                        detail=what + (" — later voided" if sale.status == "voided" else ""),
+                        detail=what
+                        + (
+                            f" — {_money(discount)} off ({sale.discount_reason})"
+                            if (discount := sum(float(r.discount) for r in sale_lines))
+                            else ""
+                        )
+                        + (" — later voided" if sale.status == "voided" else ""),
                         amount=total,
                         reference_type="pos_sale",
                         reference_id=sale.id,
@@ -826,7 +893,7 @@ async def activity_log(
 
     # Product, price and staff changes -- and sales broken down after the
     # fact, which are listed with the sales, and deletions.
-    if wants("catalog") or wants("staff") or wants("sale") or wants("deleted"):
+    if wants("catalog") or wants("staff") or wants("sale") or wants("deleted") or wants("cash_up"):
         stmt = select(AuditLog).where(AuditLog.created_at >= start, AuditLog.created_at < end)
         if staff_id:
             stmt = stmt.where(AuditLog.staff_id == staff_id)
@@ -859,6 +926,10 @@ async def activity_log(
                             reference_id=None,
                         )
                     )
+                continue
+            if e.action.startswith("cash_up."):
+                if wants("cash_up"):
+                    events.append(_cash_up_event(e, who(e.staff_id)))
                 continue
             if e.action == "pos_sale.break_down":
                 if wants("sale"):

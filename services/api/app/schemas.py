@@ -429,6 +429,17 @@ class POSSaleCreate(BaseModel):
     customer_id: uuid.UUID | None = None
     items: list[POSSaleItemCreate] = Field(min_length=1)
     payments: list[POSSalePaymentCreate] = Field(min_length=1)
+    # An amount off the whole sale (e.g. a haggled ₵10), shared out across
+    # the lines by the API. A reason is required with it: the owner sees
+    # every discount, who gave it and why.
+    discount: float = Field(default=0, ge=0)
+    discount_reason: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _discount_needs_reason(self) -> "POSSaleCreate":
+        if self.discount > 0 and len((self.discount_reason or "").strip()) < 3:
+            raise ValueError("Say why the discount was given")
+        return self
 
 
 class POSSalePaymentRead(BaseModel):
@@ -453,8 +464,12 @@ class POSSaleItemRead(BaseModel):
     # 'pack' line -- see POSSaleItemCreate).
     quantity: int
     unit_price: float
+    # This line's share of the sale's discount; line_total is after it.
+    discount: float = 0
     line_total: float
     pack_size: int | None = None
+    # How many of this line have been brought back (see POSSaleReturnRead).
+    returned_quantity: int = 0
 
 
 class POSSaleItemIdentify(BaseModel):
@@ -501,6 +516,11 @@ class POSSaleRead(BaseModel):
     customer_name: str | None = None
     items: list[POSSaleItemRead] = []
     payments: list[POSSalePaymentRead] = []
+    # subtotal is the till prices added up; total is what was charged
+    # (subtotal - discount_total).
+    subtotal: float = 0
+    discount_total: float = 0
+    discount_reason: str | None = None
     total: float = 0
     credit_amount: float = 0
     # Set on a voided sale -- who voided it, when, and the reason they gave.
@@ -508,6 +528,53 @@ class POSSaleRead(BaseModel):
     voided_by: uuid.UUID | None = None
     voided_by_name: str | None = None
     void_reason: str | None = None
+    # Goods brought back later, newest last.
+    returns: list["POSSaleReturnRead"] = []
+    refunded_total: float = 0
+
+
+class POSSaleReturnLine(BaseModel):
+    sale_item_id: uuid.UUID
+    quantity: int = Field(gt=0)
+
+
+class POSSaleReturnCreate(BaseModel):
+    """Goods coming back from a till sale. refund_amount is what's handed
+    back -- the app suggests what they were sold for (after any discount),
+    but it can be less, or 0 for an exchange."""
+
+    items: list[POSSaleReturnLine] = Field(min_length=1)
+    refund_amount: float = Field(default=0, ge=0)
+    refund_method: PaymentMethod | None = None
+    reason: str = Field(min_length=3, max_length=500)
+    back_to_stock: bool = True
+
+    @model_validator(mode="after")
+    def _method_with_money(self) -> "POSSaleReturnCreate":
+        if self.refund_amount > 0 and self.refund_method is None:
+            raise ValueError("Say how the money was given back")
+        return self
+
+
+class POSSaleReturnItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sale_item_id: uuid.UUID
+    quantity: int
+
+
+class POSSaleReturnRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    refund_method: PaymentMethod | None
+    refund_amount: float
+    reason: str
+    back_to_stock: bool
+    staff_id: uuid.UUID
+    staff_name: str | None = None
+    created_at: datetime
+    items: list[POSSaleReturnItemRead] = []
 
 
 class POSSaleVoid(BaseModel):
@@ -740,6 +807,9 @@ class CustomerRead(CustomerBase):
 class CustomerCreditPaymentCreate(BaseModel):
     amount: float = Field(gt=0)
     reason: str | None = None
+    # How it was paid -- a cash repayment is expected in the drawer at
+    # cash-up (see app/routers/cash_ups.py).
+    method: Literal["cash", "mobile_money", "card"] = "cash"
 
 
 class CustomerCreditAdjustmentCreate(BaseModel):
@@ -773,6 +843,7 @@ class CustomerCreditLedgerRead(BaseModel):
     reference_id: uuid.UUID | None
     performed_by: uuid.UUID | None
     created_at: datetime
+    method: PaymentMethod | None = None
 
     performed_by_name: str | None = None
 
@@ -1013,6 +1084,14 @@ class SalesTotals(BaseModel):
     # and payments received against balances in the period.
     credit_given: float
     credit_collected: float
+    # Discounts given at the till (already taken off revenue), and on how
+    # many receipts.
+    discounts_given: float = 0
+    discounted_receipts: int = 0
+    # Money handed back for returned goods in the period (not taken off
+    # revenue, which counts sales on the day they were made).
+    refunds_given: float = 0
+    returns_count: int = 0
 
 
 class SalesPeriod(BaseModel):
@@ -1064,6 +1143,8 @@ class StaffSales(BaseModel):
     voided_amount: float
     # ...and voids this person carried out (of anyone's sales).
     voids_performed: int
+    # Discounts this person gave on their (not voided) sales.
+    discounts_given: float = 0
 
 
 class CategorySales(BaseModel):
@@ -1089,7 +1170,7 @@ class ActivityRead(BaseModel):
     its source table."""
 
     at: datetime
-    kind: str  # sale | void | stock | catalog | order | credit | staff
+    kind: str  # sale | void | stock | catalog | order | credit | staff | deleted | cash_up
     staff_id: uuid.UUID | None
     staff_name: str | None
     summary: str
@@ -1344,3 +1425,97 @@ class PublicStorefront(StorefrontContent):
     themselves (live ones only, at online prices, in the chosen order)."""
 
     featured_products: list[ProductWithVariants] = Field(default_factory=list)
+
+
+# ---------- end-of-day cash-up (app/routers/cash_ups.py) ----------
+
+# The ways money comes in that can be counted at the end of the day.
+# 'credit' (on account) isn't money taken, so it's never counted.
+CountedMethod = Literal["cash", "mobile_money", "card"]
+
+
+class CashUpFigures(BaseModel):
+    """What the till recorded for a day, which the count is checked
+    against. Each by-method dict has cash, mobile_money and card (sales
+    also has credit -- sold on account, so not in any drawer)."""
+
+    receipts: int
+    takings: float
+    discounts: float
+    voided_count: int
+    sales_by_method: dict[str, float]
+    # Wholesale customers paying off what they owe.
+    repayments_by_method: dict[str, float]
+    # Money handed back for returned goods.
+    refunds_by_method: dict[str, float]
+    # sales + repayments - refunds, per method: the money that should have
+    # come in (the drawer's float and paid-out cash are added on top for
+    # cash -- see CashUpRead.expected_cash).
+    money_in: dict[str, float]
+
+
+class CashUpCreate(BaseModel):
+    business_date: date | None = None  # defaults to today, in the shop's timezone
+    opening_float: float = Field(default=0, ge=0)
+    paid_out: float = Field(default=0, ge=0)
+    paid_out_note: str | None = Field(default=None, max_length=500)
+    counted_cash: float = Field(ge=0)
+    # Blank = not checked (no difference is worked out for it).
+    counted_mobile_money: float | None = Field(default=None, ge=0)
+    counted_card: float | None = Field(default=None, ge=0)
+    left_in_drawer: float | None = Field(default=None, ge=0)
+    note: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def _sensible(self) -> "CashUpCreate":
+        if self.paid_out > 0 and len((self.paid_out_note or "").strip()) < 3:
+            raise ValueError("Say what the cash paid out was for")
+        if self.left_in_drawer is not None and self.left_in_drawer > self.counted_cash + 0.001:
+            raise ValueError("You can't leave more in the drawer than was counted")
+        return self
+
+
+class CashUpRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    business_date: date
+    opening_float: float
+    paid_out: float
+    paid_out_note: str | None
+    counted_cash: float
+    counted_mobile_money: float | None
+    counted_card: float | None
+    expected_cash: float
+    expected_mobile_money: float
+    expected_card: float
+    left_in_drawer: float | None
+    note: str | None
+    counted_by: uuid.UUID
+    counted_by_name: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    # counted - expected: negative is a shortage, positive a surplus. None
+    # where that method wasn't counted.
+    cash_difference: float = 0
+    mobile_money_difference: float | None = None
+    card_difference: float | None = None
+    # All the counted methods together.
+    total_difference: float = 0
+
+
+class CashUpDay(BaseModel):
+    """Everything the cash-up screen needs for one day."""
+
+    business_date: date
+    # None until the day has been counted, for anyone but an owner: staff
+    # count first and see what was expected afterwards (a "blind" count),
+    # so the count isn't nudged towards the expected figure.
+    figures: CashUpFigures | None
+    # The float to start from: what the previous cash-up left in the drawer.
+    suggested_opening_float: float
+    cash_up: CashUpRead | None = None
+    # True when the day's sales have changed since it was counted (e.g. a
+    # sale voided or deleted afterwards), so the saved expected figures no
+    # longer match the till.
+    changed_since: bool = False

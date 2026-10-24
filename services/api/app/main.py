@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.routers import (
     audit_log,
     auth,
+    cash_ups,
     categories,
     customers,
     device_tokens,
@@ -64,6 +65,7 @@ app.include_router(device_tokens.router)
 app.include_router(reports.router)
 app.include_router(audit_log.router)
 app.include_router(pos_sales.router)
+app.include_router(cash_ups.router)
 app.include_router(inventory.router)
 app.include_router(uploads.router)
 app.include_router(shop_settings.router)

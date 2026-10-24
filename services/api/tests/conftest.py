@@ -50,6 +50,7 @@ async def fake_staff() -> AsyncGenerator[Staff, None]:
         # cascade from pos_sales, so deleting it is enough.
         await session.execute(text("delete from stock_movements where performed_by = :id"), {"id": staff_id})
         await session.execute(text("delete from pos_sales where staff_id = :id"), {"id": staff_id})
+        await session.execute(text("delete from cash_ups where counted_by = :id"), {"id": staff_id})
         # Deleting the users row cascades to staff (staff.id references it).
         await session.execute(text("delete from users where id = :id"), {"id": staff_id})
         await session.commit()

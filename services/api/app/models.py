@@ -1,6 +1,6 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     ARRAY,
@@ -461,6 +461,9 @@ class POSSale(Base):
     voided_at: Mapped[datetime | None]
     voided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
     void_reason: Mapped[str | None]
+    # Why the sale was discounted (required when any line has a discount --
+    # see POSSaleItem.discount).
+    discount_reason: Mapped[str | None]
 
     payments: Mapped[list["POSSalePayment"]] = relationship(back_populates="sale", cascade="all, delete-orphan")
     items: Mapped[list["POSSaleItem"]] = relationship(back_populates="sale", cascade="all, delete-orphan")
@@ -510,6 +513,10 @@ class POSSaleItem(Base):
     price_tier: Mapped[PriceTier] = mapped_column(_pg_enum(PriceTier, "price_tier"), default=PriceTier.retail)
     quantity: Mapped[int]
     unit_price: Mapped[float] = mapped_column(Numeric(10, 2))
+    # This line's share of a discount on the sale (see
+    # migrations/20261025120001_pos_sale_discounts.sql); line_total is
+    # quantity * unit_price minus this, i.e. what was really charged.
+    discount: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     line_total: Mapped[float] = mapped_column(Numeric(10, 2), server_default=FetchedValue())
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -784,6 +791,10 @@ class CustomerCreditLedger(Base):
     reason: Mapped[str | None]
     reference_type: Mapped[str | None]
     reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # How a 'payment' entry was paid (cash, mobile_money, card), so cash
+    # repayments are counted in the drawer at cash-up. Blank on older rows
+    # and on charges/adjustments.
+    method: Mapped[PaymentMethod | None] = mapped_column(_pg_enum(PaymentMethod, "payment_method"))
     performed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -813,3 +824,56 @@ class StorefrontContent(Base):
     content: Mapped[dict] = mapped_column(JSONB, default=dict)
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("staff.id", ondelete="SET NULL"))
+
+
+class CashUp(Base):
+    """The end-of-day count for one shop day: what was counted against what
+    the till says should be there -- see
+    migrations/20261025120002_cash_ups.sql and app/routers/cash_ups.py."""
+
+    __tablename__ = "cash_ups"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    business_date: Mapped[date]
+    opening_float: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    paid_out: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    paid_out_note: Mapped[str | None]
+    counted_cash: Mapped[float] = mapped_column(Numeric(10, 2))
+    counted_mobile_money: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    counted_card: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    expected_cash: Mapped[float] = mapped_column(Numeric(10, 2))
+    expected_mobile_money: Mapped[float] = mapped_column(Numeric(10, 2))
+    expected_card: Mapped[float] = mapped_column(Numeric(10, 2))
+    left_in_drawer: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    note: Mapped[str | None]
+    counted_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class POSSaleReturn(Base):
+    """Goods brought back from a till sale, and what was refunded -- see
+    migrations/20261025120003_pos_sale_returns.sql and the returns
+    endpoint in app/routers/pos_sales.py."""
+
+    __tablename__ = "pos_sale_returns"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sale_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pos_sales.id", ondelete="CASCADE"))
+    refund_method: Mapped[PaymentMethod | None] = mapped_column(_pg_enum(PaymentMethod, "payment_method"))
+    refund_amount: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    reason: Mapped[str]
+    back_to_stock: Mapped[bool] = mapped_column(default=True)
+    staff_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("staff.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    items: Mapped[list["POSSaleReturnItem"]] = relationship(cascade="all, delete-orphan")
+
+
+class POSSaleReturnItem(Base):
+    __tablename__ = "pos_sale_return_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    return_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pos_sale_returns.id", ondelete="CASCADE"))
+    sale_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pos_sale_items.id", ondelete="CASCADE"))
+    quantity: Mapped[int]
