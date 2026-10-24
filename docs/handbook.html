@@ -85,7 +85,7 @@
   <h1 class="title">Belin-Pok</h1>
   <p class="sub">Inventory, point of sale, online shop and owner reporting for a menswear retail &amp; wholesale business.</p>
   <div class="meta">
-    <b>Version:</b> 23 October 2026<br>
+    <b>Version:</b> 24 October 2026<br>
     <b>Covers:</b> the API, the admin &amp; inventory system, the web storefront and the phone app<br>
     <b>Live at:</b> belpok.xyz · admin.belpok.xyz · api.belpok.xyz
   </div>
@@ -372,7 +372,7 @@ deploy/Caddyfile         Serves the built admin app
   <p>Interactive API documentation is generated automatically at <code>/docs</code> on any running API.</p>
 
   <h2>3.4 Data model</h2>
-  <p>25 tables in PostgreSQL, created by 35 SQL migrations. The main groups:</p>
+  <p>24 tables in PostgreSQL, created by 34 SQL migrations. The main groups:</p>
   <table>
     <tr><th style="width:24%">Area</th><th style="width:40%">Tables</th><th>Notes</th></tr>
     <tr><td>People &amp; sign-in</td><td><code>users</code>, <code>staff</code>, <code>refresh_tokens</code>, <code>one_time_tokens</code>, <code>failed_logins</code></td><td>A user is the login; staff and customers point to it.</td></tr>
@@ -499,7 +499,7 @@ deploy/Caddyfile         Serves the built admin app
     <tr><td><code>Postgres</code></td><td>private network only</td><td>Railway database</td></tr>
     <tr><td><code>product-photos</code></td><td>private</td><td>Railway bucket, served through the API</td></tr>
   </table>
-  <p class="small">The web services also answer on <code>web-production-a8a25.up.railway.app</code> and <code>admin-web-production-e077.up.railway.app</code>.</p>
+  <p class="small">The web services also answer on <code>web-production-a8a25.up.railway.app</code> and <code>admin-web-production-e077.up.railway.app</code>. belpok.xyz's DNS is managed in Cloudflare, which also proxies the traffic; the apps themselves are hosted on Railway. Invite and reset links point at admin.belpok.xyz and belpok.xyz.</p>
 
   <h2>4.2 How a change goes live</h2>
   <ol class="steps">
@@ -541,32 +541,41 @@ cd apps/web &amp;&amp; npm run typecheck</pre>
     <tr><td>A staff member is locked out</td><td>Admin → Staff → <b>Sign-in link</b>, send it to them.</td></tr>
     <tr><td>Change the schema</td><td>Add a new file <code>services/api/migrations/YYYYMMDDHHMMSS_what.sql</code>. Never edit one that has already run in production.</td></tr>
     <tr><td>Change a web app setting</td><td>Edit the service's variable in Railway, then redeploy (they're compiled in).</td></tr>
-    <tr><td>Point links at new domains</td><td>Update <code>ADMIN_APP_URL</code>, <code>STOREFRONT_URL</code> and <code>CORS_ORIGINS</code> on <code>belin-pok</code>.</td></tr>
+    <tr><td>Add a domain</td><td><code>railway domain &lt;domain&gt; --service &lt;service&gt; --port 8080</code> prints the DNS records to add in Cloudflare. Then add it to <code>CORS_ORIGINS</code> on <code>belin-pok</code> (and <code>ADMIN_APP_URL</code> / <code>STOREFRONT_URL</code>, where invite and reset links point, if it replaces one).</td></tr>
+    <tr><td>Back up the database</td><td><code>scripts/backup-db.sh</code> — see 4.6.</td></tr>
   </table>
 
   <h2>4.6 Backups and recovery</h2>
+  <p>All business data lives in the Railway Postgres service; product photos are in the bucket.</p>
   <div class="box warn">
-    <h4>Check that backups are on</h4>
-    <p>All business data lives in the Railway Postgres service, and product photos in the bucket. Confirm in the Railway dashboard that the database has backups enabled and how long they're kept, and occasionally take your own copy (for example with <code>pg_dump</code> through <code>railway connect Postgres</code>). Without a backup, a deleted Railway service or a damaged database can't be recovered.</p>
+    <h4>Railway backups need a Pro workspace</h4>
+    <p>Railway's scheduled database backups (and its one-click restore) are only available on its Pro plan, which this workspace isn't on — so there are no backups on Railway yet. Upgrading, then turning on daily, weekly and monthly backups for the <code>postgres-volume</code>, is the most reliable protection.</p>
   </div>
+  <h3>Your own backups, in the meantime</h3>
+  <pre>scripts/backup-db.sh        # saves ~/belpok-backups/belpok-YYYYMMDD-HHMM.sql.gz</pre>
+  <p>Run it from the repository on a computer signed in to Railway — weekly, and before any risky change. It dumps the whole database inside Railway, downloads it, and refuses to keep a dump that stopped part-way. The files hold customer details, so keep them private; copy them somewhere off the computer (an encrypted drive or private cloud folder) too.</p>
+  <p>To restore a backup into a database (a fresh local one to inspect, or a new Railway database):</p>
+  <pre>createdb belpok_restore
+gunzip -c ~/belpok-backups/belpok-YYYYMMDD-HHMM.sql.gz | psql -d belpok_restore</pre>
+  <p class="small">The first backups were taken (and one test-restored) on 23–24 October 2026. Product photos aren't in it; the bucket is separate.</p>
 </section>
 
 <!-- ============================== 5 ============================== -->
 <section class="chapter">
   <h1><span class="num">5</span>Status and next steps</h1>
-  <p class="lead">Where things stand on 23 October 2026.</p>
+  <p class="lead">Where things stand on 24 October 2026.</p>
 
   <h2>5.1 Outstanding setup</h2>
   <table>
     <tr><th style="width:34%">Step</th><th>Why it matters</th></tr>
-    <tr><td><b>Point sign-in links at the real domains</b>: set <code>ADMIN_APP_URL=https://admin.belpok.xyz</code> and <code>STOREFRONT_URL=https://belpok.xyz</code> on <code>belin-pok</code></td><td>The domains are live, but invite and reset links still use the temporary <code>*.up.railway.app</code> addresses. They work, but look less trustworthy to the person receiving them.</td></tr>
+    <tr><td><b>Add two DNS records for www.belpok.xyz</b> in Cloudflare, set up the same way as the existing <code>belpok.xyz</code> and <code>admin</code> records:<br><code>CNAME www → afz6kirc.up.railway.app</code><br><code style="word-break:break-all">TXT _railway-verify.www → railway-verify=acff4956ad71ee5f91d5846aa7ec294c9e2ff49f291689823f69215b4a0d1dc3</code></td><td>The domain is attached to the storefront on Railway, but has no DNS yet, so typing "www.belpok.xyz" currently fails. belpok.xyz itself works.</td></tr>
+    <tr><td><b>Database backups</b>: upgrade the Railway workspace to Pro, then turn on daily/weekly/monthly backups for the Postgres volume</td><td>None exist on Railway yet — its scheduled backups need a Pro workspace. Until then, run <code>scripts/backup-db.sh</code> regularly (see 4.6).</td></tr>
     <tr><td><b>Set the online markup</b> (Admin → Shop settings)</td><td>It's 0% until set, so online prices equal in-store prices.</td></tr>
     <tr><td><b>Email sending</b>: a Resend account with belpok.xyz verified; set <code>RESEND_API_KEY</code></td><td>Not configured. Invites can still go by WhatsApp/SMS, but customers can't reset forgotten passwords by email until this is done.</td></tr>
     <tr><td><b>Push notifications</b>: a Firebase project; set <code>FIREBASE_SERVICE_ACCOUNT_JSON</code></td><td>Not configured. Needed for order updates and restock alerts in the phone app.</td></tr>
     <tr><td><b>Shop contact details</b> on the <code>web</code> service</td><td>Phone, WhatsApp, email and address appear in the footer and wholesale page only once set.</td></tr>
     <tr><td><b>Publish the phone app</b></td><td>Needs your Play Console / Apple Developer accounts and signing keys.</td></tr>
     <tr><td><b>Delete the old Supabase project</b></td><td>Nothing uses it any more.</td></tr>
-    <tr><td><b>Confirm database backups</b></td><td>See 4.6.</td></tr>
   </table>
 
   <h2>5.2 Known limitations</h2>

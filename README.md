@@ -1,24 +1,25 @@
 # Belin-Pok Enterprise
 
-Inventory, management, and (eventually) ecommerce platform for a wholesale
-men's clothing shop — caps, t-shirts, jackets, sweatshirts, shorts, joggers,
-boxers, socks, and similar items.
+Inventory, point of sale, online shop and owner reporting for a menswear
+retail and wholesale shop -- caps, t-shirts, jackets, sweatshirts, shorts,
+joggers, boxers, socks, and similar items.
 
-This repo is being built in phases:
+What's live today:
 
-- **Phase 1** — foundations, inventory, and the admin/management dashboard.
-  No public storefront, no mobile app, no payments yet.
-- **Phase 2 (current)** — the public storefront (`apps/storefront/`): guest
-  checkout (no account needed), retail customer accounts, product
-  browsing/search, cart, and order placement. Still no payment step —
-  orders land as `status='pending'` ("pending payment"); Paystack
-  integration is a later phase. No wholesale ordering flow yet either —
-  wholesale accounts are still approved/managed by staff in the admin app.
-- Phase 3+ — wholesale self-serve ordering, payments, mobile app. The
-  schema and API are deliberately left open enough to add these without a
-  rewrite (e.g. `customers`, `orders`, and `order_items` already support
-  both retail and wholesale, `customers.status` already models a
-  pending/approved/rejected wholesale approval workflow, etc.).
+- **Admin & inventory system** (admin.belpok.xyz) -- stock by size and
+  colour, fast stock receiving, a point-of-sale till (retail, wholesale and
+  pack prices, split payments, buying on account, busy-hour shortcuts),
+  online orders, customers and credit, staff with combinable roles, and
+  owner reporting: sales reports, a sales journal and an activity log.
+- **Web storefront** (belpok.xyz) -- browsing, search, cart, guest or
+  account checkout for pickup or delivery, order history. Online prices
+  carry a configurable markup over in-store prices.
+- **Phone app** (Flutter) -- the storefront for Android/iOS, not yet
+  published to the stores.
+
+Not yet: online payment (orders are confirmed and paid by arrangement with
+the customer) and self-serve wholesale ordering. The full guide for the
+owner, staff and maintainers is `docs/Belin-Pok-Handbook.pdf`.
 
 ## Tech stack
 
@@ -363,23 +364,35 @@ The API's `CORS_ORIGINS` must list every address the two apps are served
 from, and `ADMIN_APP_URL` / `STOREFRONT_URL` are where invite and
 password-reset links point -- keep both in step with the domains.
 
-### Switching over from Supabase + Cloudflare (one-time)
+### Domains
 
-1. Railway services (done): Postgres, Bucket, `belin-pok` (API), `web`,
-   `admin-web`, with their variables set. The API's pre-deploy step built
-   the schema.
-2. First owner (done): `admin` / `admin`, which must choose a new password
-   on first sign-in. The command is under "The first owner account" above.
-3. Test on the `*.up.railway.app` addresses: sign in to the admin, receive
-   an item with a photo, price and publish it, see it on the storefront,
-   place a test order, ring up a sale.
-4. **DNS (owner's step):** add `admin.belpok.xyz` to `admin-web`, and
-   `belpok.xyz` + `www.belpok.xyz` to `web`, as custom domains in Railway,
-   then update the DNS records wherever belpok.xyz's DNS is managed to the
-   targets Railway shows (`api.belpok.xyz` already points at Railway).
-   Then set the API's `ADMIN_APP_URL` / `STOREFRONT_URL` back to
-   `https://admin.belpok.xyz` / `https://belpok.xyz`, remove the domains
-   from the old Cloudflare Workers projects, and delete
-   `apps/storefront/wrangler.jsonc`.
-5. **Delete the Supabase project (owner's step)** once everything above
-   works -- nothing in this repo uses it any more.
+belpok.xyz's DNS is managed in Cloudflare, which also proxies the
+traffic; everything is hosted on Railway:
+
+| Domain | Railway service |
+| --- | --- |
+| `belpok.xyz`, `www.belpok.xyz` | web |
+| `admin.belpok.xyz` | admin-web |
+| `api.belpok.xyz` | belin-pok |
+
+Adding a domain: `railway domain <domain> --service <service> --port 8080`
+prints the CNAME and `_railway-verify` TXT records to add in Cloudflare
+(set up like the existing records).
+Then add the address to the API's `CORS_ORIGINS` (and, for the admin or
+storefront, `ADMIN_APP_URL` / `STOREFRONT_URL`, where invite and reset
+links point).
+
+### Backups
+
+Railway's scheduled database backups need a Pro workspace, which this
+isn't yet -- so back up with `scripts/backup-db.sh`, which saves a full
+dump to `~/belpok-backups` on the computer running it (weekly, and before
+any risky change). Restore with
+`createdb belpok_restore && gunzip -c <file> | psql -d belpok_restore`.
+Once on Pro, enable daily/weekly/monthly backups for `postgres-volume`.
+
+### History
+
+The move from Supabase and Cloudflare hosting to Railway is complete;
+nothing in this repo uses Supabase, and the old Supabase project can be
+deleted.

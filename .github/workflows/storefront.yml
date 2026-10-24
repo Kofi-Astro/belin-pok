@@ -1,10 +1,9 @@
 name: Storefront
 
-# Cloudflare Pages deploys apps/storefront itself via its native GitHub
-# integration -- see the README for the exact dashboard build settings, a
-# separate Pages project from apps/admin's. This workflow only
-# lints/analyzes on PRs so bad code doesn't land on main; it doesn't
-# deploy anything, to avoid a second, conflicting deploy path.
+# apps/storefront is the Flutter phone app. It isn't deployed from here:
+# release builds are made and published to the app stores by hand (see
+# the README's "Production release builds"). This workflow only
+# lints/analyzes on PRs so bad code doesn't land on main.
 
 on:
   pull_request:

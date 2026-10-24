@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     access_token_minutes: int = 15
     refresh_token_days: int = 30
 
-    cors_origins: str = "http://localhost:5000"
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # The shop's local timezone: where "today", "this week" and each day's
     # tally begin and end in the sales reports. Ghana has no daylight
