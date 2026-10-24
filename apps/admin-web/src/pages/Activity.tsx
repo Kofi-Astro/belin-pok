@@ -3,7 +3,7 @@
 // staff changes, order updates and payments on account. For keeping an eye
 // on the shop without being there.
 import { useQuery } from "@tanstack/react-query";
-import { Ban, Boxes, ClipboardList, HandCoins, History, Pencil, ScanBarcode, Trash2, UserCog, type LucideIcon } from "lucide-react";
+import { Ban, Boxes, ClipboardList, HandCoins, Calculator, History, Pencil, ScanBarcode, Trash2, UserCog, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 
@@ -26,6 +26,8 @@ const KINDS: Record<ActivityKind, { label: string; icon: LucideIcon; tone: strin
   staff: { label: "Staff changes", icon: UserCog, tone: "bg-gray-100 text-gray-700" },
   // Records an owner deleted outright, with what they were and why.
   deleted: { label: "Deleted", icon: Trash2, tone: "bg-red-100 text-red-800" },
+  // End-of-day counts: balanced, short or over (see the Cash-up page).
+  cash_up: { label: "Cash-ups", icon: Calculator, tone: "bg-violet-50 text-violet-700" },
 };
 
 /** Where an entry's "View" link goes. */
@@ -36,6 +38,8 @@ function link(e: Activity): string | null {
       const day = e.at.slice(0, 10);
       return `/sales?from=${day}&to=${day}${e.kind === "void" ? "&status=voided" : ""}`;
     }
+    case "cash_up":
+      return "/cash-up";
     case "products":
       return e.reference_id ? `/products/${e.reference_id}` : null;
     case "order":

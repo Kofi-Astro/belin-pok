@@ -123,7 +123,7 @@ export function ReportsPage() {
               <p className="text-xs font-semibold tracking-wide text-muted uppercase">{METHOD_LABELS[m]}</p>
               <p className="tabular mt-1 text-xl font-bold">{money(t.by_method[m] ?? 0)}</p>
               {/* What to check the cash drawer against at close. */}
-              {m === "cash" && <p className="text-xs text-muted">Should be in the drawer</p>}
+              {m === "cash" && <p className="text-xs text-muted">From sales — see Cash-up for the drawer</p>}
               {m === "credit" && <p className="text-xs text-muted">Owed, not yet paid</p>}
             </div>
           ))}
@@ -137,6 +137,23 @@ export function ReportsPage() {
         </div>
         {/* Money on account moves separately from sales: "given" is new credit
            sales in the period, "collected" is customers paying off what they owe. */}
+        {/* Discounts are already off the takings above; refunds for returns
+           are money given back later, shown separately. */}
+        {(t.discounts_given > 0 || t.refunds_given > 0) && (
+          <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-line bg-canvas/50 px-5 py-3 text-sm text-muted">
+            {t.discounts_given > 0 && (
+              <Link to={`/sales?from=${r.date_from}&to=${r.date_to}&only=discounted`} className="hover:text-ink">
+                Discounts: <b className="text-ink">{money(t.discounts_given)}</b> off {t.discounted_receipts} receipt{t.discounted_receipts === 1 ? "" : "s"} (already taken off
+                sales) →
+              </Link>
+            )}
+            {t.refunds_given > 0 && (
+              <span>
+                Returns: <b className="text-ink">{money(t.refunds_given)}</b> refunded on {t.returns_count} return{t.returns_count === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
+        )}
         {(t.credit_collected > 0 || t.credit_given > 0) && (
           <div className="border-t border-line bg-canvas/50 px-5 py-3 text-sm text-muted">
             On account: <b className="text-ink">{money(t.credit_given)}</b> given on credit, <b className="text-ink">{money(t.credit_collected)}</b> collected from
@@ -320,6 +337,7 @@ export function ReportsPage() {
                     <Th className="text-right">Items</Th>
                     <Th className="text-right">Sales</Th>
                     <Th className="text-right">Cash taken</Th>
+                    <Th className="text-right">Discounts given</Th>
                     <Th className="text-right">Their sales voided</Th>
                     <Th className="text-right">Voids they did</Th>
                   </tr>
@@ -337,6 +355,7 @@ export function ReportsPage() {
                       <Td className="tabular text-right">{s.items_sold}</Td>
                       <Td className="tabular text-right font-semibold">{money(s.revenue)}</Td>
                       <Td className="tabular text-right">{money(s.cash_taken)}</Td>
+                      <Td className="tabular text-right">{s.discounts_given ? money(s.discounts_given) : "—"}</Td>
                       <Td className="text-right">{s.voided_count ? <Badge tone="red">{`${s.voided_count} · ${money(s.voided_amount)}`}</Badge> : "—"}</Td>
                       <Td className="text-right">{s.voids_performed ? <Badge tone="amber">{s.voids_performed}</Badge> : "—"}</Td>
                     </tr>

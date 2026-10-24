@@ -256,8 +256,25 @@ export type PosSaleItem = {
   price_tier: PriceTier;
   quantity: number;
   unit_price: number;
+  // This line's share of a discount on the sale; line_total is after it.
+  discount: number;
   line_total: number;
   pack_size: number | null;
+  // How many of this line have been brought back since.
+  returned_quantity: number;
+};
+
+// Goods brought back from a sale (POST /pos-sales/{id}/returns).
+// refund_method is null when nothing was refunded (an exchange).
+export type PosSaleReturn = {
+  id: string;
+  refund_method: PaymentMethod | null;
+  refund_amount: number;
+  reason: string;
+  back_to_stock: boolean;
+  staff_name: string | null;
+  created_at: string;
+  items: { sale_item_id: string; quantity: number }[];
 };
 
 // One till receipt: who rang it up, for whom, what was in it and how it
@@ -271,6 +288,11 @@ export type PosSale = {
   customer_name: string | null;
   items: PosSaleItem[];
   payments: { method: PaymentMethod; amount: number }[];
+  // subtotal: till prices added up; total: what was charged after the
+  // discount.
+  subtotal: number;
+  discount_total: number;
+  discount_reason: string | null;
   total: number;
   credit_amount: number;
   // Set on a voided sale.
@@ -278,6 +300,8 @@ export type PosSale = {
   voided_by: string | null;
   voided_by_name: string | null;
   void_reason: string | null;
+  returns: PosSaleReturn[];
+  refunded_total: number;
 };
 
 // GET /reports/dashboard, for the last period_days days.
@@ -334,6 +358,12 @@ export type SalesTotals = {
   online_markup_earned: number;
   credit_given: number;
   credit_collected: number;
+  // Discounts given at the till (already off revenue) and refunds for
+  // returned goods (not taken off revenue).
+  discounts_given: number;
+  discounted_receipts: number;
+  refunds_given: number;
+  returns_count: number;
 };
 
 // One row of the tally: a day, week or month (start..end, inclusive).
@@ -383,6 +413,7 @@ export type StaffSales = {
   voided_count: number;
   voided_amount: number;
   voids_performed: number;
+  discounts_given: number;
 };
 
 export type SalesReport = {
@@ -398,7 +429,7 @@ export type SalesReport = {
 };
 
 // The activity log's categories (the filter tiles on the Activity page).
-export type ActivityKind = "sale" | "void" | "stock" | "catalog" | "order" | "credit" | "staff" | "deleted";
+export type ActivityKind = "sale" | "void" | "stock" | "catalog" | "order" | "credit" | "staff" | "deleted" | "cash_up";
 
 // One entry in the owner's activity log. reference_type/_id say what it
 // was about, for the "View" link (see link() in pages/Activity.tsx).
@@ -469,3 +500,55 @@ export type StorefrontContent = {
 
 export type StorefrontContentRead = { content: StorefrontContent; updated_at: string; updated_by_name: string | null };
 
+// ---------- end-of-day cash-up (GET /cash-ups/day, POST /cash-ups) ----------
+
+// The three ways money comes in that can be counted. ("credit" -- sold on
+// account -- isn't money taken.)
+export type CountedMethod = "cash" | "mobile_money" | "card";
+
+// What the till recorded for a day. money_in = sales + repayments -
+// refunds, per method.
+export type CashUpFigures = {
+  receipts: number;
+  takings: number;
+  discounts: number;
+  voided_count: number;
+  sales_by_method: Record<PaymentMethod, number>;
+  repayments_by_method: Record<CountedMethod, number>;
+  refunds_by_method: Record<CountedMethod, number>;
+  money_in: Record<CountedMethod, number>;
+};
+
+// A saved count. *_difference = counted - expected (negative: short);
+// null where that method wasn't counted.
+export type CashUp = {
+  id: string;
+  business_date: string;
+  opening_float: number;
+  paid_out: number;
+  paid_out_note: string | null;
+  counted_cash: number;
+  counted_mobile_money: number | null;
+  counted_card: number | null;
+  expected_cash: number;
+  expected_mobile_money: number;
+  expected_card: number;
+  left_in_drawer: number | null;
+  note: string | null;
+  counted_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+  cash_difference: number;
+  mobile_money_difference: number | null;
+  card_difference: number | null;
+  total_difference: number;
+};
+
+// figures is null for staff until the day is counted (a blind count).
+export type CashUpDay = {
+  business_date: string;
+  figures: CashUpFigures | null;
+  suggested_opening_float: number;
+  cash_up: CashUp | null;
+  changed_since: boolean;
+};

@@ -8,11 +8,12 @@
 // Quick-logged and one-amount lines are sorted out later, from the
 // "To sort out" list under Today's sales.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Building2, ChevronDown, Minus, PackageSearch, Plus, Receipt, ScanBarcode, Search, ShoppingBasket, Split, Trash2, X, Zap } from "lucide-react";
+import { Ban, Building2, CheckCircle2, ChevronDown, Minus, PackageSearch, Plus, Receipt, ScanBarcode, Search, Shirt, ShoppingBasket, Split, Tag, Trash2, Undo2, X, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Thumb } from "@/components/bits";
 import { OwnerDeleteButton } from "@/components/DeleteRecord";
+import { ReceiptModal, ReturnModal, SaleDiscountAndReturns } from "@/components/SaleExtras";
 import { Modal, useToast } from "@/components/overlay";
 import { useInvalidateStock } from "@/components/StockModals";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, FormError, IconButton, Input, PageHeader, Select, Spinner } from "@/components/ui";
@@ -79,6 +80,10 @@ export function PosPage() {
   const [quickLogging, setQuickLogging] = useState(false);
   const [lumping, setLumping] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
+  // The sale just completed, kept so a receipt can be given if the
+  // customer asks -- never required. Cleared when the next sale starts.
+  const [lastSale, setLastSale] = useState<PosSale | null>(null);
+  const [receiptFor, setReceiptFor] = useState<PosSale | null>(null);
 
   // Live products only, filtered by the search box and category chips.
   const products = useQuery({
@@ -100,7 +105,8 @@ export function PosPage() {
 
   // Adding the same product, size and price tier again tops up that line
   // (up to the stock available) instead of adding a second one.
-  const addLine = (line: CartLine) =>
+  const addLine = (line: CartLine) => {
+    setLastSale(null);
     setCart((current) => {
       if (line.kind === "item") {
         const existing = current.find((l) => l.kind === "item" && l.variant.id === line.variant.id && l.tier === line.tier);
@@ -111,6 +117,7 @@ export function PosPage() {
       }
       return [...current, line];
     });
+  };
 
   // Quantity 0 removes the line. A one-amount line has no quantity to
   // change -- it can only be removed.
@@ -178,11 +185,15 @@ export function PosPage() {
               <EmptyState icon={PackageSearch} title="No live products match" message="Only published products can be sold. Drafts need a price and Publish first." />
             </Card>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 items-start gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {products.data.rows.map((p) => {
                 const stock = totalStock(p);
-                // Show the lowest retail price across its sizes.
-                const prices = p.variants.map((v) => retailPrice(p, v));
+                // The price, or the range across its types and sizes
+                // ("₵130 – ₵170" for joggers at three qualities).
+                const prices = p.variants.filter((v) => v.is_active).map((v) => retailPrice(p, v));
+                const low = prices.length ? Math.min(...prices) : p.base_price;
+                const high = prices.length ? Math.max(...prices) : p.base_price;
+                const photo = primaryImage(p);
                 return (
                   <button
                     key={p.id}
@@ -191,13 +202,22 @@ export function PosPage() {
                     onClick={() => setPicking(p)}
                     className="group overflow-hidden rounded-xl border border-line bg-white text-left shadow-xs transition hover:border-brand-500 hover:shadow-md disabled:opacity-50"
                   >
-                    <div className="aspect-square bg-canvas">
-                      {primaryImage(p) && <Thumb path={primaryImage(p)!.storage_path} className="h-full! w-full! rounded-none ring-0" />}
-                    </div>
+                    {/* No photo yet (most of the stock, early on): a slim coloured
+                        band instead of a big empty square, so more products fit on
+                        the screen. */}
+                    {photo ? (
+                      <div className="aspect-square bg-canvas">
+                        <Thumb path={photo.storage_path} className="h-full! w-full! rounded-none ring-0" />
+                      </div>
+                    ) : (
+                      <div className="flex h-12 items-center bg-brand-50 px-3 text-brand-700">
+                        <Shirt className="h-5 w-5 opacity-60" />
+                      </div>
+                    )}
                     <div className="p-3">
                       <p className="line-clamp-2 text-sm leading-snug font-semibold">{p.name}</p>
-                      <div className="mt-1.5 flex items-center justify-between text-xs">
-                        <span className="tabular font-bold">{money(Math.min(...prices, p.base_price))}</span>
+                      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 text-xs">
+                        <span className="tabular font-bold">{low === high ? money(low) : `${money(low)} – ${money(high)}`}</span>
                         <span className={stock === 0 ? "font-semibold text-red-600" : "text-muted"}>{stock === 0 ? "Sold out" : `${stock} left`}</span>
                       </div>
                     </div>
@@ -241,6 +261,20 @@ export function PosPage() {
                 )}
                 <ChevronDown className="h-4 w-4 text-muted" />
               </button>
+            )}
+
+            {/* The sale just made, with a receipt on offer (optional). */}
+            {lastSale && cart.length === 0 && (
+              <div className="flex items-center gap-3 border-b border-line bg-emerald-50 px-5 py-3 text-sm">
+                <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold text-emerald-900">Sale recorded — {money(lastSale.total)}</span>
+                  <span className="text-xs text-emerald-800">Customer wants a receipt?</span>
+                </span>
+                <Button size="sm" variant="secondary" icon={Receipt} onClick={() => setReceiptFor(lastSale)}>
+                  Receipt
+                </Button>
+              </div>
             )}
 
             {cart.length === 0 ? (
@@ -352,13 +386,15 @@ export function PosPage() {
         cart={cart}
         total={total}
         customer={customer}
-        onDone={() => {
+        onDone={(sale) => {
           setCart([]);
           setCheckingOut(false);
           setCustomer(null);
           setMode("retail");
+          setLastSale(sale);
         }}
       />
+      <ReceiptModal sale={receiptFor} onClose={() => setReceiptFor(null)} />
     </>
   );
 }
@@ -629,7 +665,7 @@ function CheckoutModal({
   cart: CartLine[];
   total: number;
   customer: Customer | null;
-  onDone: () => void;
+  onDone: (sale: PosSale) => void;
 }) {
   const toast = useToast();
   const qc = useQueryClient();
@@ -637,22 +673,43 @@ function CheckoutModal({
   const [payments, setPayments] = useState<PaymentLine[]>([{ method: "cash", amount: "" }]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A discount off the whole sale, with the reason the owner will see.
+  // Entered as an amount off, or as the price agreed with the customer.
+  const [discounting, setDiscounting] = useState(false);
+  const [discountText, setDiscountText] = useState("");
+  // The agreed price as typed (kept as text so it isn't rewritten under
+  // the cursor); typing one works out the amount off.
+  const [agreedText, setAgreedText] = useState("");
+  const [reason, setReason] = useState("");
+  const discount = Math.min(total, Math.max(0, Math.round((Number(discountText) || 0) * 100) / 100));
+  const due = Math.round((total - discount) * 100) / 100;
 
-  // Start each checkout with one cash line for the full amount.
-  // Start each checkout with one cash line for the full amount (reset
-  // whenever the dialog opens or the total changes).
-  const key = `${open}-${total}`;
+  // A fresh checkout (the dialog opening, or the sale changing) starts
+  // with no discount...
+  const saleKey = `${open}-${total}`;
+  const [lastSaleKey, setLastSaleKey] = useState("");
+  if (open && saleKey !== lastSaleKey) {
+    setLastSaleKey(saleKey);
+    setDiscounting(false);
+    setDiscountText("");
+    setAgreedText("");
+    setReason("");
+  }
+  // ...and one cash line for the amount due, reset when the discount
+  // changes it.
+  const key = `${open}-${due}`;
   const [lastKey, setLastKey] = useState("");
   if (open && key !== lastKey) {
     setLastKey(key);
-    setPayments([{ method: "cash", amount: total.toFixed(2) }]);
+    setPayments([{ method: "cash", amount: due.toFixed(2) }]);
     setError(null);
   }
 
   const paid = payments.reduce((n, p) => n + (Number(p.amount) || 0), 0);
   // What's still to pay (negative: paid too much), and whether the credit
   // part fits within the customer's available credit.
-  const remaining = Math.round((total - paid) * 100) / 100;
+  const remaining = Math.round((due - paid) * 100) / 100;
+  const needsReason = discount > 0 && reason.trim().length < 3;
   const creditAvailable = customer?.is_wholesale_verified ? Math.max(0, customer.credit_limit - customer.outstanding_balance) : 0;
   const credit = payments.filter((p) => p.method === "credit").reduce((n, p) => n + (Number(p.amount) || 0), 0);
   const overLimit = credit > creditAvailable + 0.001;
@@ -674,11 +731,13 @@ function CheckoutModal({
         ),
         // Lines left at zero are dropped rather than sent.
         payments: payments.filter((p) => Number(p.amount) > 0).map((p) => ({ method: p.method, amount: Number(p.amount) })),
+        discount,
+        discount_reason: discount > 0 ? reason.trim() : null,
       });
       // Stock, today's sales and (for credit) the customer's balance changed.
       await Promise.all([invalidate(), qc.invalidateQueries({ queryKey: ["pos-sales"] }), qc.invalidateQueries({ queryKey: ["customers"] })]);
       toast.success(`Sale recorded — ${money(sale.total)}`);
-      onDone();
+      onDone(sale);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -690,14 +749,14 @@ function CheckoutModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Charge ${money(total)}`}
+      title={`Charge ${money(due)}`}
       description={customer ? `For ${customer.business_name || customer.full_name}` : "Walk-in customer"}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Back
           </Button>
-          <Button disabled={Math.abs(remaining) > 0.009 || overLimit} loading={busy} onClick={() => void submit()}>
+          <Button disabled={Math.abs(remaining) > 0.009 || overLimit || needsReason} loading={busy} onClick={() => void submit()}>
             Complete sale
           </Button>
         </>
@@ -705,6 +764,64 @@ function CheckoutModal({
     >
       <div className="space-y-3">
         <FormError message={error} />
+
+        {/* Discount: hidden behind a link so it isn't in the way of the
+            usual sale. */}
+        {!discounting ? (
+          <Button size="sm" variant="ghost" icon={Tag} onClick={() => setDiscounting(true)}>
+            Give a discount
+          </Button>
+        ) : (
+          <div className="space-y-3 rounded-lg border border-line p-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Amount off (GH₵)">
+                <Input
+                  type="number"
+                  min={0}
+                  max={total}
+                  step="0.01"
+                  autoFocus
+                  value={discountText}
+                  onChange={(e) => {
+                    setDiscountText(e.target.value);
+                    setAgreedText("");
+                  }}
+                />
+              </Field>
+              {/* Haggling usually ends at a price, not an amount off. */}
+              <Field label="Or the agreed price">
+                <Input
+                  type="number"
+                  min={0}
+                  max={total}
+                  step="0.01"
+                  value={agreedText}
+                  onChange={(e) => {
+                    setAgreedText(e.target.value);
+                    setDiscountText(e.target.value === "" ? "" : (Math.max(0, total - Number(e.target.value))).toFixed(2));
+                  }}
+                  placeholder={total.toFixed(2)}
+                />
+              </Field>
+            </div>
+            <Field label="Why?" hint="The owner sees every discount and who gave it.">
+              <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Regular customer" />
+            </Field>
+            <div className="flex flex-wrap gap-1.5">
+              {["Regular customer", "Bought several", "Haggled", "Small fault"].map((r) => (
+                <button key={r} type="button" onClick={() => setReason(r)} className="rounded-full border border-line px-2.5 py-1 text-xs font-medium hover:border-ink/30">
+                  {r}
+                </button>
+              ))}
+            </div>
+            {discount > 0 && (
+              <p className="text-sm text-muted">
+                {money(total)} − {money(discount)} = <span className="font-semibold text-ink">{money(due)}</span>
+              </p>
+            )}
+          </div>
+        )}
+
         {payments.map((p, i) => (
           <div key={i} className="flex gap-2">
             <Select className="w-52" value={p.method} onChange={(e) => setPayments(payments.map((x, j) => (j === i ? { ...x, method: e.target.value as PaymentMethod } : x)))}>
@@ -732,6 +849,7 @@ function CheckoutModal({
         </div>
         {customer && !customer.is_wholesale_verified && <p className="text-xs text-amber-800">This account isn&apos;t approved, so it can&apos;t buy on credit.</p>}
         {overLimit && <p className="text-sm font-medium text-red-700">That&apos;s more than the {money(creditAvailable)} of credit available.</p>}
+        {needsReason && <p className="text-sm text-amber-800">Say why the discount is being given.</p>}
       </div>
     </Modal>
   );
@@ -753,6 +871,8 @@ function TodaysSales() {
   const [voiding, setVoiding] = useState<PosSale | null>(null);
   const [identifying, setIdentifying] = useState<{ sale: PosSale; item: PosSaleItem } | null>(null);
   const [breaking, setBreaking] = useState<{ sale: PosSale; item: PosSaleItem } | null>(null);
+  const [receiptFor, setReceiptFor] = useState<PosSale | null>(null);
+  const [returning, setReturning] = useState<PosSale | null>(null);
 
   const today = useMemo(() => {
     const start = new Date();
@@ -761,6 +881,7 @@ function TodaysSales() {
   }, [sales.data]);
   const unidentified = toSort.data ?? [];
   const takings = today.filter((s) => s.status !== "voided").reduce((n, s) => n + s.total, 0);
+  const receiptCount = today.filter((s) => s.status !== "voided").length;
 
   const [voidReason, setVoidReason] = useState("");
   // Voiding reverses the sale: stock goes back, any credit charge is
@@ -785,7 +906,7 @@ function TodaysSales() {
     <Card className="mt-8">
       <CardHeader
         title="Today's sales"
-        description={`${today.filter((s) => s.status !== "voided").length} receipts · ${money(takings)} taken today${unidentified.length ? ` · ${unidentified.length} to sort out` : ""}`}
+        description={`${receiptCount} receipt${receiptCount === 1 ? "" : "s"} · ${money(takings)} taken today${unidentified.length ? ` · ${unidentified.length} to sort out` : ""}`}
       />
       {!list.length ? (
         <EmptyState icon={Receipt} title="No sales yet today" />
@@ -840,13 +961,26 @@ function TodaysSales() {
                       )}
                     </div>
                   ))}
-                  <div className="flex items-center justify-between border-t border-line pt-3">
+                  <SaleDiscountAndReturns sale={s} />
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
                     <span className="text-muted">
                       {s.payments.map((p) => `${METHODS.find((m) => m.value === p.method)?.label}: ${money(p.amount)}`).join(" · ")}
                       {s.staff_name && ` · by ${s.staff_name}`}
                     </span>
-                    <span className="flex items-center gap-1">
+                    <span className="flex flex-wrap items-center gap-1">
                       {s.status !== "voided" && (
+                        <>
+                          <Button size="sm" variant="ghost" icon={Receipt} onClick={() => setReceiptFor(s)}>
+                            Receipt
+                          </Button>
+                          <Button size="sm" variant="ghost" icon={Undo2} onClick={() => setReturning(s)}>
+                            Return
+                          </Button>
+                        </>
+                      )}
+                      {/* A sale with returns can't be voided (the API refuses: the
+                          returned items would go back on the shelf twice). */}
+                      {s.status !== "voided" && !s.returns.length && (
                         <Button size="sm" variant="ghost" icon={Ban} className="text-red-600" onClick={() => setVoiding(s)}>
                           Void
                         </Button>
@@ -887,7 +1021,7 @@ function TodaysSales() {
       >
         <div className="space-y-3 text-sm">
           <p className="text-ink/80">
-            For a sale entered by mistake: the stock goes back and any credit charge is reversed. For a customer returning goods, adjust stock as a return
+            For a sale entered by mistake: the stock goes back and any credit charge is reversed. For a customer bringing goods back, use Return
             instead.
           </p>
           <Field label="Why is it being voided?" hint="Recorded with your name — the owner sees it.">
@@ -897,6 +1031,8 @@ function TodaysSales() {
       </Modal>
       {identifying && <IdentifyModal sale={identifying.sale} item={identifying.item} onClose={() => setIdentifying(null)} />}
       {breaking && <BreakDownModal sale={breaking.sale} item={breaking.item} onClose={() => setBreaking(null)} />}
+      <ReceiptModal sale={receiptFor} onClose={() => setReceiptFor(null)} />
+      {returning && <ReturnModal sale={returning} onClose={() => setReturning(null)} />}
     </Card>
   );
 }

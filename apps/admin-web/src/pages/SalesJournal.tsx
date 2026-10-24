@@ -2,7 +2,7 @@
 // up, who bought, each item with quantity and price, how it was paid, and
 // for voided sales who voided it, when and why. Filterable, exportable.
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Ban, ChevronDown, ChevronRight, Download, Globe, Receipt, Store } from "lucide-react";
+import { Ban, ChevronDown, ChevronRight, Download, Globe, Receipt, Store, Undo2 } from "lucide-react";
 import { Fragment, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth";
 import { downloadCsv } from "@/lib/csv";
 import { OrderStatusBadge } from "@/components/bits";
 import { OwnerDeleteButton } from "@/components/DeleteRecord";
+import { ReceiptModal, ReturnModal, SaleDiscountAndReturns } from "@/components/SaleExtras";
 import { dateTime, money, saleItemName, titleCase, optionLabel } from "@/lib/format";
 import { describePeriod, type Period, type Preset, presetRange } from "@/lib/period";
 import type { Order, PosSale, Staff } from "@/lib/types";
@@ -32,9 +33,13 @@ export function SalesJournalPage() {
   const staffId = params.get("staff") ?? "";
   const status = params.get("status") ?? "";
   const method = params.get("method") ?? "";
+  // "discounted": only sales with a discount, for the owner to look over.
+  const only = params.get("only") ?? "";
   // page: 0-based. open: the receipt expanded to show its lines.
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
+  const [receiptFor, setReceiptFor] = useState<PosSale | null>(null);
+  const [returning, setReturning] = useState<PosSale | null>(null);
 
   // Applies filter changes to the URL (an empty value removes the filter)
   // and goes back to the first page. replace: filter tweaks don't each
@@ -56,7 +61,7 @@ export function SalesJournalPage() {
 
   // The filters, as GET /pos-sales takes them (empty ones are dropped by
   // api.list).
-  const query = { date_from: period.from, date_to: period.to, staff_id: staffId, status, payment_method: method };
+  const query = { date_from: period.from, date_to: period.to, staff_id: staffId, status, payment_method: method, discounted: only === "discounted" ? "true" : "" };
   const sales = useQuery({
     queryKey: ["pos-sales", "journal", query, page],
     queryFn: () => api.list<PosSale>("/pos-sales", { ...query, limit: PAGE_SIZE, offset: page * PAGE_SIZE }),
@@ -76,7 +81,7 @@ export function SalesJournalPage() {
     // One line per item sold, with the receipt's details repeated, so it
     // can be filtered and summed in a spreadsheet.
     downloadCsv(`sales-journal-${period.from}-to-${period.to}.csv`, [
-      ["Date & time", "Receipt", "Rung up by", "Customer", "Item", "Size", "Colour", "Price tier", "Qty", "Unit price", "Line total", "Paid by", "Status", "Voided by", "Void reason"],
+      ["Date & time", "Receipt", "Rung up by", "Customer", "Item", "Size", "Colour", "Price tier", "Qty", "Unit price", "Discount", "Line total", "Paid by", "Status", "Voided by", "Void reason"],
       ...rows.flatMap((s) =>
         s.items.map((i) => [
           new Date(s.created_at).toLocaleString("en-GH"),
@@ -89,6 +94,7 @@ export function SalesJournalPage() {
           i.price_tier,
           i.quantity,
           i.unit_price,
+          i.discount,
           i.line_total,
           s.payments.map((p) => `${METHOD_LABELS[p.method]} ${p.amount}`).join(" + "),
           s.status,
@@ -182,6 +188,10 @@ export function SalesJournalPage() {
             <option value="completed">Completed</option>
             <option value="voided">Voided only</option>
           </Select>
+          <Select className="w-40" value={only} onChange={(e) => update({ only: e.target.value })}>
+            <option value="">With or without discount</option>
+            <option value="discounted">Discounted only</option>
+          </Select>
           {sales.isFetching && <Spinner className="h-4 w-4" />}
           {data && (
             <span className="ml-auto text-sm text-muted">
@@ -236,6 +246,8 @@ export function SalesJournalPage() {
                             {count} item{count === 1 ? "" : "s"}
                             {/* Lines that don't name a product yet: their stock hasn't come off. */}
                             {s.items.some((i) => !i.variant_id) && " · has lines to sort out"}
+                            {s.discount_total > 0 && ` · ${money(s.discount_total)} discount`}
+                            {s.returns.length > 0 && " · items returned"}
                           </p>
                         </Td>
                         <Td className="text-muted">{s.payments.map((p) => METHOD_LABELS[p.method]).join(" + ")}</Td>
@@ -293,6 +305,9 @@ export function SalesJournalPage() {
                                     ))}
                                   </tbody>
                                 </table>
+                                <div className="mt-3">
+                                  <SaleDiscountAndReturns sale={s} />
+                                </div>
                               </div>
                               <div className="space-y-4 text-sm">
                                 <div>
@@ -319,6 +334,16 @@ export function SalesJournalPage() {
                                     <p className="mt-1">{s.void_reason ? `“${s.void_reason}”` : "No reason recorded (voided before reasons were required)."}</p>
                                   </div>
                                 )}
+                                {!voided && (
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button size="sm" variant="secondary" icon={Receipt} onClick={() => setReceiptFor(s)}>
+                                      Receipt
+                                    </Button>
+                                    <Button size="sm" variant="secondary" icon={Undo2} onClick={() => setReturning(s)}>
+                                      Return items
+                                    </Button>
+                                  </div>
+                                )}
                                 {/* Owners only: removes a test/junk sale entirely (see DeleteRecord.tsx). */}
                                 <OwnerDeleteButton
                                   label="Delete sale"
@@ -341,6 +366,8 @@ export function SalesJournalPage() {
           </>
         )}
       </Card>
+      <ReceiptModal sale={receiptFor} onClose={() => setReceiptFor(null)} />
+      {returning && <ReturnModal sale={returning} onClose={() => setReturning(null)} />}
     </>
   );
 }

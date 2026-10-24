@@ -526,6 +526,8 @@ function LedgerModal({ customer, kind, onClose }: { customer: Customer; kind: "p
   const [amount, setAmount] = useState("");
   const [direction, setDirection] = useState<"decrease" | "increase">("decrease");
   const [reason, setReason] = useState("");
+  // How a payment came in -- cash is expected in the drawer at cash-up.
+  const [method, setMethod] = useState<"cash" | "mobile_money" | "card">("cash");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -533,6 +535,7 @@ function LedgerModal({ customer, kind, onClose }: { customer: Customer; kind: "p
   useEffect(() => {
     setAmount("");
     setReason("");
+    setMethod("cash");
     setError(null);
   }, [kind]);
 
@@ -543,7 +546,7 @@ function LedgerModal({ customer, kind, onClose }: { customer: Customer; kind: "p
     setBusy(true);
     setError(null);
     try {
-      if (kind === "payment") await api.post(`/customers/${customer.id}/credit-payments`, { amount: n, reason: reason.trim() || null });
+      if (kind === "payment") await api.post(`/customers/${customer.id}/credit-payments`, { amount: n, method, reason: reason.trim() || null });
       else await api.post(`/customers/${customer.id}/credit-adjustments`, { amount: direction === "increase" ? n : -n, reason: reason.trim() });
       // The balance shows on this page, the list and the dashboard's
       // debtors panel -- refresh them all.
@@ -588,6 +591,15 @@ function LedgerModal({ customer, kind, onClose }: { customer: Customer; kind: "p
         <Field label="Amount (GH₵)">
           <Input type="number" min={0} step="0.01" autoFocus required value={amount} onChange={(e) => setAmount(e.target.value)} />
         </Field>
+        {kind === "payment" && (
+          <Field label="Paid by" hint="Cash payments are counted in the drawer at cash-up.">
+            <Select value={method} onChange={(e) => setMethod(e.target.value as typeof method)}>
+              <option value="cash">Cash</option>
+              <option value="mobile_money">Mobile money</option>
+              <option value="card">Card</option>
+            </Select>
+          </Field>
+        )}
         <Field label={kind === "payment" ? "Reference (optional)" : "Reason"}>
           <Input required={kind === "adjustment"} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={kind === "payment" ? "e.g. MoMo ref, cash" : "Why the balance is changing"} />
         </Field>

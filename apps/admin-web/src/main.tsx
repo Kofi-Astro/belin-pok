@@ -15,6 +15,7 @@ import { ToastProvider } from "@/components/overlay";
 import { PageLoading } from "@/components/ui";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { ForgotPasswordPage, LoginPage, SetPasswordPage } from "@/pages/auth";
+import { CashUpPage } from "@/pages/CashUp";
 import { CustomerDetailPage, CustomersPage } from "@/pages/Customers";
 import { ActivityPage } from "@/pages/Activity";
 import { DashboardPage } from "@/pages/Dashboard";
@@ -72,6 +73,7 @@ const router = createBrowserRouter([
           { path: "sales", element: <SalesJournalPage /> },
           { path: "activity", element: <ActivityPage /> },
           { path: "pos", element: <PosPage /> },
+          { path: "cash-up", element: <CashUpPage /> },
           { path: "orders", element: <OrdersPage /> },
           { path: "orders/:id", element: <OrderDetailPage /> },
           { path: "customers", element: <CustomersPage /> },

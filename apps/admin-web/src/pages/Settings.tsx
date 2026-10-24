@@ -15,7 +15,7 @@ import { ConfirmDialog, Modal, useToast } from "@/components/overlay";
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, FormError, IconButton, Input, PageHeader, PageLoading, Table, Td, Textarea, Th, Toggle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { date, imageUrl, slugify, titleCase } from "@/lib/format";
+import { date, imageUrl, internationalPhone, slugify, titleCase } from "@/lib/format";
 import { imageFiles, uploadPhotos } from "@/lib/photos";
 import { useCategories } from "@/lib/queries";
 import { session } from "@/lib/session";
@@ -532,13 +532,6 @@ function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () 
       </form>
     </Modal>
   );
-}
-
-/** A Ghana number as WhatsApp wants it: country code, digits only
- * ("0241234567" -> "233241234567"). Mirrors international() in
- * services/api/app/phone.py; numbers are stored as 0XXXXXXXXX or +<digits>. */
-function internationalPhone(phone: string): string {
-  return phone.startsWith("+") ? phone.slice(1) : `233${phone.slice(1)}`;
 }
 
 // Passing on an invite/sign-in link. Every option sends from the owner's

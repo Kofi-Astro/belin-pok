@@ -85,3 +85,13 @@ export const slugify = (s: string) =>
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+
+/** A phone number as WhatsApp links want it: country code and digits only.
+ * Takes Ghana numbers however they're typed ("024 123 4567",
+ * "+233 24 123 4567", "233241234567") -> "233241234567". Mirrors
+ * international() in services/api/app/phone.py. */
+export function internationalPhone(phone: string): string {
+  const digits = phone.replace(/[^\d]/g, "");
+  if (phone.trim().startsWith("+") || digits.startsWith("233")) return digits;
+  return digits.startsWith("0") ? `233${digits.slice(1)}` : digits;
+}

@@ -6,6 +6,7 @@ import clsx from "clsx";
 import {
   BarChart3,
   Boxes,
+  Calculator,
   ClipboardList,
   Globe,
   History,
@@ -51,6 +52,8 @@ const NAV: { heading: string; items: NavItem[] }[] = [
     heading: "Sell",
     items: [
       { to: "/pos", label: "Point of sale", icon: ScanBarcode, show: (c) => c.adjustStock },
+      // Closing the till at the end of the day -- whoever works it.
+      { to: "/cash-up", label: "Cash-up", icon: Calculator, show: (c) => c.adjustStock },
       { to: "/orders", label: "Online orders", icon: ClipboardList },
       { to: "/customers", label: "Customers", icon: Users },
     ],
