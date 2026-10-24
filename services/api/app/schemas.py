@@ -51,6 +51,8 @@ class CategoryBase(BaseModel):
     parent_id: uuid.UUID | None = None
     description: str | None = None
     display_order: int = 0
+    # Storefront tile photo (from POST /uploads/product-photo), or None.
+    image_path: str | None = Field(default=None, max_length=500)
 
 
 class CategoryCreate(CategoryBase):
@@ -63,6 +65,7 @@ class CategoryUpdate(BaseModel):
     parent_id: uuid.UUID | None = None
     description: str | None = None
     display_order: int | None = None
+    image_path: str | None = Field(default=None, max_length=500)
 
 
 class CategoryRead(CategoryBase):
@@ -1255,6 +1258,51 @@ class StorefrontSocial(BaseModel):
         return value
 
 
+class StorefrontPromo(BaseModel):
+    """An optional promotional banner in the middle of the home page --
+    a sale, new stock, a wholesale offer. Off until the shop has something
+    real to say."""
+
+    enabled: bool = False
+    eyebrow: str = Field(default="This week", max_length=60)
+    title: str = Field(default="", max_length=90)
+    text: str = Field(default="", max_length=300)
+    button_label: str = Field(default="Shop now", max_length=40)
+    button_link: str = Field(default="/shop", max_length=300)
+    # One uploaded photo (storage path), shown beside the words.
+    image_path: str | None = Field(default=None, max_length=500)
+
+    _links = field_validator("button_link")(_check_link)
+
+
+# Ways the shop takes payment, shown on the "How to order" strip and in the
+# footer.
+PaymentMethodName = Literal["mobile_money", "cash", "card", "bank_transfer"]
+
+
+class StorefrontVisit(BaseModel):
+    """The "Visit the shop" section: where it is and when it's open. Shown
+    only once there's something to show (an address, hours or a phone)."""
+
+    enabled: bool = True
+    title: str = Field(default="Visit the shop", max_length=60)
+    text: str = Field(
+        default="Come in to see the full range, try things on, and talk to us about wholesale.", max_length=300
+    )
+    # Free text, one line per day or range: "Mon–Sat: 8am – 7pm".
+    hours: str = Field(default="", max_length=400)
+    # A Google Maps (or similar) link for directions.
+    map_link: str = Field(default="", max_length=500)
+
+    @field_validator("map_link")
+    @classmethod
+    def _full_address(cls, value: str) -> str:
+        value = value.strip()
+        if value and not value.startswith(("https://", "http://")):
+            raise ValueError("The map link must be a full address, starting with https://")
+        return value
+
+
 class StorefrontContent(BaseModel):
     """Everything the admin can change about the website's look and words.
     Unknown keys in a stored document are ignored, so removing a field
@@ -1276,6 +1324,11 @@ class StorefrontContent(BaseModel):
     )
     contact: StorefrontContact = Field(default_factory=StorefrontContact)
     social: StorefrontSocial = Field(default_factory=StorefrontSocial)
+    promo: StorefrontPromo = Field(default_factory=StorefrontPromo)
+    # The three-step "How to order" strip (browse, order, pickup/delivery).
+    show_how_to_order: bool = True
+    payment_methods: list[PaymentMethodName] = Field(default_factory=lambda: ["mobile_money", "cash", "card"])
+    visit: StorefrontVisit = Field(default_factory=StorefrontVisit)
 
 
 class StorefrontContentRead(BaseModel):

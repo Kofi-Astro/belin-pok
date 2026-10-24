@@ -78,3 +78,36 @@ async def test_links_must_be_pages_or_web_addresses(client, reset_content):
         content["social"]["instagram"] = "https://instagram.com/belpok"
         good = await ac.put("/storefront", json=content)
     assert (bad.status_code, bad_social.status_code, good.status_code) == (422, 422, 200)
+
+
+async def test_promo_visit_and_payment_methods(client, fresh_client, reset_content):
+    async with client as ac:
+        content = (await ac.get("/storefront")).json()["content"]
+        # Defaults: no promotion until there's one to run; the usual payments.
+        assert content["promo"]["enabled"] is False
+        assert content["payment_methods"] == ["mobile_money", "cash", "card"]
+        content["promo"].update({"enabled": True, "title": "Joggers week", "button_link": "/category/joggers"})
+        content["visit"].update({"hours": "Mon–Sat: 8am – 7pm", "map_link": "https://maps.google.com/?q=Belin-Pok"})
+        content["payment_methods"] = ["mobile_money", "cash"]
+        assert (await ac.put("/storefront", json=content)).status_code == 200
+        bad = dict(content, visit=dict(content["visit"], map_link="maps.google.com"))
+        assert (await ac.put("/storefront", json=bad)).status_code == 422
+        bad = dict(content, payment_methods=["cheque"])
+        assert (await ac.put("/storefront", json=bad)).status_code == 422
+    async with fresh_client() as shopper:
+        public = (await shopper.get("/public/storefront")).json()
+    assert public["promo"]["title"] == "Joggers week"
+    assert public["visit"]["hours"] == "Mon–Sat: 8am – 7pm"
+    assert public["payment_methods"] == ["mobile_money", "cash"]
+
+
+async def test_category_photo(client, fresh_client):
+    unique = uuid.uuid4().hex[:8]
+    async with client as ac:
+        made = (await ac.post("/categories", json={"name": f"Caps {unique}", "slug": f"caps-{unique}"})).json()
+        assert made["image_path"] is None
+        res = await ac.patch(f"/categories/{made['id']}", json={"image_path": "products/cap.jpg"})
+        assert res.json()["image_path"] == "products/cap.jpg"
+    async with fresh_client() as shopper:
+        listed = (await shopper.get("/public/categories")).json()
+    assert next(c for c in listed if c["id"] == made["id"])["image_path"] == "products/cap.jpg"

@@ -662,6 +662,10 @@ _WEBSITE_SECTIONS = {
     "footer_blurb": "footer",
     "contact": "contact details",
     "social": "social links",
+    "promo": "promotion banner",
+    "show_how_to_order": "how-to-order section",
+    "payment_methods": "payment methods",
+    "visit": "visit-the-shop section",
 }
 
 

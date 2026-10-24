@@ -306,6 +306,9 @@ class Category(Base):
     parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
     description: Mapped[str | None]
     display_order: Mapped[int] = mapped_column(default=0)
+    # Optional tile photo for the storefront (a storage path, as for product
+    # photos). See migrations/20261024120003_category_photos.sql.
+    image_path: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
