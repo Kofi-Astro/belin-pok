@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/auth";
 import { downloadCsv } from "@/lib/csv";
 import { OrderStatusBadge } from "@/components/bits";
 import { OwnerDeleteButton } from "@/components/DeleteRecord";
-import { dateTime, money, saleItemName, titleCase } from "@/lib/format";
+import { dateTime, money, saleItemName, titleCase, optionLabel } from "@/lib/format";
 import { describePeriod, type Period, type Preset, presetRange } from "@/lib/period";
 import type { Order, PosSale, Staff } from "@/lib/types";
 
@@ -275,7 +275,7 @@ export function SalesJournalPage() {
                                           {i.product_name ? (
                                             <>
                                               <span className="font-medium">{i.product_name}</span>
-                                              <span className="text-muted"> · {[i.variant_size, i.variant_color].filter(Boolean).join(" · ")}</span>
+                                              <span className="text-muted"> · {optionLabel(i)}</span>
                                             </>
                                           ) : (
                                             <>
@@ -474,7 +474,7 @@ function OnlineOrders({ period, preset, onPeriod }: { period: Period; preset: Pr
                                 <tr key={i.id} className="border-t border-line">
                                   <td className="py-2">
                                     <span className="font-medium">{i.product_name}</span>
-                                    <span className="text-muted"> · {[i.variant_size, i.variant_color].filter(Boolean).join(" · ")}</span>
+                                    <span className="text-muted"> · {optionLabel(i)}</span>
                                   </td>
                                   <td className="tabular py-2 text-right">{i.quantity}</td>
                                   <td className="tabular py-2 text-right">{money(i.unit_price)}</td>

@@ -19,6 +19,9 @@ export type CartLine = {
   productName: string;
   size: string;
   color: string | null;
+  // Type / quality (Standard, Premium, a brand...); absent on lines saved
+  // before types existed.
+  style?: string | null;
   unitPrice: number;
   imagePath: string | null;
   quantity: number;

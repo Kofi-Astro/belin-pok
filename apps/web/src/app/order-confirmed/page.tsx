@@ -73,7 +73,7 @@ export default function OrderConfirmedPage() {
               <div className="flex-1 text-sm">
                 <p className="font-bold">{item.product_name}</p>
                 <p className="text-muted">
-                  {[item.variant_color, item.variant_size].filter(Boolean).join(" · ")} × {item.quantity}
+                  {[item.variant_style, item.variant_color, item.variant_size].filter(Boolean).join(" · ")} × {item.quantity}
                 </p>
               </div>
               <p className="font-bold">{formatPrice(item.line_total)}</p>

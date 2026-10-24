@@ -31,6 +31,9 @@ export type ProductVariant = {
   sku: string;
   size: string;
   color: string | null;
+  // "Type / quality" -- e.g. Standard / Premium, or Unbranded / a brand --
+  // each priced on its own. Null when the product has no types.
+  style: string | null;
   color_hex: string | null;
   // Null means "same as the product's base_price".
   price_override: number | null;
@@ -105,6 +108,7 @@ export type OrderItem = {
   variant_sku: string;
   variant_size: string;
   variant_color: string | null;
+  variant_style?: string | null;
   image_storage_path: string | null;
 };
 

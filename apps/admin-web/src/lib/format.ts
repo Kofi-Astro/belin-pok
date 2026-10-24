@@ -38,7 +38,14 @@ export function saleItemName(i: Pick<PosSaleItem, "product_name" | "category_nam
   return i.note ? `Unsorted sale (${i.note})` : "Unsorted sale";
 }
 
-export const variantLabel = (v: Pick<Variant, "size" | "color">) => (v.color ? `${v.size} · ${v.color}` : v.size);
+/** A variant in words: "Premium · M · Black" -- type (if any), size, colour
+ * (if any). */
+export const variantLabel = (v: Pick<Variant, "size" | "color"> & { style?: string | null }) =>
+  [v.style, v.size, v.color].filter(Boolean).join(" · ");
+
+/** The same for API rows that name the parts variant_style/_size/_color. */
+export const optionLabel = (r: { variant_style?: string | null; variant_size?: string | null; variant_color?: string | null }) =>
+  [r.variant_style, r.variant_size, r.variant_color].filter(Boolean).join(" · ");
 
 // Clothing sizes in the order people read them; numeric sizes (waist, shoe)
 // after, numerically; anything else ("One Size") last, alphabetically.
@@ -51,8 +58,11 @@ function sizeRank(size: string): [number, number, string] {
 }
 
 /** Variants grouped by colour, then in size order. */
-export function sortVariants<T extends Pick<Variant, "size" | "color">>(variants: T[]): T[] {
+export function sortVariants<T extends Pick<Variant, "size" | "color"> & { style?: string | null }>(variants: T[]): T[] {
   return [...variants].sort((a, b) => {
+    // By type first (untyped first), then colour, then size.
+    const byStyle = (a.style ?? "").localeCompare(b.style ?? "");
+    if (byStyle) return byStyle;
     const byColor = (a.color ?? "").localeCompare(b.color ?? "");
     if (byColor) return byColor;
     const [ra, rb] = [sizeRank(a.size), sizeRank(b.size)];

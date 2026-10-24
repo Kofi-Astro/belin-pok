@@ -289,7 +289,7 @@ export function ReportsPage() {
                         ) : (
                           <span className="font-medium text-amber-800">{p.product_name}</span>
                         )}
-                        {(p.size || p.color) && <span className="text-muted"> · {[p.size, p.color].filter(Boolean).join(" · ")}</span>}
+                        {(p.size || p.color) && <span className="text-muted"> · {[p.style, p.size, p.color].filter(Boolean).join(" · ")}</span>}
                         {p.sku && <p className="font-mono text-[11px] text-muted">{p.sku}</p>}
                       </Td>
                       <Td className="text-muted">{p.category_name ?? "—"}</Td>

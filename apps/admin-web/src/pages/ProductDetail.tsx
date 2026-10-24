@@ -62,6 +62,7 @@ export function ProductDetailPage() {
   const [adjusting, setAdjusting] = useState<Variant | null>(null);
   const [editingVariant, setEditingVariant] = useState<Variant | "new" | null>(null);
   const [receiving, setReceiving] = useState(false);
+  const [addingType, setAddingType] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // After any change: reload this product and the product lists.
@@ -167,13 +168,18 @@ export function ProductDetailPage() {
 
           <Card>
             <CardHeader
-              title="Sizes & colours"
-              description="Each is its own SKU with its own stock and prices."
+              title="Types, sizes & colours"
+              description="Each is its own SKU with its own stock and prices. Use types for kinds or qualities sold at different prices (e.g. Standard / Premium, or Unbranded / Nike)."
               actions={
                 can.manageCatalog && (
-                  <Button size="sm" variant="secondary" icon={Plus} onClick={() => setEditingVariant("new")}>
-                    Add
-                  </Button>
+                  <>
+                    <Button size="sm" variant="ghost" icon={Plus} onClick={() => setAddingType(true)}>
+                      Add a type
+                    </Button>
+                    <Button size="sm" variant="secondary" icon={Plus} onClick={() => setEditingVariant("new")}>
+                      Add a size
+                    </Button>
+                  </>
                 )
               }
             />
@@ -281,6 +287,7 @@ export function ProductDetailPage() {
 
       <AdjustStockModal open={!!adjusting} onClose={() => setAdjusting(null)} variant={adjusting} productName={p.name} />
       <VariantModal product={p} variant={editingVariant} onClose={() => setEditingVariant(null)} onSaved={refresh} />
+      {addingType && <AddTypeModal product={p} onClose={() => setAddingType(false)} onSaved={refresh} />}
       <ReceiveStockModal open={receiving} onClose={() => setReceiving(false)} product={p} />
       <ConfirmDialog
         open={confirmDelete}
@@ -408,6 +415,7 @@ function VariantModal({
   // an empty price field means "not set" (null), not ₵0.
   const blank = (n: number | null | undefined) => (n === null || n === undefined ? "" : String(n));
   const [form, setForm] = useState({
+    style: "",
     size: "",
     color: "",
     color_hex: "",
@@ -428,6 +436,7 @@ function VariantModal({
     if (!variant) return;
     setError(null);
     setForm({
+      style: v?.style ?? "",
       size: v?.size ?? "",
       color: v?.color ?? "",
       color_hex: v?.color_hex ?? "",
@@ -449,6 +458,8 @@ function VariantModal({
     // A pack price is meaningless without the pack size, and vice versa.
     if ((form.pack_price === "") !== (form.pack_size === "")) return setError("Pack price and units per pack go together — fill both or neither.");
     const body = {
+      // Blank = no type (the API stores null).
+      style: form.style.trim() || null,
       size: form.size.trim(),
       color: form.color.trim() || null,
       color_hex: form.color_hex || null,
@@ -499,6 +510,15 @@ function VariantModal({
         <div className="sm:col-span-2">
           <FormError message={error} />
         </div>
+        <Field label="Type / quality" hint="Optional — e.g. Premium, or a brand." className="sm:col-span-2">
+          <Input value={form.style} onChange={set("style")} list="product-types" placeholder="None" />
+          {/* Suggests the types this product already has, so they're spelt the same. */}
+          <datalist id="product-types">
+            {productTypes(product).map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+        </Field>
         <Field label="Size">
           <Input required value={form.size} onChange={set("size")} placeholder="e.g. M, 32, One Size" />
         </Field>
@@ -546,6 +566,106 @@ function VariantModal({
 
 // Product photos: upload (several at once), choose the cover photo,
 // delete. The cover is what the website shows first and in listings.
+/** The types a product already uses, in order -- for suggestions. */
+function productTypes(product: Product): string[] {
+  return [...new Set(product.variants.map((v) => v.style).filter((s): s is string => !!s))].sort();
+}
+
+// Adding a whole type at once: one name, one in-store price, and the sizes
+// (and optionally a colour) it comes in -- each becomes its own SKU at that
+// price, ready to receive stock. E.g. "Premium" at ₵150 in S, M, L, XL.
+// Sizes this type already has are skipped rather than failing the batch.
+function AddTypeModal({ product, onClose, onSaved }: { product: Product; onClose: () => void; onSaved: () => Promise<unknown> }) {
+  const toast = useToast();
+  // Start from the sizes the product already has, the usual case.
+  const existingSizes = [...new Set(sortVariants(product.variants).map((v) => v.size))];
+  const [style, setStyle] = useState("");
+  const [price, setPrice] = useState("");
+  const [sizes, setSizes] = useState(existingSizes.join(", ") || "One Size");
+  const [color, setColor] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const sizeList = [...new Set(sizes.split(",").map((s) => s.trim()).filter(Boolean))];
+  const taken = (size: string) =>
+    product.variants.some((v) => (v.style ?? "") === style.trim() && v.size === size && (v.color ?? "") === color.trim());
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const n = Number(price);
+    if (!style.trim()) return setError("Give the type a name.");
+    if (!(n > 0)) return setError("Enter its in-store price.");
+    setBusy(true);
+    setError(null);
+    try {
+      const todo = sizeList.filter((s) => !taken(s));
+      for (const size of todo) {
+        await api.post(`/products/${product.id}/variants`, {
+          style: style.trim(),
+          size,
+          color: color.trim() || null,
+          // The product's own price needs no per-size price.
+          price_override: n === product.base_price ? null : n,
+        });
+      }
+      await onSaved();
+      toast.success(todo.length ? `${style.trim()} added in ${todo.length} size${todo.length === 1 ? "" : "s"}` : "Those sizes already exist");
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      await onSaved(); // show any that were added before the error
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Add a type"
+      description={`A kind or quality of ${product.name} with its own price — e.g. Standard / Premium, or Unbranded / a brand.`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form="add-type" loading={busy}>
+            Add {sizeList.length ? `${sizeList.length} size${sizeList.length === 1 ? "" : "s"}` : ""}
+          </Button>
+        </>
+      }
+    >
+      <form id="add-type" onSubmit={save} className="grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <FormError message={error} />
+        </div>
+        <Field label="Type / quality">
+          <Input autoFocus required value={style} onChange={(e) => setStyle(e.target.value)} list="product-types-add" placeholder="e.g. Premium" />
+          <datalist id="product-types-add">
+            {productTypes(product).map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+        </Field>
+        <Field label="In-store price (GH₵)" hint="For every size of this type.">
+          <Input type="number" required min={0.01} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} />
+        </Field>
+        <Field label="Sizes" hint="Separated by commas." className="sm:col-span-2">
+          <Input value={sizes} onChange={(e) => setSizes(e.target.value)} placeholder="S, M, L, XL" />
+        </Field>
+        <Field label="Colour (optional)" className="sm:col-span-2">
+          <Input value={color} onChange={(e) => setColor(e.target.value)} />
+        </Field>
+        {sizeList.some(taken) && (
+          <p className="text-xs text-amber-800 sm:col-span-2">Already there, will be skipped: {sizeList.filter(taken).join(", ")}</p>
+        )}
+        <p className="text-xs text-muted sm:col-span-2">Stock starts at 0 — receive stock for each size afterwards.</p>
+      </form>
+    </Modal>
+  );
+}
+
 function PhotosCard({ product, editable, onChanged }: { product: Product; editable: boolean; onChanged: () => Promise<unknown> }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);

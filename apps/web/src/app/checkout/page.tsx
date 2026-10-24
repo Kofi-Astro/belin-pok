@@ -276,7 +276,7 @@ export default function CheckoutPage() {
                 </div>
                 <div className="min-w-0 flex-1 text-sm">
                   <p className="line-clamp-1 font-semibold">{l.productName}</p>
-                  <p className="text-muted">{[l.color, l.size].filter(Boolean).join(" · ")}</p>
+                  <p className="text-muted">{[l.style, l.color, l.size].filter(Boolean).join(" · ")}</p>
                 </div>
                 <p className="text-sm font-bold">{formatPrice(l.unitPrice * l.quantity)}</p>
               </li>

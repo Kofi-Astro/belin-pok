@@ -18,7 +18,7 @@ import { AdjustStockModal, ReceiveStockModal, useInvalidateStock } from "@/compo
 import { Badge, Button, Card, EmptyState, ErrorState, Field, FormError, Input, PageHeader, Pagination, Select, Spinner, Table, Tabs, Td, Th } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { dateTime, money, titleCase, variantLabel } from "@/lib/format";
+import { dateTime, money, titleCase, variantLabel, optionLabel } from "@/lib/format";
 import { useCategories, useDebounced } from "@/lib/queries";
 import type { InventoryRow, LowStockRow, StockMovement } from "@/lib/types";
 
@@ -346,7 +346,7 @@ function Movements() {
                   <Td>
                     <p className="font-medium">{m.product_name}</p>
                     <p className="text-xs text-muted">
-                      {[m.variant_size, m.variant_color].filter(Boolean).join(" · ")} · {m.variant_sku}
+                      {optionLabel(m)} · {m.variant_sku}
                     </p>
                   </Td>
                   <Td>
@@ -375,7 +375,7 @@ function Movements() {
                         compact
                         label="Delete entry"
                         title="Delete this stock entry permanently?"
-                        description={`${m.product_name} · ${[m.variant_size, m.variant_color].filter(Boolean).join(" · ")}: ${m.quantity_change > 0 ? "+" : ""}${m.quantity_change}`}
+                        description={`${m.product_name} · ${optionLabel(m)}: ${m.quantity_change > 0 ? "+" : ""}${m.quantity_change}`}
                         consequences="For test entries and mistakes. Its effect on stock is undone. Not possible for a delivery whose units have since been sold."
                         run={(reason) => api.del(`/stock-movements/${m.id}`, { reason })}
                       />

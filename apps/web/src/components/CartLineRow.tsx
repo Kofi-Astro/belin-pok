@@ -84,7 +84,7 @@ export function CartLineRow({ line, compact = false }: { line: CartLine; compact
               {line.productName}
             </Link>
             <p className="mt-0.5 text-sm text-muted">
-              {[line.color, line.size].filter(Boolean).join(" · ")}
+              {[line.style, line.color, line.size].filter(Boolean).join(" · ")}
             </p>
           </div>
           {/* Line total. unitPrice is the price seen when it was added; checkout

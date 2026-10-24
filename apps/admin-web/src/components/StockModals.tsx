@@ -173,6 +173,8 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
   const [price, setPrice] = useState("");
   const [size, setSize] = useState("");
   const [color, setColor] = useState("");
+  // "Type / quality" -- Standard / Premium, Unbranded / a brand.
+  const [style, setStyle] = useState("");
 
   // Existing item: the product search, the product chosen, and which of
   // its sizes ("new" = a size/colour it doesn't have yet).
@@ -203,6 +205,7 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
     setPrice("");
     setSize("");
     setColor("");
+    setStyle("");
     setSearch("");
     if (!fixedProduct) setPicked(null);
     setVariantId("new");
@@ -245,23 +248,32 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
     // the till and in the catalogue); the rest is optional. The API creates a
     // draft product with one variant and records the stock as received.
     if (mode === "new") {
-      if (!name.trim()) return setError("Enter the item's name.");
+      // A broad item can go without a name: it's then named after its
+      // category ("Joggers"), with brand/quality as its type.
+      if (!name.trim() && !categoryId) return setError("Enter the item's name, or choose its category under More details.");
       if (!photo?.path) return setError(photo?.uploading ? "The photo is still uploading — one moment." : "Add a photo of the item.");
       body = {
-        name: name.trim(),
+        name: name.trim() || null,
         image_storage_path: photo.path,
         quantity,
         category_id: categoryId || null,
         base_price: price ? Number(price) : null,
         size: size.trim() || null,
         color: color.trim() || null,
+        style: style.trim() || null,
       };
     } else {
       if (!picked) return setError("Choose the item first.");
       // An existing size is identified by its size/colour; a new one is
       // created by the API from what was typed.
       const v = picked.variants.find((x) => x.id === variantId);
-      body = { product_id: picked.id, quantity, size: v ? v.size : size.trim() || null, color: v ? v.color : color.trim() || null };
+      body = {
+        product_id: picked.id,
+        quantity,
+        size: v ? v.size : size.trim() || null,
+        color: v ? v.color : color.trim() || null,
+        style: v ? v.style : style.trim() || null,
+      };
     }
     setBusy(true);
     setError(null);
@@ -349,7 +361,7 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
               />
               <div className="flex-1 space-y-3">
                 <Field label="Item name">
-                  <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Black Oversized Tee" />
+                  <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Joggers — or leave it to the category" />
                 </Field>
                 <Field label="How many came in?">
                   <Input type="number" inputMode="numeric" min={1} value={qty} onChange={(e) => setQty(e.target.value)} />
@@ -384,9 +396,12 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
                 <Field label="Colour">
                   <Input value={color} onChange={(e) => setColor(e.target.value)} />
                 </Field>
+                <Field label="Type / quality" hint="e.g. Standard, Premium, or a brand." className="sm:col-span-2">
+                  <Input value={style} onChange={(e) => setStyle(e.target.value)} />
+                </Field>
               </div>
             )}
-            <p className="text-xs text-muted">Saved as a draft — it stays off the shop and the till until it&apos;s priced and published.</p>
+            <p className="text-xs text-muted">Leave the name blank to name it after its category — handy for broad items like joggers or tees, with the brand or quality as its type. Saved as a draft — it stays off the shop and the till until it&apos;s priced and published.</p>
           </>
         ) : !picked ? (
           <>
@@ -424,11 +439,19 @@ export function ReceiveStockModal({ open, onClose, product: fixedProduct }: { op
                     {variantLabel(v)} — {v.stock_quantity} in stock
                   </option>
                 ))}
-                <option value="new">A new size / colour…</option>
+                <option value="new">A new type / size / colour…</option>
               </Select>
             </Field>
             {variantId === "new" && (
               <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Type / quality" hint="Optional — e.g. Premium, or a brand." className="sm:col-span-2">
+                  <Input value={style} onChange={(e) => setStyle(e.target.value)} list="receive-types" />
+                  <datalist id="receive-types">
+                    {[...new Set(picked.variants.map((v) => v.style).filter(Boolean))].map((t) => (
+                      <option key={t!} value={t!} />
+                    ))}
+                  </datalist>
+                </Field>
                 <Field label="Size">
                   <Input value={size} onChange={(e) => setSize(e.target.value)} placeholder="One Size" />
                 </Field>

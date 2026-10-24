@@ -73,6 +73,8 @@ export type Variant = {
   pack_size: number | null;
   // Fixed online price; null = in-store price + the shop's online markup.
   online_price: number | null;
+  // "Type / quality" (Standard, Premium, Nike...), or null for no type.
+  style: string | null;
   // stock_quantity is only ever changed by stock movements. is_active:
   // false hides this size from the website and till.
   stock_quantity: number;
@@ -130,6 +132,7 @@ export type StockMovement = {
   variant_sku: string | null;
   variant_size: string | null;
   variant_color: string | null;
+  variant_style?: string | null;
   performed_by_name: string | null;
   unit_price: number | null;
 };
@@ -199,6 +202,7 @@ export type OrderItem = {
   variant_sku: string;
   variant_size: string;
   variant_color: string | null;
+  variant_style?: string | null;
   image_storage_path: string | null;
 };
 
@@ -243,6 +247,7 @@ export type PosSaleItem = {
   product_name: string | null;
   variant_size: string | null;
   variant_color: string | null;
+  variant_style?: string | null;
   category_id: string | null;
   category_name: string | null;
   note: string | null;
@@ -280,7 +285,7 @@ export type Dashboard = {
   gross_revenue: number;
   items_sold: number;
   revenue_by_tier: { price_tier: PriceTier; items_sold: number; revenue: number }[];
-  top_variants: { variant_id: string; product_name: string; size: string; color: string | null; units_sold: number; revenue: number }[];
+  top_variants: { variant_id: string; product_name: string; size: string; color: string | null; style?: string | null; units_sold: number; revenue: number }[];
   low_stock_count: number;
   aged_debtors: {
     customer_id: string;
@@ -356,6 +361,7 @@ export type ProductSales = {
   sku: string | null;
   size: string | null;
   color: string | null;
+  style?: string | null;
   category_name: string | null;
   quantity: number;
   revenue: number;

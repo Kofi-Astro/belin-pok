@@ -1,5 +1,5 @@
 // The buying panel on a product page. Client-side because it reacts to
-// the shopper's choices (colour, size, quantity) and talks to the cart and
+// the shopper's choices (type, colour, size, quantity) and talks to the cart and
 // the session; the product data itself arrives from the server-rendered
 // page, at online prices.
 "use client";
@@ -33,16 +33,28 @@ function compareSizes(a: string, b: string) {
   return ra[0] - rb[0] || ra[1] - rb[1] || ra[2].localeCompare(rb[2]);
 }
 
-/** Colour and size pickers, price, stock, quantity and Add to cart. A
+/** Type, colour and size pickers, price, stock, quantity and Add to cart. A
  * sold-out size offers "Notify me" instead (POST
  * /variants/{id}/notify-when-in-stock -- needs a signed-in customer). */
 export function BuyBox({ product }: { product: Product }) {
   const { add, setDrawerOpen } = useCart();
   const { status } = useAuth();
-  const variants = product.variants;
+  const allVariants = product.variants;
 
-  // The distinct colours on offer (null for "no colour"). With one colour,
-  // it's chosen up front and the colour picker is hidden.
+  // Types / qualities (Standard, Premium, a brand...), each priced on its
+  // own. With more than one, the shopper picks a type first and the
+  // colours and sizes below narrow to it; with one (or none), it's chosen
+  // up front and the type picker is hidden. undefined = not chosen yet;
+  // null is a real value (variants without a type, shown as "Standard").
+  const styles = useMemo(() => [...new Set(allVariants.map((v) => v.style))], [allVariants]);
+  const [style, setStyle] = useState<string | null | undefined>(styles.length === 1 ? styles[0] : undefined);
+  const variants = useMemo(() => allVariants.filter((v) => style !== undefined && v.style === style), [allVariants, style]);
+  // Cheapest price of each type, for "from ₵…" on its button.
+  const typeFrom = (t: string | null) => Math.min(...allVariants.filter((v) => v.style === t).map((v) => variantPrice(product, v)));
+
+  // The distinct colours on offer for the chosen type (null for "no
+  // colour"). With one colour, it's chosen up front and the colour picker
+  // is hidden.
   const colors = useMemo(() => [...new Set(variants.map((v) => v.color))], [variants]);
   const [color, setColor] = useState<string | null>(colors.length === 1 ? colors[0] : null);
   // The sizes to offer: all of them if there's one colour or none,
@@ -55,7 +67,7 @@ export function BuyBox({ product }: { product: Product }) {
     [variants, colors, color],
   );
   // Pre-chosen when there's only one size ("One Size" caps, say).
-  const [size, setSize] = useState<string | null>(variants.length === 1 ? variants[0].size : null);
+  const [size, setSize] = useState<string | null>(allVariants.length === 1 ? allVariants[0].size : null);
   const [quantity, setQuantity] = useState(1);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
@@ -66,6 +78,19 @@ export function BuyBox({ product }: { product: Product }) {
   // shows the range across all sizes instead.
   const price = selected ? variantPrice(product, selected) : null;
   const image = primaryImage(product);
+
+  const pickStyle = (t: string | null) => {
+    setStyle(t);
+    const ofType = allVariants.filter((v) => v.style === t);
+    const typeColors = [...new Set(ofType.map((v) => v.color))];
+    // Keep the colour and size if this type has them; a single colour is
+    // chosen for the shopper.
+    const nextColor = typeColors.length === 1 ? typeColors[0] : typeColors.includes(color) ? color : null;
+    setColor(nextColor);
+    if (!ofType.some((v) => v.color === nextColor && v.size === size)) setSize(null);
+    setQuantity(1);
+    setNotice(null);
+  };
 
   const pickColor = (c: string | null) => {
     setColor(c);
@@ -87,6 +112,7 @@ export function BuyBox({ product }: { product: Product }) {
         productName: product.name,
         size: selected.size,
         color: selected.color,
+        style: selected.style,
         unitPrice: variantPrice(product, selected),
         imagePath: image?.storage_path ?? null,
         maxQuantity: selected.stock_quantity,
@@ -109,7 +135,7 @@ export function BuyBox({ product }: { product: Product }) {
   };
 
   // A product published before any sizes were added: nothing to buy yet.
-  if (variants.length === 0) {
+  if (allVariants.length === 0) {
     return <p className="rounded-2xl bg-brand-50 p-5 text-sm font-semibold text-brand-700">Coming soon to the shop.</p>;
   }
 
@@ -119,7 +145,30 @@ export function BuyBox({ product }: { product: Product }) {
         {price !== null ? formatPrice(price) : min === max ? formatPrice(min) : `${formatPrice(min)} – ${formatPrice(max)}`}
       </p>
 
-      {colors.length > 1 && (
+      {styles.length > 1 && (
+        <fieldset>
+          <legend className="label">
+            Type{style !== undefined && <span className="ml-1 font-semibold text-muted normal-case">— {style ?? "Standard"}</span>}
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            {styles.map((t) => (
+              <button
+                key={t ?? "standard"}
+                type="button"
+                onClick={() => pickStyle(t)}
+                className={`rounded-xl border px-4 py-2.5 text-left text-sm transition ${
+                  style === t ? "border-brand-900 bg-brand-900 text-white" : "border-line bg-white hover:border-ink/40"
+                }`}
+              >
+                <span className="block font-bold">{t ?? "Standard"}</span>
+                <span className={`text-xs ${style === t ? "text-white/75" : "text-muted"}`}>from {formatPrice(typeFrom(t))}</span>
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {style !== undefined && colors.length > 1 && (
         <fieldset>
           <legend className="label">
             Colour{color && <span className="ml-1 font-semibold text-muted normal-case">— {color}</span>}
@@ -148,7 +197,7 @@ export function BuyBox({ product }: { product: Product }) {
       {/* Sizes appear once a colour is chosen (or straight away if there's
          only one). Sold-out sizes stay visible but struck through, so the
          shopper can still pick one and ask to be notified. */}
-      {(colors.length <= 1 || color !== null) && (
+      {style !== undefined && (colors.length <= 1 || color !== null) && (
         <fieldset>
           <legend className="label">Size</legend>
           <div className="flex flex-wrap gap-2">
@@ -211,7 +260,7 @@ export function BuyBox({ product }: { product: Product }) {
           <QuantityStepper value={quantity} max={selected?.stock_quantity ?? 1} onChange={setQuantity} />
           <button type="button" onClick={addToCart} disabled={!selected} className="btn-primary flex-1 py-4">
             <ShoppingBag className="h-4 w-4" />
-            {selected ? "Add to cart" : colors.length > 1 && !color ? "Choose a colour" : "Choose a size"}
+            {selected ? "Add to cart" : style === undefined ? "Choose a type" : colors.length > 1 && !color ? "Choose a colour" : "Choose a size"}
           </button>
         </div>
       )}

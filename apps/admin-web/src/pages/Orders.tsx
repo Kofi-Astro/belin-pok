@@ -19,7 +19,7 @@ import { useToast } from "@/components/overlay";
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, PageHeader, PageLoading, Pagination, Select, Spinner, Table, Td, Th } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { dateTime, money, timeAgo, titleCase } from "@/lib/format";
+import { dateTime, money, timeAgo, titleCase, optionLabel } from "@/lib/format";
 import { useDebounced } from "@/lib/queries";
 import type { Order, OrderStatus } from "@/lib/types";
 
@@ -242,7 +242,7 @@ export function OrderDetailPage() {
                       {i.product_name}
                     </Link>
                     <p className="text-xs text-muted">
-                      {[i.variant_size, i.variant_color].filter(Boolean).join(" · ")} · SKU {i.variant_sku}
+                      {optionLabel(i)} · SKU {i.variant_sku}
                     </p>
                   </div>
                   <span className="tabular text-right text-muted">

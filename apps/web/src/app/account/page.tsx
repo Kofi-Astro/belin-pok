@@ -149,7 +149,7 @@ function Orders({ orders }: { orders: Order[] | null }) {
                 <div className="text-sm">
                   <p className="font-semibold">{item.product_name}</p>
                   <p className="text-muted">
-                    {[item.variant_color, item.variant_size].filter(Boolean).join(" · ")} × {item.quantity}
+                    {[item.variant_style, item.variant_color, item.variant_size].filter(Boolean).join(" · ")} × {item.quantity}
                   </p>
                 </div>
               </li>

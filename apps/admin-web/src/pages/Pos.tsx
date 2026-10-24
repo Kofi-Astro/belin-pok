@@ -17,7 +17,7 @@ import { Modal, useToast } from "@/components/overlay";
 import { useInvalidateStock } from "@/components/StockModals";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, FormError, IconButton, Input, PageHeader, Select, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
-import { money, primaryImage, saleItemName, sortVariants, timeAgo, titleCase, totalStock, variantLabel } from "@/lib/format";
+import { money, primaryImage, saleItemName, sortVariants, timeAgo, titleCase, totalStock, variantLabel, optionLabel } from "@/lib/format";
 import { useCategories, useDebounced } from "@/lib/queries";
 import type { Category, Customer, PaymentMethod, PosSale, PosSaleItem, PriceTier, Product, Variant } from "@/lib/types";
 
@@ -416,6 +416,8 @@ function VariantPicker({ product, mode, onClose, onAdd }: { product: Product; mo
                 className={`rounded-lg border px-3 py-2 text-sm font-semibold disabled:line-through disabled:opacity-40 ${variant?.id === v.id ? "border-brand-700 bg-brand-700 text-white" : "border-line hover:border-ink/30"}`}
               >
                 {variantLabel(v)} <span className={`ml-1 text-xs ${variant?.id === v.id ? "text-white/70" : "text-muted"}`}>({v.stock_quantity})</span>
+                {/* Each option's own price -- types (Standard / Premium...) usually differ. */}
+                <span className={`block text-xs font-normal ${variant?.id === v.id ? "text-white/80" : "text-muted"}`}>{money(unitPrice(product, v, tier))}</span>
               </button>
             ))}
           </div>
@@ -806,7 +808,7 @@ function TodaysSales() {
                       <span className="min-w-0 flex-1">
                         {i.product_name ? (
                           <>
-                            {i.product_name} <span className="text-muted">· {[i.variant_size, i.variant_color].filter(Boolean).join(" · ")}</span>
+                            {i.product_name} <span className="text-muted">· {optionLabel(i)}</span>
                           </>
                         ) : i.category_name ? (
                           <>

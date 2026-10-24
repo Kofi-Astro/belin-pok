@@ -13,7 +13,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { Thumb } from "@/components/bits";
 import { Badge, Card, CardHeader, EmptyState, ErrorState, PageHeader, PageLoading, StatCard } from "@/components/ui";
 import { api } from "@/lib/api";
-import { compactNumber, money, timeAgo, titleCase } from "@/lib/format";
+import { compactNumber, money, timeAgo, titleCase, optionLabel } from "@/lib/format";
 import type { DailySales, Dashboard, LowStockRow, StockMovement } from "@/lib/types";
 
 // The periods on offer, in days.
@@ -189,7 +189,7 @@ export function DashboardPage() {
                   <span className="tabular w-5 text-xs font-bold text-muted">{i + 1}</span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{v.product_name}</p>
-                    <p className="text-xs text-muted">{[v.size, v.color].filter(Boolean).join(" · ")}</p>
+                    <p className="text-xs text-muted">{[v.style, v.size, v.color].filter(Boolean).join(" · ")}</p>
                   </div>
                   <div className="text-right">
                     <p className="tabular font-semibold">{money(v.revenue)}</p>
@@ -214,7 +214,7 @@ export function DashboardPage() {
                     <Link to={`/products/${v.product_id}`} className="block truncate font-medium hover:text-brand-700">
                       {v.product_name}
                     </Link>
-                    <p className="text-xs text-muted">{[v.size, v.color].filter(Boolean).join(" · ")}</p>
+                    <p className="text-xs text-muted">{[v.style, v.size, v.color].filter(Boolean).join(" · ")}</p>
                   </div>
                   <Badge tone={v.stock_quantity === 0 ? "red" : "amber"}>{v.stock_quantity === 0 ? "Out" : `${v.stock_quantity} left`}</Badge>
                 </li>
@@ -263,7 +263,7 @@ export function DashboardPage() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">
-                    {m.product_name} <span className="font-normal text-muted">· {[m.variant_size, m.variant_color].filter(Boolean).join(" · ")}</span>
+                    {m.product_name} <span className="font-normal text-muted">· {optionLabel(m)}</span>
                   </p>
                   <p className="text-xs text-muted">
                     {titleCase(m.movement_type)}
